@@ -13,6 +13,13 @@ test("resolveBoardKey rejects empty input", () => {
   assert.throws(() => resolveBoardKey("   "), /figmaFileKey is empty/);
 });
 
+test("board key validation and generation stay within 75 character max", () => {
+  const key = resolveBoardKey("x".repeat(512));
+  assert.equal(key.length, 75);
+  assert.equal(isValidBoardKey("a".repeat(75)), true);
+  assert.equal(isValidBoardKey("a".repeat(76)), false);
+});
+
 test("toSyncBranchName validates and normalizes board keys", () => {
   const boardKey = resolveBoardKey("Board-123");
   const branch = toSyncBranchName(boardKey.toUpperCase());

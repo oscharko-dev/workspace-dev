@@ -1,0 +1,39 @@
+{
+  "source": {
+    "kind": "figma_local_json"
+  },
+  "screens": [
+    {
+      "screenId": "s-payment-form",
+      "screenName": "Initiate Payment",
+      "nodes": [
+        {
+          "nodeId": "n-amount",
+          "nodeName": "Transfer Amount",
+          "nodeType": "TEXT_INPUT",
+          "text": "Transfer Amount",
+          "defaultValue": "100.00",
+          "validations": ["Required", "Decimal 2"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-recipient-iban",
+          "nodeName": "Recipient IBAN",
+          "nodeType": "TEXT_INPUT",
+          "text": "Recipient IBAN",
+          "defaultValue": "DE02120300000000202051",
+          "validations": ["Required", "IBAN checksum"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-submit-payment",
+          "nodeName": "Submit Payment",
+          "nodeType": "BUTTON",
+          "text": "Submit Payment",
+          "navigationTarget": "s-payment-confirm",
+          "childNodeIds": []
+        }
+      ]
+    }
+  ]
+}

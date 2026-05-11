@@ -1,6 +1,20 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
-import { fetchFigmaFile } from "./figma-source.js";
+import { safeParseFigmaPayload } from "../figma-payload-validation.js";
+import { figmaToDesignIrWithOptions } from "../parity/ir.js";
+import {
+  applyAuthoritativeFigmaSubtrees,
+  fetchAuthoritativeFigmaSubtrees,
+  fetchFigmaFile
+} from "./figma-source.js";
+import {
+  createFigmaRestCircuitBreaker,
+  type FigmaRestCircuitBreakerClock
+} from "./figma-rest-circuit-breaker.js";
 
 const jsonResponse = (payload: unknown, init?: ResponseInit): Response => {
   return new Response(JSON.stringify(payload), {
@@ -10,125 +24,3202 @@ const jsonResponse = (payload: unknown, init?: ResponseInit): Response => {
   });
 };
 
-test("fetchFigmaFile returns parsed response object on first success", async () => {
-  const result = await fetchFigmaFile({
+const createRequest = (
+  input:
+    | typeof fetch
+    | {
+        fetchImpl: typeof fetch;
+        figmaRestCircuitBreaker?: ReturnType<typeof createFigmaRestCircuitBreaker>;
+      }
+) => {
+  const fetchImpl = typeof input === "function" ? input : input.fetchImpl;
+  const figmaRestCircuitBreaker = typeof input === "function" ? undefined : input.figmaRestCircuitBreaker;
+
+  return {
     fileKey: "abc",
     accessToken: "token",
     timeoutMs: 1000,
     maxRetries: 2,
-    fetchImpl: async () => jsonResponse({ name: "Demo", document: {} }),
+    bootstrapDepth: 5,
+    nodeBatchSize: 4,
+    nodeFetchConcurrency: 2,
+    adaptiveBatchingEnabled: true,
+    maxScreenCandidates: 40,
+    cacheEnabled: false,
+    cacheTtlMs: 15 * 60_000,
+    cacheDir: path.join(os.tmpdir(), "workspace-dev-figma-source-cache-disabled"),
+    fetchImpl,
+    figmaRestCircuitBreaker:
+      figmaRestCircuitBreaker ??
+      createFigmaRestCircuitBreaker({
+        failureThreshold: 3,
+        resetTimeoutMs: 30_000
+      }),
     onLog: () => {
       // no-op
     }
+  };
+};
+
+const createBreaker = ({
+  failureThreshold = 3,
+  resetTimeoutMs = 30_000,
+  clock
+}: {
+  failureThreshold?: number;
+  resetTimeoutMs?: number;
+  clock?: FigmaRestCircuitBreakerClock;
+} = {}) => {
+  return createFigmaRestCircuitBreaker({
+    failureThreshold,
+    resetTimeoutMs,
+    ...(clock ? { clock } : {})
+  });
+};
+
+const createBootstrapDocument = () => ({
+  name: "Demo",
+  document: {
+    id: "0:0",
+    type: "DOCUMENT",
+    children: [
+      {
+        id: "0:1",
+        type: "CANVAS",
+        children: [
+          {
+            id: "1:1",
+            type: "FRAME",
+            name: "Screen A",
+            absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 800 },
+            children: []
+          },
+          {
+            id: "1:2",
+            type: "FRAME",
+            name: "Screen B",
+            absoluteBoundingBox: { x: 420, y: 0, width: 400, height: 800 },
+            children: []
+          }
+        ]
+      }
+    ]
+  }
+});
+
+const createBootstrapDocumentWithScreens = (count: number) => ({
+  name: "Demo",
+  document: {
+    id: "0:0",
+    type: "DOCUMENT",
+    children: [
+      {
+        id: "0:1",
+        type: "CANVAS",
+        children: Array.from({ length: count }, (_, index) => ({
+          id: `1:${index + 1}`,
+          type: "FRAME",
+          name: `Screen ${index + 1}`,
+          absoluteBoundingBox: { x: index * 420, y: 0, width: 400, height: 800 },
+          children: []
+        }))
+      }
+    ]
+  }
+});
+
+const createLowFidelityDirectGeometryDocument = () => ({
+  name: "Instance Heavy Board",
+  document: {
+    id: "0:0",
+    type: "DOCUMENT",
+    children: [
+      {
+        id: "0:1",
+        type: "CANVAS",
+        children: [
+          {
+            id: "screen-heavy",
+            type: "FRAME",
+            name: "Heavy Screen",
+            absoluteBoundingBox: { x: 0, y: 0, width: 1440, height: 1200 },
+            children: [
+              ...Array.from({ length: 12 }, (_, index) => ({
+                id: `instance-${index + 1}`,
+                type: "INSTANCE",
+                name: index % 3 === 0 ? "<Card>" : "<Button>",
+                absoluteBoundingBox: { x: (index % 3) * 220, y: Math.floor(index / 3) * 120, width: 200, height: 96 },
+                children: []
+              })),
+              {
+                id: "vector-logo",
+                type: "VECTOR",
+                name: "Sparkasse S",
+                absoluteBoundingBox: { x: 24, y: 24, width: 24, height: 24 }
+              },
+              {
+                id: "vector-dot",
+                type: "VECTOR",
+                name: "Ellipse 4",
+                absoluteBoundingBox: { x: 52, y: 24, width: 12, height: 12 }
+              },
+              {
+                id: "text-1",
+                type: "TEXT",
+                name: "Heading",
+                characters: "Finanzierungsplaner",
+                absoluteBoundingBox: { x: 24, y: 200, width: 240, height: 24 }
+              },
+              {
+                id: "text-2",
+                type: "TEXT",
+                name: "Body",
+                characters: "Bitte prüfen",
+                absoluteBoundingBox: { x: 24, y: 232, width: 120, height: 20 }
+              },
+              {
+                id: "text-3",
+                type: "TEXT",
+                name: "Meta",
+                characters: "Meyer Technology GmbH",
+                absoluteBoundingBox: { x: 24, y: 264, width: 160, height: 20 }
+              },
+              {
+                id: "text-4",
+                type: "TEXT",
+                name: "Hint",
+                characters: "Bearbeitung gesperrt",
+                absoluteBoundingBox: { x: 24, y: 296, width: 160, height: 20 }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+});
+
+const findNodeById = (node: unknown, targetId: string): Record<string, unknown> | undefined => {
+  if (!node || typeof node !== "object") {
+    return undefined;
+  }
+  const record = node as Record<string, unknown>;
+  if (record.id === targetId) {
+    return record;
+  }
+  if (!Array.isArray(record.children)) {
+    return undefined;
+  }
+
+  for (const child of record.children) {
+    const nested = findNodeById(child, targetId);
+    if (nested) {
+      return nested;
+    }
+  }
+
+  return undefined;
+};
+
+const createTempCacheDir = async (): Promise<string> => {
+  return await mkdtemp(path.join(os.tmpdir(), "workspace-dev-figma-cache-"));
+};
+
+const toCacheFilePath = ({
+  cacheDir,
+  fileKey,
+  lastModified
+}: {
+  cacheDir: string;
+  fileKey: string;
+  lastModified: string;
+}): string => {
+  const hash = createHash("sha256").update(`${fileKey}:${lastModified}`).digest("hex");
+  return path.join(cacheDir, `${hash}.json`);
+};
+
+const toLatestIndexPath = ({
+  cacheDir,
+  fileKey
+}: {
+  cacheDir: string;
+  fileKey: string;
+}): string => {
+  const hash = createHash("sha256").update(fileKey).digest("hex");
+  return path.join(cacheDir, `${hash}.latest.json`);
+};
+
+test("fetchFigmaFile returns direct geometry payload when request succeeds", async () => {
+  const result = await fetchFigmaFile(
+    createRequest(async () => {
+      return jsonResponse({ name: "Demo", document: { id: "0:0", type: "DOCUMENT", children: [] } });
+    })
+  );
+
+  assert.equal(result.file.name, "Demo");
+  assert.equal(result.diagnostics.sourceMode, "geometry-paths");
+  assert.equal(result.diagnostics.fetchedNodes, 0);
+});
+
+test("fetchFigmaFile flags low-fidelity direct geometry payloads for instance-heavy explicit boards", async () => {
+  const result = await fetchFigmaFile(
+    createRequest(async () => {
+      return jsonResponse(createLowFidelityDirectGeometryDocument());
+    })
+  );
+
+  assert.equal(result.diagnostics.sourceMode, "geometry-paths");
+  assert.equal(result.diagnostics.lowFidelityDetected, true);
+  assert.equal((result.diagnostics.lowFidelityReasons?.length ?? 0) >= 2, true);
+  assert.equal(
+    (result.diagnostics.lowFidelityReasons ?? []).some((reason) => reason.includes("instance-heavy")),
+    true
+  );
+  assert.equal(
+    (result.diagnostics.lowFidelityReasons ?? []).some((reason) => reason.includes("vector nodes")),
+    true
+  );
+});
+
+test("fetchFigmaFile scopes direct geometry payloads to the requested node", async () => {
+  const result = await fetchFigmaFile({
+    ...createRequest(async () => {
+      return jsonResponse({
+        name: "Demo",
+        document: {
+          id: "0:0",
+          type: "DOCUMENT",
+          children: [
+            {
+              id: "0:1",
+              type: "CANVAS",
+              children: [
+                {
+                  id: "1:1",
+                  type: "FRAME",
+                  name: "Screen A",
+                  absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 800 },
+                  children: [
+                    {
+                      id: "1:2",
+                      type: "GROUP",
+                      name: "Scoped Group",
+                      children: []
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      });
+    }),
+    nodeId: "1:2"
   });
 
-  assert.equal(result.name, "Demo");
+  assert.equal((result.file.document as { type?: string }).type, "DOCUMENT");
+  assert.equal(findNodeById(result.file.document, "1:2")?.id, "1:2");
+  assert.equal(safeParseFigmaPayload({ input: result.file }).success, true);
+  assert.doesNotThrow(() => {
+    figmaToDesignIrWithOptions(result.file);
+  });
+  assert.equal(result.diagnostics.sourceMode, "geometry-paths");
+});
+
+test("fetchFigmaFile fetches the requested node directly when staged output does not contain it", async () => {
+  const requests: string[] = [];
+  const fetchImpl: typeof fetch = async (input) => {
+    const url = String(input);
+    requests.push(url);
+    if (url.includes("/v1/files/abc?geometry=paths")) {
+      return new Response("request too large", { status: 413 });
+    }
+    if (url.includes("/v1/files/abc?depth=5")) {
+      return jsonResponse(createBootstrapDocument());
+    }
+    if (url.includes("/v1/files/abc/nodes?ids=1%3A1")) {
+      return jsonResponse({
+        nodes: {
+          "1:1": {
+            document: {
+              id: "1:1",
+              type: "FRAME",
+              name: "Screen A",
+              children: []
+            }
+          }
+        }
+      });
+    }
+    if (url.includes("/v1/files/abc/nodes?ids=9%3A9")) {
+      return jsonResponse({
+        nodes: {
+          "9:9": {
+            document: {
+              id: "9:9",
+              type: "FRAME",
+              name: "Scoped Screen",
+              children: []
+            }
+          }
+        }
+      });
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+
+  const result = await fetchFigmaFile({
+    ...createRequest(fetchImpl),
+    nodeId: "9:9"
+  });
+
+  assert.equal((result.file.document as { type?: string }).type, "DOCUMENT");
+  assert.equal(findNodeById(result.file.document, "9:9")?.id, "9:9");
+  assert.equal(safeParseFigmaPayload({ input: result.file }).success, true);
+  assert.equal(
+    requests.some((url) => url.includes("/v1/files/abc/nodes?ids=9%3A9&geometry=paths")),
+    true
+  );
+});
+
+test("fetchFigmaFile promotes staged deep-node selections to the containing screen candidate", async () => {
+  const fetchImpl: typeof fetch = async (input) => {
+    const url = String(input);
+    if (url.includes("/v1/files/abc?geometry=paths")) {
+      return new Response("request too large", { status: 413 });
+    }
+    if (url.includes("/v1/files/abc?depth=5")) {
+      return jsonResponse(createBootstrapDocument());
+    }
+    if (url.includes("/v1/files/abc/nodes?ids=1%3A1")) {
+      return jsonResponse({
+        nodes: {
+          "1:1": {
+            document: {
+              id: "1:1",
+              type: "FRAME",
+              name: "Screen A",
+              absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 800 },
+              children: []
+            }
+          }
+        }
+      });
+    }
+    if (url.includes("/v1/files/abc/nodes?ids=1%3A2")) {
+      return jsonResponse({
+        nodes: {
+          "1:2": {
+            document: {
+              id: "1:2",
+              type: "FRAME",
+              name: "Screen B",
+              absoluteBoundingBox: { x: 420, y: 0, width: 400, height: 800 },
+              children: []
+            }
+          }
+        }
+      });
+    }
+    if (url.includes("/v1/files/abc/nodes?ids=9%3A9")) {
+      return jsonResponse({
+        nodes: {
+          "9:9": {
+            document: {
+              id: "9:9",
+              type: "GROUP",
+              name: "Deep Group",
+              absoluteBoundingBox: { x: 480, y: 120, width: 120, height: 64 },
+              children: []
+            }
+          }
+        }
+      });
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+
+  const result = await fetchFigmaFile({
+    ...createRequest(fetchImpl),
+    nodeId: "9:9"
+  });
+
+  const rootChildren = (result.file.document as { children?: Array<{ type?: string }> }).children ?? [];
+  const page = rootChildren[0];
+  const selectedScreen = findNodeById(result.file.document, "1:2");
+  assert.equal((result.file.document as { type?: string }).type, "DOCUMENT");
+  assert.equal(page?.type, "CANVAS");
+  assert.equal(selectedScreen?.type, "FRAME");
+  assert.equal(safeParseFigmaPayload({ input: result.file }).success, true);
+  assert.doesNotThrow(() => {
+    figmaToDesignIrWithOptions(result.file);
+  });
+});
+
+test("fetchFigmaFile rejects scoped selections that do not resolve to a supported root", async () => {
+  await assert.rejects(
+    () =>
+      fetchFigmaFile({
+        ...createRequest(async () => {
+          return jsonResponse({
+            name: "Demo",
+            document: {
+              id: "0:0",
+              type: "DOCUMENT",
+              children: [
+                {
+                  id: "0:1",
+                  type: "CANVAS",
+                  children: [
+                    {
+                      id: "1:2",
+                      type: "VECTOR",
+                      name: "Loose Vector",
+                      absoluteBoundingBox: { x: 0, y: 0, width: 24, height: 24 }
+                    }
+                  ]
+                }
+              ]
+            }
+          });
+        }),
+        nodeId: "1:2"
+      }),
+    (error: unknown) => (error as { code?: string }).code === "E_FIGMA_NODE_UNSUPPORTED"
+  );
+});
+
+test("fetchFigmaFile rejects scoped selections when targeted node fetch returns no document", async () => {
+  await assert.rejects(
+    () =>
+      fetchFigmaFile({
+        ...createRequest(async (input) => {
+          const url = String(input);
+          if (url.includes("/v1/files/abc?geometry=paths")) {
+            return new Response("request too large", { status: 413 });
+          }
+          if (url.includes("/v1/files/abc?depth=5")) {
+            return jsonResponse(createBootstrapDocument());
+          }
+          if (url.includes("/v1/files/abc/nodes?ids=1%3A1")) {
+            return jsonResponse({
+              nodes: {
+                "1:1": {
+                  document: {
+                    id: "1:1",
+                    type: "FRAME",
+                    name: "Screen A",
+                    absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 800 },
+                    children: []
+                  }
+                }
+              }
+            });
+          }
+          if (url.includes("/v1/files/abc/nodes?ids=1%3A2")) {
+            return jsonResponse({
+              nodes: {
+                "1:2": {
+                  document: {
+                    id: "1:2",
+                    type: "FRAME",
+                    name: "Screen B",
+                    absoluteBoundingBox: { x: 420, y: 0, width: 400, height: 800 },
+                    children: []
+                  }
+                }
+              }
+            });
+          }
+          if (url.includes("/v1/files/abc/nodes?ids=9%3A9")) {
+            return jsonResponse({ nodes: {} });
+          }
+          throw new Error(`Unexpected URL: ${url}`);
+        }),
+        nodeId: "9:9"
+      }),
+    (error: unknown) => (error as { code?: string }).code === "E_FIGMA_NODE_NOT_FOUND"
+  );
+});
+
+test("applyAuthoritativeFigmaSubtrees replaces matching nodes and ignores invalid subtrees", () => {
+  const result = applyAuthoritativeFigmaSubtrees({
+    file: createBootstrapDocument(),
+    subtrees: [
+      {
+        nodeId: "1:2",
+        document: {
+          id: "1:2",
+          type: "FRAME",
+          name: "Recovered Screen B",
+          absoluteBoundingBox: { x: 420, y: 0, width: 400, height: 800 },
+          children: []
+        }
+      },
+      {
+        nodeId: "9:9",
+        document: {
+          id: "9:9",
+          type: "FRAME",
+          name: "Missing",
+          children: []
+        }
+      },
+      {
+        nodeId: "1:1",
+        document: null
+      }
+    ]
+  });
+
+  assert.deepEqual(result.appliedNodeIds, ["1:2"]);
+  assert.equal(findNodeById(result.file.document, "1:2")?.name, "Recovered Screen B");
+  assert.equal(findNodeById(result.file.document, "1:1")?.name, "Screen A");
+});
+
+test("fetchAuthoritativeFigmaSubtrees recovers screen subtrees for low-fidelity direct geometry payloads", async () => {
+  const subtrees = await fetchAuthoritativeFigmaSubtrees({
+    fileKey: "abc",
+    accessToken: "token",
+    file: createLowFidelityDirectGeometryDocument(),
+    timeoutMs: 1_000,
+    maxRetries: 1,
+    maxScreenCandidates: 4,
+    fetchImpl: async (input) => {
+      const url = typeof input === "string" ? input : input.toString();
+      assert.match(url, /\/nodes\?/);
+      return jsonResponse({
+        nodes: {
+          "screen-heavy": {
+            document: {
+              id: "screen-heavy",
+              type: "FRAME",
+              name: "Heavy Screen",
+              absoluteBoundingBox: { x: 0, y: 0, width: 1440, height: 1200 },
+              children: [
+                {
+                  id: "screen-heavy-title",
+                  type: "TEXT",
+                  name: "Title",
+                  characters: "Finanzierungsplaner",
+                  absoluteBoundingBox: { x: 24, y: 24, width: 240, height: 24 }
+                },
+                {
+                  id: "screen-heavy-action",
+                  type: "TEXT",
+                  name: "Action",
+                  characters: "Druckcenter",
+                  absoluteBoundingBox: { x: 24, y: 56, width: 160, height: 20 }
+                }
+              ]
+            }
+          }
+        }
+      });
+    },
+    onLog: () => {},
+    screenNamePattern: undefined
+  });
+
+  assert.deepEqual(subtrees.map((subtree) => subtree.nodeId), ["screen-heavy"]);
+  assert.equal(JSON.stringify(subtrees[0]).includes("Druckcenter"), true);
+});
+
+test("fetchAuthoritativeFigmaSubtrees retries without geometry and keeps REST subtree when fallback returns no document", async () => {
+  const logs: string[] = [];
+  const requestedUrls: string[] = [];
+
+  const subtrees = await fetchAuthoritativeFigmaSubtrees({
+    fileKey: "abc",
+    accessToken: "token",
+    file: createLowFidelityDirectGeometryDocument(),
+    timeoutMs: 1_000,
+    maxRetries: 1,
+    maxScreenCandidates: 4,
+    fetchImpl: async (input) => {
+      const url = typeof input === "string" ? input : input.toString();
+      requestedUrls.push(url);
+      if (url.includes("geometry=paths")) {
+        return new Response("too large", { status: 413 });
+      }
+      return jsonResponse({ nodes: {} });
+    },
+    onLog: (message) => {
+      logs.push(message);
+    },
+    screenNamePattern: undefined
+  });
+
+  assert.deepEqual(subtrees, []);
+  assert.equal(requestedUrls.some((url) => url.includes("geometry=paths")), true);
+  assert.equal(requestedUrls.some((url) => !url.includes("geometry=paths")), true);
+  assert.equal(
+    logs.some((entry) => entry.includes("retrying without geometry")),
+    true
+  );
+  assert.equal(
+    logs.some((entry) => entry.includes("returned no document; keeping REST subtree")),
+    true
+  );
 });
 
 test("fetchFigmaFile retries with Bearer header when PAT is rejected", async () => {
   const headersSeen: Array<Record<string, string>> = [];
   let call = 0;
 
-  const result = await fetchFigmaFile({
-    fileKey: "abc",
-    accessToken: "token",
-    timeoutMs: 1000,
-    maxRetries: 2,
-    fetchImpl: async (_url, init) => {
+  const result = await fetchFigmaFile(
+    createRequest(async (_url, init) => {
       call += 1;
       headersSeen.push(init?.headers as Record<string, string>);
       if (call === 1) {
         return new Response("invalid token", { status: 403 });
       }
-      return jsonResponse({ name: "Retried", document: {} });
-    },
-    onLog: () => {
-      // no-op
-    }
-  });
+      return jsonResponse({ name: "Retried", document: { id: "0:0", type: "DOCUMENT", children: [] } });
+    })
+  );
 
-  assert.equal(result.name, "Retried");
+  assert.equal(result.file.name, "Retried");
   assert.equal(call, 2);
   assert.equal(Object.prototype.hasOwnProperty.call(headersSeen[0], "X-Figma-Token"), true);
   assert.equal(Object.prototype.hasOwnProperty.call(headersSeen[1], "Authorization"), true);
 });
 
-test("fetchFigmaFile retries network errors and eventually succeeds", async () => {
+test("fetchFigmaFile retries timed-out response parsing before succeeding", async () => {
   let call = 0;
   const logs: string[] = [];
 
+  const fetchImpl: typeof fetch = async () => {
+    call += 1;
+    if (call === 1) {
+      const stream = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          controller.error(new Error("The operation was aborted due to timeout"));
+        }
+      });
+      return new Response(stream, {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    }
+
+    return jsonResponse({
+      name: "Recovered After Parse Timeout",
+      document: { id: "0:0", type: "DOCUMENT", children: [] }
+    });
+  };
+
   const result = await fetchFigmaFile({
-    fileKey: "abc",
-    accessToken: "token",
-    timeoutMs: 1000,
-    maxRetries: 3,
-    fetchImpl: async () => {
-      call += 1;
-      if (call < 3) {
-        throw new Error("network down");
-      }
-      return jsonResponse({ name: "Recovered", document: {} });
-    },
+    ...createRequest(fetchImpl),
     onLog: (message) => {
       logs.push(message);
     }
   });
 
-  assert.equal(result.name, "Recovered");
-  assert.equal(call, 3);
-  assert.ok(logs.some((entry) => entry.includes("retrying")));
+  assert.equal(result.file.name, "Recovered After Parse Timeout");
+  assert.equal(call, 2);
+  assert.equal(logs.some((entry) => entry.includes("response parse timed out")), true);
 });
 
-test("fetchFigmaFile throws typed error after exhausted timeout retries", async () => {
+test("fetchFigmaFile does not retry true malformed JSON parse errors", async () => {
+  let call = 0;
+
   await assert.rejects(
     () =>
-      fetchFigmaFile({
-        fileKey: "abc",
-        accessToken: "token",
-        timeoutMs: 1000,
-        maxRetries: 1,
-        fetchImpl: async () => {
-          throw new Error("request timeout");
-        },
-        onLog: () => {
-          // no-op
+      fetchFigmaFile(
+        createRequest(async () => {
+          call += 1;
+          return new Response("{not valid json", {
+            status: 200,
+            headers: { "content-type": "application/json" }
+          });
+        })
+      ),
+    (error: unknown) => (error as { code?: string }).code === "E_FIGMA_PARSE"
+  );
+
+  assert.equal(call, 1);
+});
+
+test("fetchFigmaFile honors configured maxJsonResponseBytes", async () => {
+  let callCount = 0;
+  const result = await fetchFigmaFile({
+    ...createRequest(async (url) => {
+      callCount += 1;
+      const asString = String(url);
+      if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
+        return new Response(JSON.stringify({ document: { id: "1:1", type: "DOCUMENT", children: [] } }), {
+          status: 200,
+          headers: { "content-type": "application/json", "content-length": "2048" }
+        });
+      }
+      return jsonResponse(createBootstrapDocument());
+    }),
+    maxJsonResponseBytes: 1_024
+  });
+
+  assert.equal(result.diagnostics.sourceMode, "staged-nodes");
+  assert.equal(callCount > 1, true);
+});
+
+test("fetchFigmaFile falls back to staged fetch when direct request is too large", async () => {
+  const fetchImpl: typeof fetch = async (url) => {
+    const asString = String(url);
+    if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
+      return new Response("Request too large", { status: 400 });
+    }
+    if (asString.includes("?depth=5")) {
+      return jsonResponse(createBootstrapDocument());
+    }
+    if (asString.includes("/nodes?") && asString.includes("geometry=paths")) {
+      return jsonResponse({
+        nodes: {
+          "1:1": {
+            document: {
+              id: "1:1",
+              type: "FRAME",
+              name: "Loaded Screen A",
+              absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 800 },
+              children: []
+            }
+          },
+          "1:2": {
+            document: {
+              id: "1:2",
+              type: "FRAME",
+              name: "Loaded Screen B",
+              absoluteBoundingBox: { x: 420, y: 0, width: 400, height: 800 },
+              children: []
+            }
+          }
         }
-      }),
-    (error: unknown) => {
-      const typed = error as { code?: string; stage?: string };
-      return typed.code === "E_FIGMA_TIMEOUT" && typed.stage === "figma.source";
+      });
+    }
+    throw new Error(`Unexpected URL: ${asString}`);
+  };
+
+  const result = await fetchFigmaFile(
+    createRequest(fetchImpl)
+  );
+
+  assert.equal(result.diagnostics.sourceMode, "staged-nodes");
+  assert.equal(result.diagnostics.fetchedNodes, 2);
+  assert.deepEqual(result.diagnostics.degradedGeometryNodes, []);
+
+  const canvasChildren = (
+    (result.file.document as { children?: Array<{ children?: Array<{ name?: string }> }> })?.children?.[0]?.children ?? []
+  ).map((node) => node.name);
+  assert.deepEqual(canvasChildren, ["Loaded Screen A", "Loaded Screen B"]);
+});
+
+test("fetchFigmaFile bisects oversized node batches and falls back to single-node no-geometry", async () => {
+  const fetchImpl: typeof fetch = async (url) => {
+    const asString = String(url);
+    if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
+      return new Response("Request too large", { status: 413 });
+    }
+    if (asString.includes("?depth=5")) {
+      return jsonResponse(createBootstrapDocument());
+    }
+    if (asString.includes("/nodes?ids=1%3A1,1%3A2&geometry=paths")) {
+      return new Response("Request too large", { status: 413 });
+    }
+    if (asString.includes("/nodes?ids=1%3A1&geometry=paths")) {
+      return new Response("Request too large", { status: 413 });
+    }
+    if (asString.includes("/nodes?ids=1%3A1") && !asString.includes("geometry=paths")) {
+      return jsonResponse({
+        nodes: {
+          "1:1": {
+            document: {
+              id: "1:1",
+              type: "FRAME",
+              name: "Screen A (No Geometry)",
+              absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 800 },
+              children: []
+            }
+          }
+        }
+      });
+    }
+    if (asString.includes("/nodes?ids=1%3A2&geometry=paths")) {
+      return jsonResponse({
+        nodes: {
+          "1:2": {
+            document: {
+              id: "1:2",
+              type: "FRAME",
+              name: "Screen B (Geometry)",
+              absoluteBoundingBox: { x: 420, y: 0, width: 400, height: 800 },
+              children: []
+            }
+          }
+        }
+      });
+    }
+    throw new Error(`Unexpected URL: ${asString}`);
+  };
+
+  const result = await fetchFigmaFile(
+    {
+      ...createRequest(fetchImpl),
+      nodeBatchSize: 2
     }
   );
+
+  assert.equal(result.diagnostics.sourceMode, "staged-nodes");
+  assert.equal(result.diagnostics.fetchedNodes, 2);
+  assert.deepEqual(result.diagnostics.degradedGeometryNodes, ["1:1"]);
+});
+
+test("fetchFigmaFile bisects timeout node batches and falls back to single-node no-geometry", async () => {
+  const logs: string[] = [];
+  const fetchImpl: typeof fetch = async (url) => {
+    const asString = String(url);
+    if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
+      return new Response("Request too large", { status: 413 });
+    }
+    if (asString.includes("?depth=5")) {
+      return jsonResponse(createBootstrapDocument());
+    }
+    if (asString.includes("/nodes?ids=1%3A1,1%3A2&geometry=paths")) {
+      throw new Error("The operation was aborted due to timeout");
+    }
+    if (asString.includes("/nodes?ids=1%3A1&geometry=paths")) {
+      throw new Error("The operation was aborted due to timeout");
+    }
+    if (asString.includes("/nodes?ids=1%3A1") && !asString.includes("geometry=paths")) {
+      return jsonResponse({
+        nodes: {
+          "1:1": {
+            document: {
+              id: "1:1",
+              type: "FRAME",
+              name: "Screen A (No Geometry)",
+              absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 800 },
+              children: []
+            }
+          }
+        }
+      });
+    }
+    if (asString.includes("/nodes?ids=1%3A2&geometry=paths")) {
+      return jsonResponse({
+        nodes: {
+          "1:2": {
+            document: {
+              id: "1:2",
+              type: "FRAME",
+              name: "Screen B (Geometry)",
+              absoluteBoundingBox: { x: 420, y: 0, width: 400, height: 800 },
+              children: []
+            }
+          }
+        }
+      });
+    }
+    throw new Error(`Unexpected URL: ${asString}`);
+  };
+
+  const result = await fetchFigmaFile({
+    ...createRequest(fetchImpl),
+    nodeBatchSize: 2,
+    onLog: (message) => {
+      logs.push(message);
+    }
+  });
+
+  assert.equal(result.diagnostics.sourceMode, "staged-nodes");
+  assert.equal(result.diagnostics.fetchedNodes, 2);
+  assert.deepEqual(result.diagnostics.degradedGeometryNodes, ["1:1"]);
+  assert.equal(logs.some((entry) => entry.includes("timed out with geometry")), true);
+});
+
+test("fetchFigmaFile treats parser overflow as too-large and switches to staged fetch", async () => {
+  let call = 0;
+  const fetchImpl: typeof fetch = async (url) => {
+    call += 1;
+    const asString = String(url);
+
+    if (call === 1) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => {
+          throw new Error("ERR_STRING_TOO_LONG");
+        },
+        text: async () => "",
+        clone: () => {
+          return {
+            text: async () => ""
+          } as Response;
+        }
+      } as Response;
+    }
+
+    if (asString.includes("?depth=5")) {
+      return jsonResponse(createBootstrapDocument());
+    }
+
+    if (asString.includes("/nodes?")) {
+      return jsonResponse({
+        nodes: {
+          "1:1": {
+            document: {
+              id: "1:1",
+              type: "FRAME",
+              name: "Screen A",
+              absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 800 },
+              children: []
+            }
+          },
+          "1:2": {
+            document: {
+              id: "1:2",
+              type: "FRAME",
+              name: "Screen B",
+              absoluteBoundingBox: { x: 420, y: 0, width: 400, height: 800 },
+              children: []
+            }
+          }
+        }
+      });
+    }
+
+    throw new Error(`Unexpected URL: ${asString}`);
+  };
+
+  const result = await fetchFigmaFile(
+    createRequest(fetchImpl)
+  );
+
+  assert.equal(result.diagnostics.sourceMode, "staged-nodes");
+  assert.equal(result.diagnostics.fetchedNodes, 2);
+});
+
+test("fetchFigmaFile treats undici string-limit parse error as oversized node payload", async () => {
+  const fetchImpl: typeof fetch = async (url) => {
+    const asString = String(url);
+    if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
+      return new Response("Request too large", { status: 413 });
+    }
+    if (asString.includes("?depth=5")) {
+      return jsonResponse({
+        name: "Demo",
+        document: {
+          id: "0:0",
+          type: "DOCUMENT",
+          children: [
+            {
+              id: "0:1",
+              type: "CANVAS",
+              children: [
+                {
+                  id: "1:1",
+                  type: "FRAME",
+                  name: "Screen A",
+                  absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 800 },
+                  children: []
+                }
+              ]
+            }
+          ]
+        }
+      });
+    }
+    if (asString.includes("/nodes?ids=1%3A1&geometry=paths")) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => {
+          throw new Error("Cannot create a string longer than 0x1fffffe8 characters");
+        },
+        text: async () => "",
+        clone: () => ({ text: async () => "" } as Response)
+      } as Response;
+    }
+    if (asString.includes("/nodes?ids=1%3A1") && !asString.includes("geometry=paths")) {
+      return jsonResponse({
+        nodes: {
+          "1:1": {
+            document: {
+              id: "1:1",
+              type: "FRAME",
+              name: "Screen A (No Geometry)",
+              absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 800 },
+              children: []
+            }
+          }
+        }
+      });
+    }
+    throw new Error(`Unexpected URL: ${asString}`);
+  };
+
+  const result = await fetchFigmaFile(createRequest(fetchImpl));
+  assert.equal(result.diagnostics.sourceMode, "staged-nodes");
+  assert.deepEqual(result.diagnostics.degradedGeometryNodes, ["1:1"]);
+});
+
+test("fetchFigmaFile uses byte-limit guard to avoid oversized geometry JSON parsing", async () => {
+  const fetchImpl: typeof fetch = async (url) => {
+    const asString = String(url);
+    if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
+      return new Response("Request too large", { status: 413 });
+    }
+    if (asString.includes("?depth=5")) {
+      return jsonResponse({
+        name: "Demo",
+        document: {
+          id: "0:0",
+          type: "DOCUMENT",
+          children: [
+            {
+              id: "0:1",
+              type: "CANVAS",
+              children: [
+                {
+                  id: "1:1",
+                  type: "FRAME",
+                  name: "Screen A",
+                  absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 800 },
+                  children: []
+                }
+              ]
+            }
+          ]
+        }
+      });
+    }
+    if (asString.includes("/nodes?ids=1%3A1&geometry=paths")) {
+      return new Response("{}", {
+        status: 200,
+        headers: {
+          "content-type": "application/json",
+          "content-length": String(70 * 1024 * 1024)
+        }
+      });
+    }
+    if (asString.includes("/nodes?ids=1%3A1") && !asString.includes("geometry=paths")) {
+      return jsonResponse({
+        nodes: {
+          "1:1": {
+            document: {
+              id: "1:1",
+              type: "FRAME",
+              name: "Screen A (No Geometry)",
+              absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 800 },
+              children: []
+            }
+          }
+        }
+      });
+    }
+    throw new Error(`Unexpected URL: ${asString}`);
+  };
+
+  const result = await fetchFigmaFile(createRequest(fetchImpl));
+  assert.equal(result.diagnostics.sourceMode, "staged-nodes");
+  assert.deepEqual(result.diagnostics.degradedGeometryNodes, ["1:1"]);
+});
+
+test("fetchFigmaFile reduces staged batch size adaptively after repeated oversized responses", async () => {
+  const requestedGeometryIds: string[][] = [];
+
+  const fetchImpl: typeof fetch = async (url) => {
+    const asString = String(url);
+    if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
+      return new Response("Request too large", { status: 413 });
+    }
+    if (asString.includes("?depth=5")) {
+      return jsonResponse(createBootstrapDocumentWithScreens(12));
+    }
+    if (asString.includes("/nodes?") && asString.includes("geometry=paths")) {
+      const decoded = decodeURIComponent(asString);
+      const idsParam = decoded.split("ids=")[1]?.split("&")[0] ?? "";
+      const ids = idsParam.split(",").filter((entry) => entry.length > 0);
+      requestedGeometryIds.push(ids);
+      if (ids.length >= 4) {
+        return new Response("Request too large", { status: 413 });
+      }
+      return jsonResponse({
+        nodes: Object.fromEntries(
+          ids.map((id) => [
+            id,
+            {
+              document: {
+                id,
+                type: "FRAME",
+                name: `Loaded ${id}`,
+                absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 800 },
+                children: []
+              }
+            }
+          ])
+        )
+      });
+    }
+    throw new Error(`Unexpected URL: ${asString}`);
+  };
+
+  const result = await fetchFigmaFile(
+    {
+      ...createRequest(fetchImpl),
+      nodeBatchSize: 4,
+      nodeFetchConcurrency: 1,
+      adaptiveBatchingEnabled: true,
+      maxScreenCandidates: 12
+    }
+  );
+
+  assert.equal(result.diagnostics.sourceMode, "staged-nodes");
+  assert.equal(result.diagnostics.fetchedNodes, 12);
+  assert.equal(
+    requestedGeometryIds.some((ids) => ids.length === 4 && ids[0] === "1:9"),
+    false
+  );
+  assert.equal(
+    requestedGeometryIds.some((ids) => ids.length === 2 && ids[0] === "1:9"),
+    true
+  );
+});
+
+test("fetchFigmaFile runs staged node geometry batches concurrently", async () => {
+  let activeGeometryRequests = 0;
+  let maxActiveGeometryRequests = 0;
+
+  const fetchImpl: typeof fetch = async (url) => {
+    const asString = String(url);
+    if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
+      return new Response("Request too large", { status: 413 });
+    }
+    if (asString.includes("?depth=5")) {
+      return jsonResponse(createBootstrapDocumentWithScreens(6));
+    }
+    if (asString.includes("/nodes?") && asString.includes("geometry=paths")) {
+      const decoded = decodeURIComponent(asString);
+      const idsParam = decoded.split("ids=")[1]?.split("&")[0] ?? "";
+      const ids = idsParam.split(",").filter((entry) => entry.length > 0);
+
+      activeGeometryRequests += 1;
+      maxActiveGeometryRequests = Math.max(maxActiveGeometryRequests, activeGeometryRequests);
+      try {
+        await new Promise((resolve) => {
+          setTimeout(resolve, 25);
+        });
+      } finally {
+        activeGeometryRequests -= 1;
+      }
+
+      return jsonResponse({
+        nodes: Object.fromEntries(
+          ids.map((id) => [
+            id,
+            {
+              document: {
+                id,
+                type: "FRAME",
+                name: `Loaded ${id}`,
+                absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 800 },
+                children: []
+              }
+            }
+          ])
+        )
+      });
+    }
+    throw new Error(`Unexpected URL: ${asString}`);
+  };
+
+  const result = await fetchFigmaFile({
+    ...createRequest(fetchImpl),
+    nodeBatchSize: 1,
+    nodeFetchConcurrency: 3,
+    adaptiveBatchingEnabled: false,
+    maxScreenCandidates: 6
+  });
+
+  assert.equal(result.diagnostics.sourceMode, "staged-nodes");
+  assert.equal(result.diagnostics.fetchedNodes, 6);
+  assert.equal(maxActiveGeometryRequests >= 2, true);
+});
+
+test("fetchFigmaFile excludes staged candidates by name and page context", async () => {
+  const logs: string[] = [];
+  const requestedGeometryUrls: string[] = [];
+
+  const fetchImpl: typeof fetch = async (url) => {
+    const asString = String(url);
+    if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
+      return new Response("Request too large", { status: 413 });
+    }
+    if (asString.includes("?depth=5")) {
+      return jsonResponse({
+        name: "Demo",
+        document: {
+          id: "0:0",
+          type: "DOCUMENT",
+          children: [
+            {
+              id: "0:1",
+              type: "CANVAS",
+              name: "Components",
+              children: [
+                {
+                  id: "1:1",
+                  type: "FRAME",
+                  name: "Profile Screen",
+                  absoluteBoundingBox: { x: 0, y: 0, width: 390, height: 844 },
+                  children: []
+                }
+              ]
+            },
+            {
+              id: "0:2",
+              type: "CANVAS",
+              name: "App",
+              children: [
+                {
+                  id: "2:1",
+                  type: "FRAME",
+                  name: "icon/home",
+                  absoluteBoundingBox: { x: 0, y: 0, width: 390, height: 844 },
+                  children: []
+                },
+                {
+                  id: "2:2",
+                  type: "FRAME",
+                  name: "atom/card",
+                  absoluteBoundingBox: { x: 0, y: 0, width: 390, height: 844 },
+                  children: []
+                },
+                {
+                  id: "2:3",
+                  type: "FRAME",
+                  name: "_hidden/debug",
+                  absoluteBoundingBox: { x: 0, y: 0, width: 390, height: 844 },
+                  children: []
+                },
+                {
+                  id: "2:4",
+                  type: "FRAME",
+                  name: "Checkout Screen",
+                  absoluteBoundingBox: { x: 0, y: 0, width: 390, height: 844 },
+                  children: []
+                }
+              ]
+            }
+          ]
+        }
+      });
+    }
+    if (asString.includes("/nodes?ids=2%3A4&geometry=paths")) {
+      requestedGeometryUrls.push(asString);
+      return jsonResponse({
+        nodes: {
+          "2:4": {
+            document: {
+              id: "2:4",
+              type: "FRAME",
+              name: "Loaded Checkout",
+              absoluteBoundingBox: { x: 0, y: 0, width: 390, height: 844 },
+              children: []
+            }
+          }
+        }
+      });
+    }
+    throw new Error(`Unexpected URL: ${asString}`);
+  };
+
+  const result = await fetchFigmaFile({
+    ...createRequest(fetchImpl),
+    onLog: (message: string) => {
+      logs.push(message);
+    }
+  });
+
+  assert.equal(result.diagnostics.sourceMode, "staged-nodes");
+  assert.equal(result.diagnostics.fetchedNodes, 1);
+  assert.equal(requestedGeometryUrls.length, 1);
+  assert.equal(logs.some((entry) => entry.includes("excludedByPage=1")), true);
+  assert.equal(logs.some((entry) => entry.includes("excludedByName=3")), true);
+});
+
+test("fetchFigmaFile prioritizes content-rich staged screen candidates", async () => {
+  const requestedGeometryUrls: string[] = [];
+
+  const fetchImpl: typeof fetch = async (url) => {
+    const asString = String(url);
+    if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
+      return new Response("Request too large", { status: 413 });
+    }
+    if (asString.includes("?depth=5")) {
+      return jsonResponse({
+        name: "Demo",
+        document: {
+          id: "0:0",
+          type: "DOCUMENT",
+          children: [
+            {
+              id: "0:1",
+              type: "CANVAS",
+              name: "App",
+              children: [
+                {
+                  id: "1:1",
+                  type: "FRAME",
+                  name: "Decorative Banner",
+                  absoluteBoundingBox: { x: 0, y: 0, width: 1800, height: 500 },
+                  children: []
+                },
+                {
+                  id: "1:2",
+                  type: "FRAME",
+                  name: "Login Screen",
+                  absoluteBoundingBox: { x: 0, y: 0, width: 390, height: 844 },
+                  children: [
+                    {
+                      id: "1:2:1",
+                      type: "TEXT",
+                      name: "Welcome",
+                      children: []
+                    },
+                    {
+                      id: "1:2:2",
+                      type: "FRAME",
+                      name: "email input",
+                      children: []
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      });
+    }
+    if (asString.includes("/nodes?ids=1%3A2&geometry=paths")) {
+      requestedGeometryUrls.push(asString);
+      return jsonResponse({
+        nodes: {
+          "1:2": {
+            document: {
+              id: "1:2",
+              type: "FRAME",
+              name: "Loaded Login Screen",
+              absoluteBoundingBox: { x: 0, y: 0, width: 390, height: 844 },
+              children: []
+            }
+          }
+        }
+      });
+    }
+    throw new Error(`Unexpected URL: ${asString}`);
+  };
+
+  const result = await fetchFigmaFile({
+    ...createRequest(fetchImpl),
+    maxScreenCandidates: 1
+  });
+
+  assert.equal(result.diagnostics.sourceMode, "staged-nodes");
+  assert.equal(result.diagnostics.fetchedNodes, 1);
+  assert.equal(requestedGeometryUrls.length, 1);
+  const selectedScreen = findNodeById(result.file.document, "1:2");
+  assert.equal(selectedScreen?.name, "Loaded Login Screen");
+});
+
+test("fetchFigmaFile applies screenNamePattern include filter for staged candidates", async () => {
+  const requestedGeometryIds: string[][] = [];
+
+  const fetchImpl: typeof fetch = async (url) => {
+    const asString = String(url);
+    if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
+      return new Response("Request too large", { status: 413 });
+    }
+    if (asString.includes("?depth=5")) {
+      return jsonResponse({
+        name: "Demo",
+        document: {
+          id: "0:0",
+          type: "DOCUMENT",
+          children: [
+            {
+              id: "0:1",
+              type: "CANVAS",
+              name: "App",
+              children: [
+                {
+                  id: "1:1",
+                  type: "FRAME",
+                  name: "Auth/Login",
+                  absoluteBoundingBox: { x: 0, y: 0, width: 390, height: 844 },
+                  children: []
+                },
+                {
+                  id: "1:2",
+                  type: "FRAME",
+                  name: "Settings",
+                  absoluteBoundingBox: { x: 0, y: 0, width: 390, height: 844 },
+                  children: []
+                },
+                {
+                  id: "1:3",
+                  type: "FRAME",
+                  name: "Auth/Register",
+                  absoluteBoundingBox: { x: 0, y: 0, width: 390, height: 844 },
+                  children: []
+                }
+              ]
+            }
+          ]
+        }
+      });
+    }
+    if (asString.includes("/nodes?") && asString.includes("geometry=paths")) {
+      const decoded = decodeURIComponent(asString);
+      const idsParam = decoded.split("ids=")[1]?.split("&")[0] ?? "";
+      const ids = idsParam.split(",").filter((entry) => entry.length > 0);
+      requestedGeometryIds.push(ids);
+      return jsonResponse({
+        nodes: Object.fromEntries(
+          ids.map((id) => [
+            id,
+            {
+              document: {
+                id,
+                type: "FRAME",
+                name: `Loaded ${id}`,
+                absoluteBoundingBox: { x: 0, y: 0, width: 390, height: 844 },
+                children: []
+              }
+            }
+          ])
+        )
+      });
+    }
+    throw new Error(`Unexpected URL: ${asString}`);
+  };
+
+  const result = await fetchFigmaFile({
+    ...createRequest(fetchImpl),
+    screenNamePattern: "^auth/"
+  });
+
+  assert.equal(result.diagnostics.sourceMode, "staged-nodes");
+  assert.equal(result.diagnostics.fetchedNodes, 2);
+  assert.deepEqual(requestedGeometryIds, [["1:1", "1:3"]]);
+});
+
+test("fetchFigmaFile ignores invalid screenNamePattern and continues staged fetch", async () => {
+  const logs: string[] = [];
+  const requestedGeometryIds: string[][] = [];
+
+  const fetchImpl: typeof fetch = async (url) => {
+    const asString = String(url);
+    if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
+      return new Response("Request too large", { status: 413 });
+    }
+    if (asString.includes("?depth=5")) {
+      return jsonResponse(createBootstrapDocument());
+    }
+    if (asString.includes("/nodes?") && asString.includes("geometry=paths")) {
+      const decoded = decodeURIComponent(asString);
+      const idsParam = decoded.split("ids=")[1]?.split("&")[0] ?? "";
+      const ids = idsParam.split(",").filter((entry) => entry.length > 0);
+      requestedGeometryIds.push(ids);
+      return jsonResponse({
+        nodes: Object.fromEntries(
+          ids.map((id) => [
+            id,
+            {
+              document: {
+                id,
+                type: "FRAME",
+                name: `Loaded ${id}`,
+                absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 800 },
+                children: []
+              }
+            }
+          ])
+        )
+      });
+    }
+    throw new Error(`Unexpected URL: ${asString}`);
+  };
+
+  const result = await fetchFigmaFile({
+    ...createRequest(fetchImpl),
+    screenNamePattern: "(",
+    onLog: (message: string) => {
+      logs.push(message);
+    }
+  });
+
+  assert.equal(result.diagnostics.sourceMode, "staged-nodes");
+  assert.equal(result.diagnostics.fetchedNodes, 2);
+  assert.deepEqual(requestedGeometryIds, [["1:1", "1:2"]]);
+  assert.equal(logs.some((entry) => entry.includes("Invalid figmaScreenNamePattern")), true);
+});
+
+test("fetchFigmaFile uses cache for repeated direct geometry requests", async () => {
+  const cacheDir = await createTempCacheDir();
+  const logs: string[] = [];
+  let metadataRequests = 0;
+  let geometryRequests = 0;
+
+  try {
+    const fetchImpl: typeof fetch = async (url) => {
+      const asString = String(url);
+      if (asString.includes("?depth=1") && !asString.includes("/nodes?")) {
+        metadataRequests += 1;
+        return jsonResponse({
+          name: "Demo",
+          lastModified: "2026-03-16T05:00:00Z",
+          document: { id: "0:0", type: "DOCUMENT", children: [] }
+        });
+      }
+      if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
+        geometryRequests += 1;
+        return jsonResponse({
+          name: `Demo-${geometryRequests}`,
+          document: { id: "0:0", type: "DOCUMENT", children: [] }
+        });
+      }
+      throw new Error(`Unexpected URL: ${asString}`);
+    };
+
+    const request = {
+      ...createRequest(fetchImpl),
+      cacheEnabled: true,
+      cacheTtlMs: 60_000,
+      cacheDir,
+      onLog: (message: string) => {
+        logs.push(message);
+      }
+    };
+
+    const first = await fetchFigmaFile(request);
+    const second = await fetchFigmaFile(request);
+
+    assert.equal(first.diagnostics.sourceMode, "geometry-paths");
+    assert.equal(second.diagnostics.sourceMode, "geometry-paths");
+    assert.equal(first.file.name, "Demo-1");
+    assert.equal(second.file.name, "Demo-1");
+    assert.equal(metadataRequests, 2);
+    assert.equal(geometryRequests, 1);
+    assert.equal(logs.some((entry) => entry.includes("cache hit")), true);
+    assert.equal(logs.some((entry) => entry.includes("cache write completed")), true);
+  } finally {
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test("fetchFigmaFile bypasses cache when metadata lastModified changes", async () => {
+  const cacheDir = await createTempCacheDir();
+  let metadataRequests = 0;
+  let geometryRequests = 0;
+
+  try {
+    const fetchImpl: typeof fetch = async (url) => {
+      const asString = String(url);
+      if (asString.includes("?depth=1") && !asString.includes("/nodes?")) {
+        metadataRequests += 1;
+        return jsonResponse({
+          name: "Demo",
+          lastModified: metadataRequests === 1 ? "2026-03-16T05:10:00Z" : "2026-03-16T05:11:00Z",
+          document: { id: "0:0", type: "DOCUMENT", children: [] }
+        });
+      }
+      if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
+        geometryRequests += 1;
+        return jsonResponse({
+          name: `Demo-${geometryRequests}`,
+          document: { id: "0:0", type: "DOCUMENT", children: [] }
+        });
+      }
+      throw new Error(`Unexpected URL: ${asString}`);
+    };
+
+    const request = {
+      ...createRequest(fetchImpl),
+      cacheEnabled: true,
+      cacheTtlMs: 60_000,
+      cacheDir
+    };
+
+    const first = await fetchFigmaFile(request);
+    const second = await fetchFigmaFile(request);
+    assert.equal(first.file.name, "Demo-1");
+    assert.equal(second.file.name, "Demo-2");
+    assert.equal(geometryRequests, 2);
+  } finally {
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test("fetchFigmaFile invalidates stale cache entries based on TTL", async () => {
+  const cacheDir = await createTempCacheDir();
+  const logs: string[] = [];
+  let geometryRequests = 0;
+
+  try {
+    const fetchImpl: typeof fetch = async (url) => {
+      const asString = String(url);
+      if (asString.includes("?depth=1") && !asString.includes("/nodes?")) {
+        return jsonResponse({
+          name: "Demo",
+          lastModified: "2026-03-16T05:20:00Z",
+          document: { id: "0:0", type: "DOCUMENT", children: [] }
+        });
+      }
+      if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
+        geometryRequests += 1;
+        return jsonResponse({
+          name: `Demo-${geometryRequests}`,
+          document: { id: "0:0", type: "DOCUMENT", children: [] }
+        });
+      }
+      throw new Error(`Unexpected URL: ${asString}`);
+    };
+
+    const request = {
+      ...createRequest(fetchImpl),
+      cacheEnabled: true,
+      cacheTtlMs: 5,
+      cacheDir,
+      onLog: (message: string) => {
+        logs.push(message);
+      }
+    };
+
+    await fetchFigmaFile(request);
+    await new Promise((resolve) => {
+      setTimeout(resolve, 20);
+    });
+    await fetchFigmaFile(request);
+
+    assert.equal(geometryRequests, 2);
+    assert.equal(logs.some((entry) => entry.includes("cache stale")), true);
+  } finally {
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test("fetchFigmaFile skips metadata/cache IO when cache is disabled", async () => {
+  const cacheDir = await createTempCacheDir();
+  let metadataRequests = 0;
+  let geometryRequests = 0;
+
+  try {
+    const fetchImpl: typeof fetch = async (url) => {
+      const asString = String(url);
+      if (asString.includes("?depth=1") && !asString.includes("/nodes?")) {
+        metadataRequests += 1;
+        throw new Error("Metadata endpoint must not be called when cache is disabled.");
+      }
+      if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
+        geometryRequests += 1;
+        return jsonResponse({
+          name: `Demo-${geometryRequests}`,
+          document: { id: "0:0", type: "DOCUMENT", children: [] }
+        });
+      }
+      throw new Error(`Unexpected URL: ${asString}`);
+    };
+
+    await fetchFigmaFile({
+      ...createRequest(fetchImpl),
+      cacheEnabled: false,
+      cacheDir
+    });
+    await fetchFigmaFile({
+      ...createRequest(fetchImpl),
+      cacheEnabled: false,
+      cacheDir
+    });
+
+    assert.equal(metadataRequests, 0);
+    assert.equal(geometryRequests, 2);
+  } finally {
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test("fetchFigmaFile falls back to fresh fetch when metadata request fails", async () => {
+  const cacheDir = await createTempCacheDir();
+  let metadataRequests = 0;
+  let geometryRequests = 0;
+
+  try {
+    const fetchImpl: typeof fetch = async (url) => {
+      const asString = String(url);
+      if (asString.includes("?depth=1") && !asString.includes("/nodes?")) {
+        metadataRequests += 1;
+        return new Response("metadata failure", { status: 500 });
+      }
+      if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
+        geometryRequests += 1;
+        return jsonResponse({
+          name: "Demo",
+          document: { id: "0:0", type: "DOCUMENT", children: [] }
+        });
+      }
+      throw new Error(`Unexpected URL: ${asString}`);
+    };
+
+    const result = await fetchFigmaFile({
+      ...createRequest(fetchImpl),
+      cacheEnabled: true,
+      cacheDir
+    });
+
+    assert.equal(result.diagnostics.sourceMode, "geometry-paths");
+    assert.equal(metadataRequests >= 1, true);
+    assert.equal(geometryRequests, 1);
+  } finally {
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test("fetchFigmaFile treats metadata without lastModified as a cache miss and falls back to a fresh fetch", async () => {
+  const cacheDir = await createTempCacheDir();
+  const logs: string[] = [];
+  let geometryRequests = 0;
+
+  try {
+    const result = await fetchFigmaFile({
+      ...createRequest(async (url) => {
+        const asString = String(url);
+        if (asString.includes("?depth=1") && !asString.includes("/nodes?")) {
+          return jsonResponse({
+            name: "Demo",
+            document: { id: "0:0", type: "DOCUMENT", children: [] }
+          });
+        }
+        if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
+          geometryRequests += 1;
+          return jsonResponse({
+            name: "Fresh Demo",
+            document: { id: "0:0", type: "DOCUMENT", children: [] }
+          });
+        }
+        throw new Error(`Unexpected URL: ${asString}`);
+      }),
+      cacheEnabled: true,
+      cacheDir,
+      onLog: (message) => {
+        logs.push(message);
+      }
+    });
+
+    assert.equal(result.file.name, "Fresh Demo");
+    assert.equal(result.diagnostics.sourceMode, "geometry-paths");
+    assert.equal(geometryRequests, 1);
+    assert.equal(
+      logs.some((entry) => entry.includes("missing lastModified metadata")),
+      true
+    );
+  } finally {
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test("fetchFigmaFile ignores cached entries with malformed low-fidelity diagnostics", async () => {
+  const cacheDir = await createTempCacheDir();
+  const cachePath = toCacheFilePath({
+    cacheDir,
+    fileKey: "abc",
+    lastModified: "2026-03-16T13:00:00Z"
+  });
+  const latestIndexPath = toLatestIndexPath({ cacheDir, fileKey: "abc" });
+  let geometryRequests = 0;
+
+  try {
+    await writeFile(
+      cachePath,
+      `${JSON.stringify(
+        {
+          version: 1,
+          fileKey: "abc",
+          lastModified: "2026-03-16T13:00:00Z",
+          cachedAt: Date.now(),
+          ttlMs: 60_000,
+          diagnostics: {
+            sourceMode: "geometry-paths",
+            fetchedNodes: 0,
+            degradedGeometryNodes: [],
+            lowFidelityReasons: ["valid", 42]
+          },
+          file: {
+            name: "Cached Demo",
+            document: { id: "0:0", type: "DOCUMENT", children: [] }
+          }
+        },
+        null,
+        2
+      )}\n`,
+      "utf8"
+    );
+    await writeFile(
+      latestIndexPath,
+      `${JSON.stringify(
+        {
+          version: 1,
+          fileKey: "abc",
+          lastModified: "2026-03-16T13:00:00Z",
+          updatedAt: Date.now()
+        },
+        null,
+        2
+      )}\n`,
+      "utf8"
+    );
+
+    const result = await fetchFigmaFile({
+      ...createRequest(async (url) => {
+        const asString = String(url);
+        if (asString.includes("?depth=1") && !asString.includes("/nodes?")) {
+          return jsonResponse({
+            name: "Demo",
+            lastModified: "2026-03-16T13:00:00Z",
+            document: { id: "0:0", type: "DOCUMENT", children: [] }
+          });
+        }
+        if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
+          geometryRequests += 1;
+          return jsonResponse({
+            name: "Fresh Demo",
+            document: { id: "0:0", type: "DOCUMENT", children: [] }
+          });
+        }
+        throw new Error(`Unexpected URL: ${asString}`);
+      }),
+      cacheEnabled: true,
+      cacheDir
+    });
+
+    assert.equal(result.file.name, "Fresh Demo");
+    assert.equal(geometryRequests, 1);
+  } finally {
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test("fetchFigmaFile ignores cached entries with malformed subtree hash records", async () => {
+  const cacheDir = await createTempCacheDir();
+  const cachePath = toCacheFilePath({
+    cacheDir,
+    fileKey: "abc",
+    lastModified: "2026-03-16T13:10:00Z"
+  });
+  const latestIndexPath = toLatestIndexPath({ cacheDir, fileKey: "abc" });
+  let geometryRequests = 0;
+
+  try {
+    await writeFile(
+      cachePath,
+      `${JSON.stringify(
+        {
+          version: 1,
+          fileKey: "abc",
+          lastModified: "2026-03-16T13:10:00Z",
+          cachedAt: Date.now(),
+          ttlMs: 60_000,
+          fileVersionId: "v1",
+          candidateSubtreeHashes: {
+            "1:1": 10
+          },
+          diagnostics: {
+            sourceMode: "staged-nodes",
+            fetchedNodes: 1,
+            degradedGeometryNodes: []
+          },
+          file: createBootstrapDocument()
+        },
+        null,
+        2
+      )}\n`,
+      "utf8"
+    );
+    await writeFile(
+      latestIndexPath,
+      `${JSON.stringify(
+        {
+          version: 1,
+          fileKey: "abc",
+          lastModified: "2026-03-16T13:10:00Z",
+          updatedAt: Date.now()
+        },
+        null,
+        2
+      )}\n`,
+      "utf8"
+    );
+
+    const result = await fetchFigmaFile({
+      ...createRequest(async (url) => {
+        const asString = String(url);
+        if (asString.includes("?depth=1") && !asString.includes("/nodes?")) {
+          return jsonResponse({
+            name: "Demo",
+            lastModified: "2026-03-16T13:10:00Z",
+            document: { id: "0:0", type: "DOCUMENT", children: [] }
+          });
+        }
+        if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
+          geometryRequests += 1;
+          return jsonResponse({
+            name: "Fresh Demo",
+            document: { id: "0:0", type: "DOCUMENT", children: [] }
+          });
+        }
+        throw new Error(`Unexpected URL: ${asString}`);
+      }),
+      cacheEnabled: true,
+      cacheDir
+    });
+
+    assert.equal(result.file.name, "Fresh Demo");
+    assert.equal(geometryRequests, 1);
+  } finally {
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test("fetchFigmaFile classifies non-retryable unknown HTTP responses deterministically", async () => {
+  await assert.rejects(
+    async () => {
+      await fetchFigmaFile(
+        createRequest(async () => {
+          return new Response("teapot", { status: 418 });
+        })
+      );
+    },
+    (error: unknown) => {
+      return (error as { code?: string }).code === "E_FIGMA_HTTP";
+    }
+  );
+});
+
+test("fetchFigmaFile retries rate-limited responses before succeeding", async () => {
+  const logs: string[] = [];
+  let callCount = 0;
+
+  const result = await fetchFigmaFile({
+    ...createRequest(async () => {
+      callCount += 1;
+      if (callCount === 1) {
+        return new Response("slow down", { status: 429 });
+      }
+      return jsonResponse({
+        name: "Recovered",
+        document: { id: "0:0", type: "DOCUMENT", children: [] }
+      });
+    }),
+    onLog: (message) => {
+      logs.push(message);
+    }
+  });
+
+  assert.equal(result.file.name, "Recovered");
+  assert.equal(callCount, 2);
+  assert.equal(logs.some((entry) => entry.includes("responded 429")), true);
+});
+
+test("fetchFigmaFile reuses cached staged result on repeated runs", async () => {
+  const cacheDir = await createTempCacheDir();
+  const logs: string[] = [];
+  let metadataRequests = 0;
+  let directGeometryRequests = 0;
+  let versionsRequests = 0;
+  let bootstrapRequests = 0;
+  let nodeRequests = 0;
+
+  try {
+    const fetchImpl: typeof fetch = async (url) => {
+      const asString = String(url);
+      if (asString.includes("?depth=1") && !asString.includes("/nodes?")) {
+        metadataRequests += 1;
+        return jsonResponse({
+          name: "Demo",
+          lastModified: "2026-03-16T05:30:00Z",
+          document: { id: "0:0", type: "DOCUMENT", children: [] }
+        });
+      }
+      if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
+        directGeometryRequests += 1;
+        return new Response("Request too large", { status: 413 });
+      }
+      if (asString.includes("/versions?page_size=1")) {
+        versionsRequests += 1;
+        return jsonResponse({
+          versions: [{ id: "2331244008983733558" }]
+        });
+      }
+      if (asString.includes("?depth=5")) {
+        bootstrapRequests += 1;
+        return jsonResponse(createBootstrapDocument());
+      }
+      if (asString.includes("/nodes?") && asString.includes("geometry=paths")) {
+        nodeRequests += 1;
+        return jsonResponse({
+          nodes: {
+            "1:1": {
+              document: {
+                id: "1:1",
+                type: "FRAME",
+                name: "Loaded Screen A",
+                absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 800 },
+                children: []
+              }
+            },
+            "1:2": {
+              document: {
+                id: "1:2",
+                type: "FRAME",
+                name: "Loaded Screen B",
+                absoluteBoundingBox: { x: 420, y: 0, width: 400, height: 800 },
+                children: []
+              }
+            }
+          }
+        });
+      }
+      throw new Error(`Unexpected URL: ${asString}`);
+    };
+
+    const request = {
+      ...createRequest(fetchImpl),
+      cacheEnabled: true,
+      cacheTtlMs: 60_000,
+      cacheDir,
+      onLog: (message: string) => {
+        logs.push(message);
+      }
+    };
+
+    const first = await fetchFigmaFile(request);
+    const second = await fetchFigmaFile(request);
+
+    assert.equal(first.diagnostics.sourceMode, "staged-nodes");
+    assert.equal(second.diagnostics.sourceMode, "staged-nodes");
+    assert.equal(first.diagnostics.fetchedNodes, 2);
+    assert.equal(second.diagnostics.fetchedNodes, 2);
+    assert.equal(metadataRequests, 2);
+    assert.equal(directGeometryRequests, 1);
+    assert.equal(versionsRequests, 1);
+    assert.equal(bootstrapRequests, 1);
+    assert.equal(nodeRequests, 1);
+    assert.equal(logs.some((entry) => entry.includes("cache hit")), true);
+  } finally {
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test("fetchFigmaFile logs when the latest cache index is missing and incremental fetch is skipped", async () => {
+  const cacheDir = await createTempCacheDir();
+  const logs: string[] = [];
+
+  try {
+    const fetchImpl: typeof fetch = async (url) => {
+      const asString = String(url);
+      if (asString.includes("?depth=1") && !asString.includes("/nodes?")) {
+        return jsonResponse({
+          name: "Demo",
+          lastModified: "2026-03-16T05:30:00Z",
+          document: { id: "0:0", type: "DOCUMENT", children: [] }
+        });
+      }
+      if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
+        return new Response("Request too large", { status: 413 });
+      }
+      if (asString.includes("/versions?page_size=1")) {
+        return jsonResponse({
+          versions: [{ id: "2331244008983733558" }]
+        });
+      }
+      if (asString.includes("?depth=5")) {
+        return jsonResponse(createBootstrapDocument());
+      }
+      if (asString.includes("/nodes?")) {
+        return jsonResponse({
+          nodes: {
+            "1:1": {
+              document: {
+                id: "1:1",
+                type: "FRAME",
+                name: "Loaded Screen A",
+                absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 800 },
+                children: []
+              }
+            },
+            "1:2": {
+              document: {
+                id: "1:2",
+                type: "FRAME",
+                name: "Loaded Screen B",
+                absoluteBoundingBox: { x: 420, y: 0, width: 400, height: 800 },
+                children: []
+              }
+            }
+          }
+        });
+      }
+      throw new Error(`Unexpected URL: ${asString}`);
+    };
+
+    await fetchFigmaFile({
+      ...createRequest(fetchImpl),
+      cacheEnabled: true,
+      cacheTtlMs: 60_000,
+      cacheDir,
+      onLog: (message) => {
+        logs.push(message);
+      }
+    });
+
+    assert.equal(logs.some((entry) => entry.includes("incremental index missing")), true);
+    assert.equal(logs.some((entry) => entry.includes("no previous cache index")), true);
+  } finally {
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test("fetchFigmaFile logs when the previous cache entry is missing and incremental fetch is skipped", async () => {
+  const cacheDir = await createTempCacheDir();
+  const fileKey = "abc";
+  const previousLastModified = "2026-03-16T05:40:00Z";
+  const latestIndexPath = path.join(
+    cacheDir,
+    `${createHash("sha256").update(fileKey).digest("hex")}.latest.json`
+  );
+  const logs: string[] = [];
+
+  try {
+    await writeFile(
+      latestIndexPath,
+      `${JSON.stringify({
+        version: 1,
+        fileKey,
+        lastModified: previousLastModified,
+        updatedAt: Date.now()
+      }, null, 2)}\n`,
+      "utf8"
+    );
+
+    const fetchImpl: typeof fetch = async (url) => {
+      const asString = String(url);
+      if (asString.includes("?depth=1") && !asString.includes("/nodes?")) {
+        return jsonResponse({
+          name: "Demo",
+          lastModified: "2026-03-16T05:41:00Z",
+          document: { id: "0:0", type: "DOCUMENT", children: [] }
+        });
+      }
+      if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
+        return new Response("Request too large", { status: 413 });
+      }
+      if (asString.includes("/versions?page_size=1")) {
+        return jsonResponse({
+          versions: [{ id: "2331244008983733558" }]
+        });
+      }
+      if (asString.includes("?depth=5")) {
+        return jsonResponse(createBootstrapDocument());
+      }
+      if (asString.includes("/nodes?")) {
+        return jsonResponse({
+          nodes: {
+            "1:1": {
+              document: {
+                id: "1:1",
+                type: "FRAME",
+                name: "Loaded Screen A",
+                absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 800 },
+                children: []
+              }
+            },
+            "1:2": {
+              document: {
+                id: "1:2",
+                type: "FRAME",
+                name: "Loaded Screen B",
+                absoluteBoundingBox: { x: 420, y: 0, width: 400, height: 800 },
+                children: []
+              }
+            }
+          }
+        });
+      }
+      throw new Error(`Unexpected URL: ${asString}`);
+    };
+
+    await fetchFigmaFile({
+      ...createRequest(fetchImpl),
+      cacheEnabled: true,
+      cacheTtlMs: 60_000,
+      cacheDir,
+      onLog: (message) => {
+        logs.push(message);
+      }
+    });
+
+    assert.equal(logs.some((entry) => entry.includes("previous cache entry missing")), true);
+    assert.equal(logs.some((entry) => entry.includes("previous cache entry unavailable")), true);
+  } finally {
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test("fetchFigmaFile incrementally refetches only changed staged candidates", async () => {
+  const cacheDir = await createTempCacheDir();
+  const logs: string[] = [];
+  let metadataRequests = 0;
+  let currentLastModified = "";
+  let snapshotRequests = 0;
+  const geometryNodeUrls: string[] = [];
+
+  try {
+    const fetchImpl: typeof fetch = async (url) => {
+      const asString = String(url);
+      if (asString.includes("?depth=1") && !asString.includes("/nodes?")) {
+        metadataRequests += 1;
+        currentLastModified =
+          metadataRequests === 1 ? "2026-03-16T09:00:00Z" : "2026-03-16T09:10:00Z";
+        return jsonResponse({
+          name: "Demo",
+          lastModified: currentLastModified,
+          document: { id: "0:0", type: "DOCUMENT", children: [] }
+        });
+      }
+      if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
+        return new Response("Request too large", { status: 413 });
+      }
+      if (asString.includes("/versions?page_size=1")) {
+        return jsonResponse({
+          versions: [{ id: currentLastModified.endsWith("10:00Z") ? "v2" : "v1" }]
+        });
+      }
+      if (asString.includes("?depth=5")) {
+        return jsonResponse(createBootstrapDocument());
+      }
+      if (asString.includes("/nodes?ids=1%3A1,1%3A2") && !asString.includes("geometry=paths")) {
+        snapshotRequests += 1;
+        return jsonResponse({
+          nodes: {
+            "1:1": {
+              document: {
+                id: "1:1",
+                type: "FRAME",
+                name: currentLastModified.endsWith("10:00Z") ? "Screen A Changed" : "Screen A",
+                absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 800 },
+                children: []
+              }
+            },
+            "1:2": {
+              document: {
+                id: "1:2",
+                type: "FRAME",
+                name: "Screen B",
+                absoluteBoundingBox: { x: 420, y: 0, width: 400, height: 800 },
+                children: []
+              }
+            }
+          }
+        });
+      }
+      if (asString.includes("/nodes?") && asString.includes("geometry=paths")) {
+        geometryNodeUrls.push(asString);
+        if (asString.includes("/nodes?ids=1%3A1,1%3A2&geometry=paths")) {
+          return jsonResponse({
+            nodes: {
+              "1:1": {
+                document: {
+                  id: "1:1",
+                  type: "FRAME",
+                  name: "Loaded Screen A v1",
+                  absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 800 },
+                  children: []
+                }
+              },
+              "1:2": {
+                document: {
+                  id: "1:2",
+                  type: "FRAME",
+                  name: "Loaded Screen B v1",
+                  absoluteBoundingBox: { x: 420, y: 0, width: 400, height: 800 },
+                  children: []
+                }
+              }
+            }
+          });
+        }
+        if (asString.includes("/nodes?ids=1%3A1&geometry=paths")) {
+          return jsonResponse({
+            nodes: {
+              "1:1": {
+                document: {
+                  id: "1:1",
+                  type: "FRAME",
+                  name: "Loaded Screen A v2",
+                  absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 800 },
+                  children: []
+                }
+              }
+            }
+          });
+        }
+      }
+      throw new Error(`Unexpected URL: ${asString}`);
+    };
+
+    const request = {
+      ...createRequest(fetchImpl),
+      cacheEnabled: true,
+      cacheTtlMs: 60_000,
+      cacheDir,
+      onLog: (message: string) => {
+        logs.push(message);
+      }
+    };
+
+    const first = await fetchFigmaFile(request);
+    const second = await fetchFigmaFile(request);
+
+    assert.equal(first.diagnostics.sourceMode, "staged-nodes");
+    assert.equal(second.diagnostics.sourceMode, "staged-nodes");
+    assert.equal(first.diagnostics.fetchedNodes, 2);
+    assert.equal(second.diagnostics.fetchedNodes, 1);
+    assert.equal(snapshotRequests, 1);
+    assert.equal(geometryNodeUrls.length, 2);
+    assert.equal(
+      geometryNodeUrls.some((entry) => entry.includes("/nodes?ids=1%3A1,1%3A2&geometry=paths")),
+      true
+    );
+    assert.equal(
+      geometryNodeUrls.some((entry) => entry.includes("/nodes?ids=1%3A1&geometry=paths")),
+      true
+    );
+    assert.equal(logs.some((entry) => entry.includes("incremental reuse=1, changed=1")), true);
+
+    const screenA = findNodeById(second.file.document, "1:1");
+    const screenB = findNodeById(second.file.document, "1:2");
+    assert.equal(screenA?.name, "Loaded Screen A v2");
+    assert.equal(screenB?.name, "Loaded Screen B v1");
+  } finally {
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test("fetchFigmaFile incrementally reuses all staged candidates when subtree hashes match", async () => {
+  const cacheDir = await createTempCacheDir();
+  const logs: string[] = [];
+  let metadataRequests = 0;
+  let currentLastModified = "";
+  let snapshotRequests = 0;
+  let geometryNodeRequests = 0;
+
+  try {
+    const fetchImpl: typeof fetch = async (url) => {
+      const asString = String(url);
+      if (asString.includes("?depth=1") && !asString.includes("/nodes?")) {
+        metadataRequests += 1;
+        currentLastModified =
+          metadataRequests === 1 ? "2026-03-16T10:00:00Z" : "2026-03-16T10:10:00Z";
+        return jsonResponse({
+          name: "Demo",
+          lastModified: currentLastModified,
+          document: { id: "0:0", type: "DOCUMENT", children: [] }
+        });
+      }
+      if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
+        return new Response("Request too large", { status: 413 });
+      }
+      if (asString.includes("/versions?page_size=1")) {
+        return jsonResponse({
+          versions: [{ id: currentLastModified.endsWith("10:10:00Z") ? "v2" : "v1" }]
+        });
+      }
+      if (asString.includes("?depth=5")) {
+        return jsonResponse(createBootstrapDocument());
+      }
+      if (asString.includes("/nodes?ids=1%3A1,1%3A2") && !asString.includes("geometry=paths")) {
+        snapshotRequests += 1;
+        return jsonResponse({
+          nodes: {
+            "1:1": {
+              document: {
+                id: "1:1",
+                type: "FRAME",
+                name: "Screen A",
+                absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 800 },
+                children: []
+              }
+            },
+            "1:2": {
+              document: {
+                id: "1:2",
+                type: "FRAME",
+                name: "Screen B",
+                absoluteBoundingBox: { x: 420, y: 0, width: 400, height: 800 },
+                children: []
+              }
+            }
+          }
+        });
+      }
+      if (asString.includes("/nodes?") && asString.includes("geometry=paths")) {
+        geometryNodeRequests += 1;
+        return jsonResponse({
+          nodes: {
+            "1:1": {
+              document: {
+                id: "1:1",
+                type: "FRAME",
+                name: "Loaded Screen A v1",
+                absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 800 },
+                children: []
+              }
+            },
+            "1:2": {
+              document: {
+                id: "1:2",
+                type: "FRAME",
+                name: "Loaded Screen B v1",
+                absoluteBoundingBox: { x: 420, y: 0, width: 400, height: 800 },
+                children: []
+              }
+            }
+          }
+        });
+      }
+      throw new Error(`Unexpected URL: ${asString}`);
+    };
+
+    const request = {
+      ...createRequest(fetchImpl),
+      cacheEnabled: true,
+      cacheTtlMs: 60_000,
+      cacheDir,
+      onLog: (message: string) => {
+        logs.push(message);
+      }
+    };
+
+    const first = await fetchFigmaFile(request);
+    const second = await fetchFigmaFile(request);
+    assert.equal(first.diagnostics.fetchedNodes, 2);
+    assert.equal(second.diagnostics.fetchedNodes, 0);
+    assert.equal(snapshotRequests, 1);
+    assert.equal(geometryNodeRequests, 1);
+    assert.equal(logs.some((entry) => entry.includes("incremental reuse=2, changed=0")), true);
+  } finally {
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test("fetchFigmaFile falls back to full staged fetch when versions endpoint fails", async () => {
+  const cacheDir = await createTempCacheDir();
+  const logs: string[] = [];
+  let nodeRequests = 0;
+
+  try {
+    const fetchImpl: typeof fetch = async (url) => {
+      const asString = String(url);
+      if (asString.includes("?depth=1") && !asString.includes("/nodes?")) {
+        return jsonResponse({
+          name: "Demo",
+          lastModified: "2026-03-16T11:00:00Z",
+          document: { id: "0:0", type: "DOCUMENT", children: [] }
+        });
+      }
+      if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
+        return new Response("Request too large", { status: 413 });
+      }
+      if (asString.includes("/versions?page_size=1")) {
+        return new Response("not found", { status: 404 });
+      }
+      if (asString.includes("?depth=5")) {
+        return jsonResponse(createBootstrapDocument());
+      }
+      if (asString.includes("/nodes?") && asString.includes("geometry=paths")) {
+        nodeRequests += 1;
+        return jsonResponse({
+          nodes: {
+            "1:1": {
+              document: {
+                id: "1:1",
+                type: "FRAME",
+                name: "Loaded Screen A",
+                absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 800 },
+                children: []
+              }
+            },
+            "1:2": {
+              document: {
+                id: "1:2",
+                type: "FRAME",
+                name: "Loaded Screen B",
+                absoluteBoundingBox: { x: 420, y: 0, width: 400, height: 800 },
+                children: []
+              }
+            }
+          }
+        });
+      }
+      throw new Error(`Unexpected URL: ${asString}`);
+    };
+
+    const result = await fetchFigmaFile({
+      ...createRequest(fetchImpl),
+      cacheEnabled: true,
+      cacheTtlMs: 60_000,
+      cacheDir,
+      onLog: (message: string) => {
+        logs.push(message);
+      }
+    });
+
+    assert.equal(result.diagnostics.sourceMode, "staged-nodes");
+    assert.equal(result.diagnostics.fetchedNodes, 2);
+    assert.equal(nodeRequests, 1);
+    assert.equal(logs.some((entry) => entry.includes("versions check failed")), true);
+  } finally {
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test("fetchFigmaFile treats missing previous subtree snapshot as changed candidates", async () => {
+  const cacheDir = await createTempCacheDir();
+  const logs: string[] = [];
+  let geometryNodeRequests = 0;
+
+  try {
+    const previousLastModified = "2026-03-16T12:00:00Z";
+    const previousCachePath = toCacheFilePath({
+      cacheDir,
+      fileKey: "abc",
+      lastModified: previousLastModified
+    });
+    const previousEntry = {
+      version: 1,
+      fileKey: "abc",
+      lastModified: previousLastModified,
+      cachedAt: Date.now(),
+      ttlMs: 60_000,
+      diagnostics: {
+        sourceMode: "staged-nodes",
+        fetchedNodes: 2,
+        degradedGeometryNodes: []
+      },
+      file: createBootstrapDocument()
+    };
+    await writeFile(previousCachePath, `${JSON.stringify(previousEntry, null, 2)}\n`, "utf8");
+
+    const latestIndexPath = toLatestIndexPath({ cacheDir, fileKey: "abc" });
+    await writeFile(
+      latestIndexPath,
+      `${JSON.stringify(
+        {
+          version: 1,
+          fileKey: "abc",
+          lastModified: previousLastModified,
+          updatedAt: Date.now()
+        },
+        null,
+        2
+      )}\n`,
+      "utf8"
+    );
+
+    const fetchImpl: typeof fetch = async (url) => {
+      const asString = String(url);
+      if (asString.includes("?depth=1") && !asString.includes("/nodes?")) {
+        return jsonResponse({
+          name: "Demo",
+          lastModified: "2026-03-16T12:10:00Z",
+          document: { id: "0:0", type: "DOCUMENT", children: [] }
+        });
+      }
+      if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
+        return new Response("Request too large", { status: 413 });
+      }
+      if (asString.includes("/versions?page_size=1")) {
+        return jsonResponse({
+          versions: [{ id: "v2" }]
+        });
+      }
+      if (asString.includes("?depth=5")) {
+        return jsonResponse(createBootstrapDocument());
+      }
+      if (asString.includes("/nodes?") && asString.includes("geometry=paths")) {
+        geometryNodeRequests += 1;
+        return jsonResponse({
+          nodes: {
+            "1:1": {
+              document: {
+                id: "1:1",
+                type: "FRAME",
+                name: "Loaded Screen A",
+                absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 800 },
+                children: []
+              }
+            },
+            "1:2": {
+              document: {
+                id: "1:2",
+                type: "FRAME",
+                name: "Loaded Screen B",
+                absoluteBoundingBox: { x: 420, y: 0, width: 400, height: 800 },
+                children: []
+              }
+            }
+          }
+        });
+      }
+      throw new Error(`Unexpected URL: ${asString}`);
+    };
+
+    const result = await fetchFigmaFile({
+      ...createRequest(fetchImpl),
+      cacheEnabled: true,
+      cacheTtlMs: 60_000,
+      cacheDir,
+      onLog: (message: string) => {
+        logs.push(message);
+      }
+    });
+
+    assert.equal(result.diagnostics.sourceMode, "staged-nodes");
+    assert.equal(result.diagnostics.fetchedNodes, 2);
+    assert.equal(geometryNodeRequests, 1);
+    assert.equal(logs.some((entry) => entry.includes("previous subtree hashes missing")), true);
+  } finally {
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test("fetchFigmaFile recovers icon descendant geometry after no-geometry fallback", async () => {
+  const observedUrls: string[] = [];
+  const fetchImpl: typeof fetch = async (url) => {
+    const asString = String(url);
+    observedUrls.push(asString);
+
+    if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
+      return new Response("Request too large", { status: 413 });
+    }
+    if (asString.includes("?depth=5")) {
+      return jsonResponse({
+        name: "Demo",
+        document: {
+          id: "0:0",
+          type: "DOCUMENT",
+          children: [
+            {
+              id: "0:1",
+              type: "CANVAS",
+              children: [
+                {
+                  id: "1:1",
+                  type: "FRAME",
+                  name: "Screen A",
+                  absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 800 },
+                  children: []
+                }
+              ]
+            }
+          ]
+        }
+      });
+    }
+    if (asString.includes("/nodes?ids=1%3A1&geometry=paths")) {
+      return new Response("Request too large", { status: 413 });
+    }
+    if (asString.includes("/nodes?ids=1%3A1") && !asString.includes("geometry=paths")) {
+      return jsonResponse({
+        nodes: {
+          "1:1": {
+            document: {
+              id: "1:1",
+              type: "FRAME",
+              name: "Screen A (No Geometry)",
+              absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 800 },
+              children: [
+                {
+                  id: "2:1",
+                  type: "INSTANCE",
+                  name: "ic_home",
+                  absoluteBoundingBox: { x: 4, y: 4, width: 24, height: 24 },
+                  children: []
+                },
+                {
+                  id: "2:2",
+                  type: "INSTANCE",
+                  name: "MuiSvgIconRoot",
+                  absoluteBoundingBox: { x: 32, y: 4, width: 20, height: 20 },
+                  children: []
+                },
+                {
+                  id: "2:3",
+                  type: "INSTANCE",
+                  name: "ic_too_large",
+                  absoluteBoundingBox: { x: 56, y: 4, width: 200, height: 200 },
+                  children: []
+                }
+              ]
+            }
+          }
+        }
+      });
+    }
+    if (asString.includes("/nodes?ids=2%3A1,2%3A2&geometry=paths")) {
+      return jsonResponse({
+        nodes: {
+          "2:1": {
+            document: {
+              id: "2:1",
+              type: "INSTANCE",
+              name: "ic_home",
+              vectorPaths: ["M1 1L12 12Z"],
+              children: []
+            }
+          },
+          "2:2": {
+            document: {
+              id: "2:2",
+              type: "INSTANCE",
+              name: "MuiSvgIconRoot",
+              vectorPaths: ["M0 0H10V10H0Z"],
+              children: []
+            }
+          }
+        }
+      });
+    }
+    throw new Error(`Unexpected URL: ${asString}`);
+  };
+
+  const result = await fetchFigmaFile(createRequest(fetchImpl));
+  assert.equal(result.diagnostics.sourceMode, "staged-nodes");
+  assert.equal(result.diagnostics.fetchedNodes, 3);
+  assert.deepEqual(result.diagnostics.degradedGeometryNodes, ["1:1"]);
+  assert.equal(observedUrls.some((url) => url.includes("/nodes?ids=2%3A1,2%3A2&geometry=paths")), true);
+
+  const recoveredIconA = findNodeById(result.file.document, "2:1");
+  const recoveredIconB = findNodeById(result.file.document, "2:2");
+  assert.deepEqual(recoveredIconA?.vectorPaths, ["M1 1L12 12Z"]);
+  assert.deepEqual(recoveredIconB?.vectorPaths, ["M0 0H10V10H0Z"]);
+});
+
+test("fetchFigmaFile keeps the bootstrap node when no-geometry fallback fails", async () => {
+  const logs: string[] = [];
+  let geometrySingleRequests = 0;
+
+  const result = await fetchFigmaFile({
+    ...createRequest(async (url) => {
+      const asString = String(url);
+      if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
+        return new Response("Request too large", { status: 413 });
+      }
+      if (asString.includes("?depth=5")) {
+        return jsonResponse(createBootstrapDocument());
+      }
+      if (asString.includes("/nodes?ids=1%3A1,1%3A2&geometry=paths")) {
+        return new Response("Request too large", { status: 413 });
+      }
+      if (asString.includes("/nodes?ids=1%3A1&geometry=paths")) {
+        geometrySingleRequests += 1;
+        return new Response("Request too large", { status: 413 });
+      }
+      if (asString.includes("/nodes?ids=1%3A1") && !asString.includes("geometry=paths")) {
+        return new Response("still too large", { status: 500 });
+      }
+      if (asString.includes("/nodes?ids=1%3A2&geometry=paths")) {
+        geometrySingleRequests += 1;
+        return jsonResponse({
+          nodes: {
+            "1:2": {
+              document: {
+                id: "1:2",
+                type: "FRAME",
+                name: "Loaded Screen B",
+                absoluteBoundingBox: { x: 420, y: 0, width: 400, height: 800 },
+                children: []
+              }
+            }
+          }
+        });
+      }
+      throw new Error(`Unexpected URL: ${asString}`);
+    }),
+    onLog: (message) => {
+      logs.push(message);
+    }
+  });
+
+  assert.equal(result.diagnostics.sourceMode, "staged-nodes");
+  assert.deepEqual(result.diagnostics.degradedGeometryNodes, ["1:1"]);
+  assert.equal(result.diagnostics.fetchedNodes, 1);
+  assert.equal(geometrySingleRequests, 2);
+  assert.equal(findNodeById(result.file.document, "1:1")?.name, "Screen A");
+  assert.equal(findNodeById(result.file.document, "1:2")?.name, "Loaded Screen B");
+  assert.equal(
+    logs.some((entry) => entry.includes("keeping bootstrap node")),
+    true
+  );
+});
+
+test("fetchFigmaFile falls back to a full staged fetch when an incremental snapshot singleton remains oversized", async () => {
+  const cacheDir = await createTempCacheDir();
+  const logs: string[] = [];
+  let geometryNodeRequests = 0;
+
+  try {
+    const previousLastModified = "2026-03-16T12:00:00Z";
+    const previousCachePath = toCacheFilePath({
+      cacheDir,
+      fileKey: "abc",
+      lastModified: previousLastModified
+    });
+    await writeFile(
+      previousCachePath,
+      `${JSON.stringify(
+        {
+          version: 1,
+          fileKey: "abc",
+          lastModified: previousLastModified,
+          cachedAt: Date.now(),
+          ttlMs: 60_000,
+          fileVersionId: "v1",
+          candidateSubtreeHashes: {
+            "1:1": "previous-hash"
+          },
+          diagnostics: {
+            sourceMode: "staged-nodes",
+            fetchedNodes: 1,
+            degradedGeometryNodes: []
+          },
+          file: createBootstrapDocumentWithScreens(1)
+        },
+        null,
+        2
+      )}\n`,
+      "utf8"
+    );
+    await writeFile(
+      toLatestIndexPath({ cacheDir, fileKey: "abc" }),
+      `${JSON.stringify(
+        {
+          version: 1,
+          fileKey: "abc",
+          lastModified: previousLastModified,
+          updatedAt: Date.now()
+        },
+        null,
+        2
+      )}\n`,
+      "utf8"
+    );
+
+    const result = await fetchFigmaFile({
+      ...createRequest(async (url) => {
+        const asString = String(url);
+        if (asString.includes("?depth=1") && !asString.includes("/nodes?")) {
+          return jsonResponse({
+            name: "Demo",
+            lastModified: "2026-03-16T12:10:00Z",
+            document: { id: "0:0", type: "DOCUMENT", children: [] }
+          });
+        }
+        if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
+          return new Response("Request too large", { status: 413 });
+        }
+        if (asString.includes("/versions?page_size=1")) {
+          return jsonResponse({
+            versions: [{ id: "v2" }]
+          });
+        }
+        if (asString.includes("?depth=5")) {
+          return jsonResponse(createBootstrapDocumentWithScreens(1));
+        }
+        if (asString.includes("/nodes?ids=1%3A1") && !asString.includes("geometry=paths")) {
+          return new Response("Request too large", { status: 413 });
+        }
+        if (asString.includes("/nodes?ids=1%3A1&geometry=paths")) {
+          geometryNodeRequests += 1;
+          return jsonResponse({
+            nodes: {
+              "1:1": {
+                document: {
+                  id: "1:1",
+                  type: "FRAME",
+                  name: "Loaded Screen A",
+                  absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 800 },
+                  children: []
+                }
+              }
+            }
+          });
+        }
+        throw new Error(`Unexpected URL: ${asString}`);
+      }),
+      cacheEnabled: true,
+      cacheTtlMs: 60_000,
+      cacheDir,
+      nodeBatchSize: 1,
+      nodeFetchConcurrency: 1,
+      onLog: (message) => {
+        logs.push(message);
+      }
+    });
+
+    assert.equal(result.diagnostics.sourceMode, "staged-nodes");
+    assert.equal(result.diagnostics.fetchedNodes, 1);
+    assert.equal(geometryNodeRequests, 1);
+    assert.equal(
+      logs.some((entry) => entry.includes("Incremental snapshot fetch too large for node '1:1'.")),
+      true
+    );
+    assert.equal(
+      logs.some((entry) => entry.includes("Fetching all candidate nodes with geometry")),
+      true
+    );
+  } finally {
+    await rm(cacheDir, { recursive: true, force: true });
+  }
 });
 
 test("fetchFigmaFile classifies http failures and parse errors", async () => {
   await assert.rejects(
     () =>
-      fetchFigmaFile({
-        fileKey: "abc",
-        accessToken: "token",
-        timeoutMs: 1000,
-        maxRetries: 1,
-        fetchImpl: async () => new Response("not found", { status: 404 }),
-        onLog: () => {
-          // no-op
-        }
-      }),
+      fetchFigmaFile(
+        createRequest(async () => {
+          return new Response("not found", { status: 404 });
+        })
+      ),
     (error: unknown) => (error as { code?: string }).code === "E_FIGMA_NOT_FOUND"
   );
 
   await assert.rejects(
     () =>
-      fetchFigmaFile({
-        fileKey: "abc",
-        accessToken: "token",
-        timeoutMs: 1000,
-        maxRetries: 1,
-        fetchImpl: async () => jsonResponse(["not-an-object"]),
-        onLog: () => {
-          // no-op
-        }
-      }),
+      fetchFigmaFile(
+        createRequest(async () => {
+          return jsonResponse(["not-an-object"]);
+        })
+      ),
     (error: unknown) => (error as { code?: string }).code === "E_FIGMA_PARSE"
+  );
+});
+
+test("fetchFigmaFile returns path-aware schema validation errors for malformed payloads", async () => {
+  await assert.rejects(
+    () =>
+      fetchFigmaFile(
+        createRequest(async () => {
+          return jsonResponse({
+            name: "Malformed",
+            document: {
+              id: "0:0",
+              type: "DOCUMENT",
+              children: [
+                {
+                  type: "CANVAS",
+                  children: []
+                }
+              ]
+            }
+          });
+        })
+      ),
+    (error: unknown) => {
+      const candidate = error as { code?: string; message?: string };
+      return candidate.code === "E_FIGMA_PARSE" && (candidate.message?.includes("document.children[0].id") ?? false);
+    }
+  );
+});
+
+test("fetchFigmaFile opens the circuit after repeated transient failures and then fails fast", async () => {
+  let fetchCalls = 0;
+  const breaker = createBreaker({
+    failureThreshold: 2,
+    resetTimeoutMs: 30_000
+  });
+  const request = {
+    ...createRequest({
+      fetchImpl: async () => {
+        fetchCalls += 1;
+        throw new Error("network down");
+      },
+      figmaRestCircuitBreaker: breaker
+    }),
+    maxRetries: 1
+  };
+
+  await assert.rejects(
+    () => fetchFigmaFile(request),
+    (error: unknown) => (error as { code?: string }).code === "E_FIGMA_NETWORK"
+  );
+  await assert.rejects(
+    () => fetchFigmaFile(request),
+    (error: unknown) => (error as { code?: string }).code === "E_FIGMA_NETWORK"
+  );
+
+  const callsBeforeCircuitOpen = fetchCalls;
+  await assert.rejects(
+    () => fetchFigmaFile(request),
+    (error: unknown) => {
+      const candidate = error as {
+        code?: string;
+        diagnostics?: Array<{ details?: Record<string, unknown> }>;
+      };
+      return (
+        candidate.code === "E_FIGMA_CIRCUIT_OPEN" &&
+        candidate.diagnostics?.[0]?.details?.circuitState === "open" &&
+        candidate.diagnostics?.[0]?.details?.consecutiveFailures === 2
+      );
+    }
+  );
+
+  assert.equal(fetchCalls, callsBeforeCircuitOpen);
+});
+
+test("fetchFigmaFile allows one half-open probe and closes the circuit after probe success", async () => {
+  let nowMs = 1_000;
+  let fetchCalls = 0;
+  let releaseProbe: (() => void) | undefined;
+  const breaker = createBreaker({
+    failureThreshold: 1,
+    resetTimeoutMs: 5_000,
+    clock: {
+      now: () => nowMs
+    }
+  });
+  const request = {
+    ...createRequest({
+      fetchImpl: async () => {
+        fetchCalls += 1;
+        if (fetchCalls === 1) {
+          throw new Error("network down");
+        }
+        if (fetchCalls === 2) {
+          return await new Promise<Response>((resolve) => {
+            releaseProbe = () => {
+              resolve(jsonResponse({ name: "Probe Recovery", document: { id: "0:0", type: "DOCUMENT", children: [] } }));
+            };
+          });
+        }
+        return jsonResponse({ name: "Steady State", document: { id: "0:0", type: "DOCUMENT", children: [] } });
+      },
+      figmaRestCircuitBreaker: breaker
+    }),
+    maxRetries: 1
+  };
+
+  await assert.rejects(
+    () => fetchFigmaFile(request),
+    (error: unknown) => (error as { code?: string }).code === "E_FIGMA_NETWORK"
+  );
+
+  nowMs += 5_000;
+  const probePromise = fetchFigmaFile(request);
+  await assert.rejects(
+    () => fetchFigmaFile(request),
+    (error: unknown) => {
+      const candidate = error as {
+        code?: string;
+        diagnostics?: Array<{ details?: Record<string, unknown> }>;
+      };
+      return (
+        candidate.code === "E_FIGMA_CIRCUIT_OPEN" &&
+        candidate.diagnostics?.[0]?.details?.circuitState === "half-open" &&
+        candidate.diagnostics?.[0]?.details?.probeInFlight === true
+      );
+    }
+  );
+
+  assert.equal(fetchCalls, 2);
+  releaseProbe?.();
+  const probeResult = await probePromise;
+  assert.equal(probeResult.file.name, "Probe Recovery");
+
+  const steadyStateResult = await fetchFigmaFile(request);
+  assert.equal(steadyStateResult.file.name, "Steady State");
+  assert.equal(fetchCalls, 3);
+});
+
+test("fetchFigmaFile allows exactly one half-open probe across concurrent callers", async () => {
+  let nowMs = 1_000;
+  let fetchCalls = 0;
+  let releaseProbe: (() => void) | undefined;
+  const breaker = createBreaker({
+    failureThreshold: 1,
+    resetTimeoutMs: 5_000,
+    clock: {
+      now: () => nowMs
+    }
+  });
+  const request = {
+    ...createRequest({
+      fetchImpl: async () => {
+        fetchCalls += 1;
+        if (fetchCalls === 1) {
+          throw new Error("network down");
+        }
+        if (fetchCalls === 2) {
+          return await new Promise<Response>((resolve) => {
+            releaseProbe = () => {
+              resolve(jsonResponse({ name: "Probe Recovery", document: { id: "0:0", type: "DOCUMENT", children: [] } }));
+            };
+          });
+        }
+        return jsonResponse({ name: `unexpected-${fetchCalls}`, document: { id: "0:0", type: "DOCUMENT", children: [] } });
+      },
+      figmaRestCircuitBreaker: breaker
+    }),
+    maxRetries: 1
+  };
+
+  await assert.rejects(
+    () => fetchFigmaFile(request),
+    (error: unknown) => (error as { code?: string }).code === "E_FIGMA_NETWORK"
+  );
+
+  nowMs += 5_000;
+  const requests = Array.from({ length: 20 }, () => Promise.resolve().then(() => fetchFigmaFile(request)));
+  const resultsPromise = Promise.allSettled(requests);
+
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(fetchCalls, 2);
+
+  releaseProbe?.();
+  const results = await resultsPromise;
+  const fulfilled = results.filter((result) => result.status === "fulfilled");
+  const rejected = results.filter((result) => result.status === "rejected");
+
+  assert.equal(fulfilled.length, 1);
+  assert.equal(rejected.length, 19);
+  assert.equal(fetchCalls, 2);
+  assert.equal(fulfilled[0]?.status, "fulfilled");
+  if (fulfilled[0]?.status === "fulfilled") {
+    assert.equal(fulfilled[0].value.file.name, "Probe Recovery");
+  }
+
+  assert.equal(
+    rejected.every((result) => {
+      if (result.status !== "rejected") {
+        return false;
+      }
+      const candidate = result.reason as {
+        code?: string;
+        diagnostics?: Array<{ details?: Record<string, unknown> }>;
+      };
+      return (
+        candidate.code === "E_FIGMA_CIRCUIT_OPEN" &&
+        candidate.diagnostics?.[0]?.details?.circuitState === "half-open" &&
+        candidate.diagnostics?.[0]?.details?.probeInFlight === true
+      );
+    }),
+    true
   );
 });

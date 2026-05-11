@@ -1,0 +1,131 @@
+{
+  "source": {
+    "kind": "figma_local_json"
+  },
+  "screens": [
+    {
+      "screenId": "s-sfcr",
+      "screenName": "VAG SFCR Narrative",
+      "screenPath": "/regulatory/vag/sfcr/narrative",
+      "nodes": [
+        {
+          "nodeId": "n-undertaking-lei",
+          "nodeName": "Undertaking LEI",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "undertaking/lei",
+          "text": "Undertaking LEI",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Length 20",
+            "LEI-checksum"
+          ]
+        },
+        {
+          "nodeId": "n-period",
+          "nodeName": "Berichtsperiode (Jahr)",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "report/year",
+          "text": "Berichtsperiode (Jahr)",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Numeric",
+            "Min 2016",
+            "Max 2099"
+          ]
+        },
+        {
+          "nodeId": "n-scr",
+          "nodeName": "SCR (EUR)",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "report/scr",
+          "text": "SCR (EUR)",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Numeric",
+            "Min 0"
+          ]
+        },
+        {
+          "nodeId": "n-mcr",
+          "nodeName": "MCR (EUR)",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "report/mcr",
+          "text": "MCR (EUR)",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Numeric",
+            "Min 0",
+            "Max <= scr"
+          ]
+        },
+        {
+          "nodeId": "n-narrative-cap",
+          "nodeName": "Kapitaltext",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "report/narrative/capital",
+          "text": "Kapitaltext",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Min 200 characters",
+            "Max 5000 characters"
+          ]
+        },
+        {
+          "nodeId": "n-internal-model",
+          "nodeName": "Internes Modell verwendet",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "report/internal-model",
+          "text": "Internes Modell verwendet",
+          "childNodeIds": [],
+          "defaultValue": "No",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-internal-model-ref",
+          "nodeName": "Genehmigungsreferenz internes Modell",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "report/internal-model-ref",
+          "text": "Genehmigungsreferenz internes Modell",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required if internal-model is Yes",
+            "Format BAFIN-IM-#######"
+          ]
+        },
+        {
+          "nodeId": "n-mgmt-attest",
+          "nodeName": "Vorstands-Attestation",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "compliance/management-attestation",
+          "text": "Vorstands-Attestation",
+          "childNodeIds": [],
+          "defaultValue": "No",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-submit",
+          "nodeName": "SFCR-Abschnitt einreichen",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/submit",
+          "text": "SFCR-Abschnitt einreichen",
+          "childNodeIds": []
+        }
+      ]
+    }
+  ]
+}

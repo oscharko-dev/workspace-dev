@@ -1,0 +1,126 @@
+{
+  "source": {
+    "kind": "figma_local_json"
+  },
+  "screens": [
+    {
+      "screenId": "s-a11y-credit",
+      "screenName": "Konsumentenkredit (Accessibility-Variante, High Contrast)",
+      "screenPath": "/banking/credit/consumer/a11y-variant",
+      "nodes": [
+        {
+          "nodeId": "n-amount",
+          "nodeName": "Kreditbetrag",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "loan/principal",
+          "text": "Kreditbetrag in EUR (Pflichtfeld, akzeptabler Bereich 1000 bis 50000, Tab-Index 1, Screen-Reader-Label kongruent zu sichtbarem Label)",
+          "defaultValue": "",
+          "validations": ["Required", "Numeric in range 1000..50000"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-term",
+          "nodeName": "Laufzeit",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "loan/term-months",
+          "text": "Laufzeit in Monaten (Pflichtfeld, Bereich 12 bis 84, Tab-Index 2)",
+          "defaultValue": "",
+          "validations": ["Required", "Integer in range 12..84"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-purpose",
+          "nodeName": "Verwendungszweck",
+          "nodeType": "SELECT_FIELD",
+          "nodePath": "loan/purpose",
+          "text": "Verwendungszweck (Pflichtfeld, Tab-Index 3, Optionen werden im aria-listbox angekuendigt)",
+          "defaultValue": "Auto",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-net-income",
+          "nodeName": "Nettoeinkommen",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "applicant/income/monthly-net",
+          "text": "Monatliches Nettoeinkommen in EUR (Pflichtfeld, Tab-Index 4)",
+          "defaultValue": "",
+          "validations": ["Required", "Numeric > 0"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-housing",
+          "nodeName": "Wohnkosten",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "applicant/expenses/housing",
+          "text": "Monatliche Wohnkosten in EUR (Pflichtfeld, Tab-Index 5)",
+          "defaultValue": "",
+          "validations": ["Required", "Numeric >= 0"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-schufa",
+          "nodeName": "SCHUFA-Einwilligung",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "compliance/schufa-consent",
+          "text": "SCHUFA-Einwilligung (Pflichtfeld, Tab-Index 6, Screen-Reader-Label: Bonitaetsanfrage erlauben)",
+          "defaultValue": "No",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-installment",
+          "nodeName": "Monatliche Rate",
+          "nodeType": "RESULT_DISPLAY",
+          "nodePath": "loan/quote/monthly-installment",
+          "text": "Monatliche Rate in EUR (live aktualisiert, aria-live=polite Region, von Screen-Reader bei jeder Aenderung angekuendigt)",
+          "defaultValue": "",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-error-summary",
+          "nodeName": "Fehlerzusammenfassung",
+          "nodeType": "INFORMATIVE_LABEL",
+          "nodePath": "a11y/error-summary",
+          "text": "Fehlerzusammenfassung (aria-live=assertive; Fokus springt nach fehlgeschlagenem Submit auf das erste Fehlerfeld, Reihenfolge folgt visueller DOM-Reihenfolge)",
+          "defaultValue": "",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-keyboard-hint",
+          "nodeName": "Tastaturhinweis",
+          "nodeType": "INFORMATIVE_LABEL",
+          "nodePath": "a11y/keyboard-hint",
+          "text": "Tastaturhinweis: Tab vor, Shift+Tab zurueck, Enter zum Absenden, Escape zum Abbrechen; alle Aktionen sind ohne Maus erreichbar",
+          "defaultValue": "",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-contrast-disclaimer",
+          "nodeName": "Kontrast-Hinweis",
+          "nodeType": "INFORMATIVE_LABEL",
+          "nodePath": "a11y/contrast",
+          "text": "High-Contrast-Theme aktiv: Hintergrund-zu-Text-Kontrast mindestens 7-zu-1 (WCAG AAA), Mindestschriftgroesse 16 px, Fokus-Outline 3 px",
+          "defaultValue": "",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-submit",
+          "nodeName": "Antrag absenden",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/submit",
+          "text": "Antrag absenden (Tab-Index 99)",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-cancel",
+          "nodeName": "Abbrechen",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/cancel",
+          "text": "Abbrechen (Tab-Index 100)",
+          "childNodeIds": []
+        }
+      ]
+    }
+  ]
+}

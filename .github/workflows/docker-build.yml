@@ -1,0 +1,132 @@
+name: Docker build
+
+on:
+  pull_request:
+    branches: [dev]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/dev' }}
+
+permissions:
+  contents: read
+
+jobs:
+  docker-build:
+    name: Build and smoke test image
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+
+      - name: Build image
+        run: docker build --pull -t workspace-dev:test .
+
+      - name: Validate compose model
+        run: docker compose config
+
+      - name: Verify entrypoint
+        run: docker run --rm workspace-dev:test --help
+
+      - name: Smoke test local_json job
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p .workspace-dev-docker-smoke
+          chmod 0777 .workspace-dev-docker-smoke
+
+          docker run --rm -d \
+            --name workspace-dev-smoke \
+            -p 127.0.0.1:21983:1983 \
+            -v "${PWD}/.workspace-dev-docker-smoke:/workspace/.workspace-dev" \
+            -v "${PWD}/src/parity/fixtures/golden/rocket/simple-auth/figma.json:/workspace/fixtures/simple-auth.json:ro" \
+            -e FIGMAPIPE_PERF_STRICT=false \
+            workspace-dev:test \
+            start \
+            --host 0.0.0.0 \
+            --port 1983 \
+            --output-root /workspace/.workspace-dev \
+            --export-images false
+
+          # shellcheck disable=SC2329  # invoked via trap below
+          cleanup() {
+            docker logs workspace-dev-smoke || true
+            docker stop workspace-dev-smoke >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          base_url="http://127.0.0.1:21983"
+          timeout_at=$((SECONDS + 60))
+
+          parse_json_field() {
+            node -e 'const fs = require("fs"); const [field] = process.argv.slice(1); const data = JSON.parse(fs.readFileSync(0, "utf8")); const value = data?.[field]; if (typeof value !== "string" || value.length === 0) process.exit(1); process.stdout.write(value);' "$1"
+          }
+
+          while (( SECONDS < timeout_at )); do
+            if curl -fsS --max-time 5 "$base_url/healthz" >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+
+          if (( SECONDS >= timeout_at )); then
+            echo "Timed out waiting for /healthz" >&2
+            exit 1
+          fi
+
+          submit_response="$(
+            curl -fsS --max-time 10 \
+              -H 'content-type: application/json' \
+              -d '{
+                "figmaSourceMode": "local_json",
+                "llmCodegenMode": "deterministic",
+                "figmaJsonPath": "/workspace/fixtures/simple-auth.json",
+                "enableGitPr": false
+              }' \
+              "$base_url/workspace/submit"
+          )"
+
+          job_id="$(printf '%s' "$submit_response" | parse_json_field jobId)"
+
+          while (( SECONDS < timeout_at )); do
+            job_response="$(curl -fsS --max-time 5 "$base_url/workspace/jobs/$job_id")"
+            job_status="$(
+              printf '%s' "$job_response" |
+                node -e 'const fs = require("fs"); const data = JSON.parse(fs.readFileSync(0, "utf8")); const status = data?.status; if (typeof status !== "string" || status.length === 0) process.exit(1); process.stdout.write(status);'
+            )"
+
+            if [[ "$job_status" == "completed" ]]; then
+              result_response="$(curl -fsS --max-time 5 "$base_url/workspace/jobs/$job_id/result")"
+              result_status="$(
+                printf '%s' "$result_response" |
+                  node -e 'const fs = require("fs"); const data = JSON.parse(fs.readFileSync(0, "utf8")); const status = data?.status; if (typeof status !== "string" || status.length === 0) process.exit(1); process.stdout.write(status);'
+              )"
+              result_outcome="$(
+                printf '%s' "$result_response" |
+                  node -e 'const fs = require("fs"); const data = JSON.parse(fs.readFileSync(0, "utf8")); const outcome = data?.outcome; if (typeof outcome !== "string" || outcome.length === 0) process.exit(1); process.stdout.write(outcome);'
+              )"
+
+              if [[ "$result_status" != "completed" || "$result_outcome" != "success" ]]; then
+                echo "Unexpected job result: $result_response" >&2
+                exit 1
+              fi
+
+              printf '{"jobId":"%s","status":"%s","outcome":"%s"}\n' "$job_id" "$result_status" "$result_outcome"
+              exit 0
+            fi
+
+            if [[ "$job_status" == "failed" || "$job_status" == "partial" || "$job_status" == "canceled" ]]; then
+              echo "Job reached terminal failure status: $job_response" >&2
+              exit 1
+            fi
+
+            sleep 1
+          done
+
+          echo "Timed out waiting for job $job_id completion" >&2
+          exit 1

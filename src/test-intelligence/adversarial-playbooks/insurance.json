@@ -1,0 +1,72 @@
+[
+  {
+    "id": "insurance-boundary-incident-date-window",
+    "category": "boundary",
+    "title": "Incident date outside reporting or coverage window",
+    "hint": "Challenge exact start/end dates and grace periods.",
+    "testDataHints": ["one day before policy start", "exact policy start", "one day after reporting deadline"]
+  },
+  {
+    "id": "insurance-state-multi-claim-reentry",
+    "category": "state_violation",
+    "title": "Re-entered claim creates inconsistent state",
+    "hint": "Attack reopening, duplicate submission, and partial-save recovery.",
+    "testDataHints": ["claim reopened after draft save", "same claim submitted twice"]
+  },
+  {
+    "id": "insurance-regulatory-sensitive-medical-data",
+    "category": "regulatory_evasion",
+    "title": "Sensitive data shown or handled without appropriate review",
+    "hint": "Challenge medical, disability, or identity data exposure in summaries and confirmations.",
+    "testDataHints": ["diagnosis text", "medical attachment summary", "identity document reference"]
+  },
+  {
+    "id": "insurance-rounding-loss-amount",
+    "category": "rounding_exploit",
+    "title": "Loss amount rounding changes payout logic",
+    "hint": "Look for threshold-sensitive decimals and locale-specific formatting.",
+    "testDataHints": ["999,99", "1000,00", "1000,01"]
+  },
+  {
+    "id": "insurance-access-control-policy-mismatch",
+    "category": "access_control",
+    "title": "Claim references a policy that belongs to another customer",
+    "hint": "Challenge policy-number and claimant identity linkage.",
+    "testDataHints": ["policy number for customer A", "claimant details for customer B"]
+  },
+  {
+    "id": "insurance-workflow-bypass-document-review",
+    "category": "workflow_bypass",
+    "title": "Document review or declaration step bypass",
+    "hint": "Try to proceed without mandatory declarations or attachments being validated.",
+    "testDataHints": ["submit without attachment", "skip declaration checkbox"]
+  },
+  {
+    "id": "insurance-negative-inconsistent-incident-facts",
+    "category": "negative_path",
+    "title": "Incident facts conflict across related fields",
+    "hint": "Challenge impossible combinations that should force clarification.",
+    "testDataHints": ["future incident date with closed claim", "loss amount without incident description"]
+  },
+  {
+    "id": "insurance-validation-cross-field-contact-gap",
+    "category": "state_violation",
+    "title": "Required follow-up contact path is incomplete",
+    "hint": "Check that escalation-critical contact details cannot be omitted when the scenario requires them.",
+    "testDataHints": ["preferred contact phone missing", "email missing after digital-only selection"]
+  },
+  {
+    "id": "insurance-boundary-coverage-limit",
+    "category": "boundary",
+    "title": "Coverage limit threshold not enforced consistently",
+    "hint": "Challenge exact boundary around deductible or payout limits.",
+    "testDataHints": ["one cent below limit", "exact limit", "one cent above limit"]
+  },
+  {
+    "id": "insurance-negative-replayed-claim-reference",
+    "category": "negative_path",
+    "title": "Replayed claim reference accepted as fresh submission",
+    "hint": "Challenge duplicate or stale references across retries.",
+    "testDataHints": ["same claim reference reused", "stale draft resubmitted"]
+  }
+]

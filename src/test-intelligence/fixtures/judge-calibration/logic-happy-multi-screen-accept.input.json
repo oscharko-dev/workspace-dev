@@ -1,0 +1,38 @@
+{
+  "judge": "logic",
+  "input": {
+    "testDesignModel": {
+      "screens": [
+        { "screenId": "2:1", "screenName": "Account selector" },
+        { "screenId": "2:2", "screenName": "Transfer confirmation" }
+      ],
+      "fields": [
+        { "id": "field-from", "screenId": "2:1", "label": "From account" },
+        { "id": "field-to", "screenId": "2:1", "label": "To account" },
+        { "id": "field-confirm", "screenId": "2:2", "label": "Confirm" }
+      ]
+    },
+    "coveragePlan": {
+      "perScreen": [
+        { "screenId": "2:1", "requiredFlows": ["select-account"] },
+        { "screenId": "2:2", "requiredFlows": ["confirm-transfer"] }
+      ]
+    },
+    "generatedTestCases": {
+      "schemaVersion": "1.0.0",
+      "jobId": "calibration-logic-happy-multi-screen-accept",
+      "testCases": [
+        {
+          "id": "tc-transfer-1",
+          "title": "Complete account transfer flow",
+          "type": "functional",
+          "qualitySignals": {
+            "coveredFieldIds": ["field-from", "field-to", "field-confirm"],
+            "coveredActionIds": ["confirm-transfer"],
+            "coveredScreenIds": ["2:1", "2:2"]
+          }
+        }
+      ]
+    }
+  }
+}

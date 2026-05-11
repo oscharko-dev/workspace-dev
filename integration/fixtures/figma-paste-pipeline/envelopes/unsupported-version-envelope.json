@@ -1,0 +1,17 @@
+{
+  "kind": "workspace-dev/figma-selection@99",
+  "pluginVersion": "0.1.0",
+  "copiedAt": "2026-04-12T18:40:00.000Z",
+  "selections": [
+    {
+      "document": {
+        "id": "1:2",
+        "type": "FRAME",
+        "name": "Card"
+      },
+      "components": {},
+      "componentSets": {},
+      "styles": {}
+    }
+  ]
+}

@@ -12,7 +12,7 @@ Escrow requirements for `workspace-dev` release continuity and recoverability.
 
 - Source code at release tag.
 - `pnpm-lock.yaml` and release workflow definitions.
-- Release evidence artifacts (`sbom.json`, `openvex.json`, deterministic hash output).
+- Release evidence artifacts (SBOM artifacts, deterministic hash output).
 - Governance and security manifests (`COMPLIANCE.md`, `SLA.md`, `ZERO_TELEMETRY.md`, `SECURITY.md`).
 
 ## Restore Procedure
@@ -27,4 +27,3 @@ Escrow requirements for `workspace-dev` release continuity and recoverability.
 - Release Engineering: escrow package and workflow artifacts.
 - Security Engineering: validate integrity and incident alignment.
 - Platform Engineering: execute restoration and reproducibility verification.
-

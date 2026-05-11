@@ -1,0 +1,24 @@
+{
+  "version": "1.0.0",
+  "sources": [
+    {
+      "sourceId": "jira-rest-mdk-9001",
+      "kind": "jira_rest",
+      "contentHash": "1bcfd0e1f201bcfd0e1f201bcfd0e1f201bcfd0e1f201bcfd0e1f201bcfd0e1f",
+      "capturedAt": "2026-04-27T10:09:00.000Z",
+      "canonicalIssueKey": "MDK-9001"
+    },
+    {
+      "sourceId": "custom-mdk-context",
+      "kind": "custom_text",
+      "contentHash": "2cd0e1f2012cd0e1f2012cd0e1f2012cd0e1f2012cd0e1f2012cd0e1f2012cd0",
+      "capturedAt": "2026-04-27T10:09:01.000Z",
+      "authorHandle": "qa-reviewer",
+      "inputFormat": "markdown",
+      "redactedMarkdownHash": "3de1f2013c3de1f2013c3de1f2013c3de1f2013c3de1f2013c3de1f2013c3de1",
+      "plainTextDerivativeHash": "4ef2013c3d4ef2013c3d4ef2013c3d4ef2013c3d4ef2013c3d4ef2013c3d4ef2"
+    }
+  ],
+  "aggregateContentHash": "6de28b9a467b72b9a99d0dee9d7f895198b7e8e81ce26006de97a31b9d84b8b2",
+  "conflictResolutionPolicy": "reviewer_decides"
+}

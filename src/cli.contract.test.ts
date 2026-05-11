@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import net from "node:net";
+import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -147,7 +148,63 @@ test("cli contract: --help prints usage and exits with code 0", async () => {
   const result = await runCliToExit({ args: ["--help"] });
   assert.equal(result.exitCode, 0);
   assert.match(result.stdout, /workspace-dev start/i);
+  assert.match(result.stdout, /workspace-dev scan-design-system/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_OUTPUT_ROOT/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_FIGMA_CIRCUIT_BREAKER_FAILURE_THRESHOLD/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_FIGMA_CIRCUIT_BREAKER_RESET_TIMEOUT_MS/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_FIGMA_BOOTSTRAP_DEPTH/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_FIGMA_CACHE_TTL_MS/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_ICON_MAP_FILE/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_DESIGN_SYSTEM_FILE/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_EXPORT_IMAGES/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_NAME_PATTERN/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_FIGMA_PASTE_TEMP_TTL_MS/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_ELEMENT_MAX_DEPTH/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_BRAND/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_GENERATION_LOCALE/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_ROUTER/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_COMMAND_STDOUT_MAX_BYTES/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_COMMAND_STDERR_MAX_BYTES/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_SKIP_INSTALL/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_ENABLE_UNIT_TEST_VALIDATION/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_MAX_COUNT/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_TEXT_MAX_LENGTH/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_DETAILS_MAX_KEYS/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_DETAILS_MAX_ITEMS/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_DETAILS_MAX_DEPTH/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_RATE_LIMIT_PER_MINUTE/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_IMPORT_SESSION_EVENT_BEARER_TOKEN/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_LOG_FORMAT/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_ENABLE_LINT_AUTOFIX/i);
+  assert.match(result.stdout, /--no-cache/i);
+  assert.match(result.stdout, /--figma-circuit-breaker-failure-threshold/i);
+  assert.match(result.stdout, /--figma-circuit-breaker-reset-timeout-ms/i);
+  assert.match(result.stdout, /--icon-map-file/i);
+  assert.match(result.stdout, /--design-system-file/i);
+  assert.match(result.stdout, /--export-images/i);
+  assert.match(result.stdout, /--skip-install/i);
+  assert.match(result.stdout, /--rate-limit/i);
+  assert.match(result.stdout, /--log-format/i);
+  assert.match(result.stdout, /--lint-autofix/i);
+  assert.match(result.stdout, /--figma-screen-name-pattern/i);
+  assert.match(result.stdout, /--figma-paste-temp-ttl-ms/i);
+  assert.match(result.stdout, /--brand/i);
+  assert.match(result.stdout, /--generation-locale/i);
+  assert.match(result.stdout, /--router/i);
+  assert.match(result.stdout, /--command-stdout-max-bytes/i);
+  assert.match(result.stdout, /--command-stderr-max-bytes/i);
+  assert.match(result.stdout, /--pipeline-diagnostic-max-count/i);
+  assert.match(result.stdout, /--pipeline-diagnostic-text-max-length/i);
+  assert.match(result.stdout, /--pipeline-diagnostic-details-max-keys/i);
+  assert.match(result.stdout, /--pipeline-diagnostic-details-max-items/i);
+  assert.match(result.stdout, /--pipeline-diagnostic-details-max-depth/i);
+  assert.match(result.stdout, /--unit-test-validation/i);
+  assert.match(result.stdout, /--figma-screen-element-budget/i);
+  assert.match(result.stdout, /--figma-screen-element-max-depth/i);
+  assert.match(result.stdout, /--project-root/i);
+  assert.match(result.stdout, /--output/i);
+  assert.match(result.stdout, /--library/i);
+  assert.match(result.stdout, /--force/i);
   assert.match(result.stdout, /workspace\/jobs\/\:id/i);
 });
 
@@ -155,6 +212,107 @@ test("cli contract: unknown command exits with code 1", async () => {
   const result = await runCliToExit({ args: ["nope"] });
   assert.equal(result.exitCode, 1);
   assert.match(result.stderr, /Unknown command/i);
+});
+
+test("cli contract: scan-design-system writes config to default output path", async () => {
+  const projectRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-cli-scan-default-"));
+  const srcDir = path.join(projectRoot, "src");
+  await mkdir(srcDir, { recursive: true });
+  await writeFile(
+    path.join(srcDir, "App.tsx"),
+    `import { PrimaryButton, ContentCard } from "@acme/ui";
+
+export function App() {
+  return (
+    <>
+      <PrimaryButton>Start</PrimaryButton>
+      <ContentCard />
+    </>
+  );
+}
+`,
+    "utf8"
+  );
+
+  const result = await runCliToExit({
+    args: ["scan-design-system", "--project-root", projectRoot]
+  });
+  assert.equal(result.exitCode, 0);
+  assert.match(result.stdout, /Design system scan completed/i);
+
+  const configPath = path.join(projectRoot, ".workspace-dev", "design-system.json");
+  const configRaw = await readFile(configPath, "utf8");
+  const config = JSON.parse(configRaw) as {
+    library: string;
+    mappings: Record<string, { component: string }>;
+  };
+  assert.equal(config.library, "@acme/ui");
+  assert.equal(config.mappings.Button?.component, "PrimaryButton");
+  assert.equal(config.mappings.Card?.component, "ContentCard");
+});
+
+test("cli contract: scan-design-system respects --output --library and --force", async () => {
+  const projectRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-cli-scan-force-"));
+  const srcDir = path.join(projectRoot, "src");
+  await mkdir(srcDir, { recursive: true });
+  await writeFile(
+    path.join(srcDir, "View.tsx"),
+    `import { PrimaryButton } from "@acme/ui";
+
+export function View() {
+  return <PrimaryButton>Go</PrimaryButton>;
+}
+`,
+    "utf8"
+  );
+
+  const outputPath = path.join(projectRoot, "custom-design-system.json");
+  const firstRun = await runCliToExit({
+    args: [
+      "scan-design-system",
+      "--project-root",
+      projectRoot,
+      "--output",
+      outputPath,
+      "--library",
+      "@forced/ui"
+    ]
+  });
+  assert.equal(firstRun.exitCode, 0);
+
+  const firstConfig = JSON.parse(await readFile(outputPath, "utf8")) as { library: string };
+  assert.equal(firstConfig.library, "@forced/ui");
+  const firstRaw = await readFile(outputPath, "utf8");
+
+  const secondRun = await runCliToExit({
+    args: [
+      "scan-design-system",
+      "--project-root",
+      projectRoot,
+      "--output",
+      outputPath,
+      "--library",
+      "@forced/ui"
+    ]
+  });
+  assert.equal(secondRun.exitCode, 1);
+  assert.match(secondRun.stderr, /already exists/i);
+
+  const forcedRun = await runCliToExit({
+    args: [
+      "scan-design-system",
+      "--project-root",
+      projectRoot,
+      "--output",
+      outputPath,
+      "--library",
+      "@forced/ui",
+      "--force"
+    ]
+  });
+  assert.equal(forcedRun.exitCode, 0);
+  const secondRaw = await readFile(outputPath, "utf8");
+  assert.equal(secondRaw, firstRaw);
 });
 
 test("cli contract: CLI flag overrides environment port", async () => {
@@ -205,6 +363,668 @@ test("cli contract: perf validation flag is applied and logged", async () => {
   }
 });
 
+test("cli contract: --skip-install is applied and logged", async () => {
+  const port = await acquireFreePort();
+  const child = spawn(process.execPath, ["--import", "tsx", cliSourcePath, "start", "--port", String(port), "--skip-install"], {
+    env: {
+      ...process.env,
+      FIGMAPIPE_WORKSPACE_HOST: "127.0.0.1"
+    },
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+
+  try {
+    const output = await waitForStdout(child, /Skip install: true/i);
+    assert.match(output, /Skip install: true/i);
+  } finally {
+    child.kill("SIGTERM");
+    const exitCode = await waitForExitCode(child, 8_000);
+    assert.equal(exitCode, 0);
+  }
+});
+
+test("cli contract: --rate-limit is applied and logged", async () => {
+  const port = await acquireFreePort();
+  const child = spawn(
+    process.execPath,
+    ["--import", "tsx", cliSourcePath, "start", "--port", String(port), "--rate-limit", "3"],
+    {
+      env: {
+        ...process.env,
+        FIGMAPIPE_WORKSPACE_HOST: "127.0.0.1"
+      },
+      stdio: ["ignore", "pipe", "pipe"]
+    }
+  );
+
+  try {
+    const output = await waitForStdout(child, /Rate limit per minute: 3/i);
+    assert.match(output, /Rate limit per minute: 3/i);
+  } finally {
+    child.kill("SIGTERM");
+    const exitCode = await waitForExitCode(child, 8_000);
+    assert.equal(exitCode, 0);
+  }
+});
+
+test("cli contract: rate limit environment variable is applied and logged", async () => {
+  const port = await acquireFreePort();
+  const child = spawn(process.execPath, ["--import", "tsx", cliSourcePath, "start", "--port", String(port)], {
+    env: {
+      ...process.env,
+      FIGMAPIPE_WORKSPACE_HOST: "127.0.0.1",
+      FIGMAPIPE_WORKSPACE_RATE_LIMIT_PER_MINUTE: "7"
+    },
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+
+  try {
+    const output = await waitForStdout(child, /Rate limit per minute: 7/i);
+    assert.match(output, /Rate limit per minute: 7/i);
+  } finally {
+    child.kill("SIGTERM");
+    const exitCode = await waitForExitCode(child, 8_000);
+    assert.equal(exitCode, 0);
+  }
+});
+
+test("cli contract: --shutdown-timeout is applied and logged", async () => {
+  const port = await acquireFreePort();
+  const child = spawn(
+    process.execPath,
+    ["--import", "tsx", cliSourcePath, "start", "--port", String(port), "--shutdown-timeout", "250"],
+    {
+      env: {
+        ...process.env,
+        FIGMAPIPE_WORKSPACE_HOST: "127.0.0.1",
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
+
+  try {
+    const output = await waitForStdout(child, /Shutdown timeout: 250ms/i);
+    assert.match(output, /Shutdown timeout: 250ms/i);
+  } finally {
+    child.kill("SIGTERM");
+    const exitCode = await waitForExitCode(child, 8_000);
+    assert.equal(exitCode, 0);
+  }
+});
+
+test("cli contract: import-session event auth environment variable is applied without logging the token", async () => {
+  const port = await acquireFreePort();
+  const child = spawn(process.execPath, ["--import", "tsx", cliSourcePath, "start", "--port", String(port)], {
+    env: {
+      ...process.env,
+      FIGMAPIPE_WORKSPACE_HOST: "127.0.0.1",
+      FIGMAPIPE_WORKSPACE_IMPORT_SESSION_EVENT_BEARER_TOKEN: "super-secret-import-event-token"
+    },
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+
+  try {
+    const output = await waitForStdout(child, /Import session event write auth enabled: true/i);
+    assert.match(output, /Import session event write auth enabled: true/i);
+    assert.doesNotMatch(output, /super-secret-import-event-token/i);
+  } finally {
+    child.kill("SIGTERM");
+    const exitCode = await waitForExitCode(child, 8_000);
+    assert.equal(exitCode, 0);
+  }
+});
+
+test("cli contract: --unit-test-validation is applied and logged", async () => {
+  const port = await acquireFreePort();
+  const child = spawn(
+    process.execPath,
+    ["--import", "tsx", cliSourcePath, "start", "--port", String(port), "--unit-test-validation", "true"],
+    {
+      env: {
+        ...process.env,
+        FIGMAPIPE_WORKSPACE_HOST: "127.0.0.1"
+      },
+      stdio: ["ignore", "pipe", "pipe"]
+    }
+  );
+
+  try {
+    const output = await waitForStdout(child, /Unit test validation enabled: true/i);
+    assert.match(output, /Unit test validation enabled: true/i);
+  } finally {
+    child.kill("SIGTERM");
+    const exitCode = await waitForExitCode(child, 8_000);
+    assert.equal(exitCode, 0);
+  }
+});
+
+test("cli contract: command output cap environment variables are applied and logged", async () => {
+  const port = await acquireFreePort();
+  const child = spawn(process.execPath, ["--import", "tsx", cliSourcePath, "start", "--port", String(port)], {
+    env: {
+      ...process.env,
+      FIGMAPIPE_WORKSPACE_HOST: "127.0.0.1",
+      FIGMAPIPE_WORKSPACE_COMMAND_STDOUT_MAX_BYTES: "8192",
+      FIGMAPIPE_WORKSPACE_COMMAND_STDERR_MAX_BYTES: "16384"
+    },
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+
+  try {
+    const output = await waitForStdout(child, /Command output caps: stdout=8192, stderr=16384/i);
+    assert.match(output, /Command output caps: stdout=8192, stderr=16384/i);
+  } finally {
+    child.kill("SIGTERM");
+    const exitCode = await waitForExitCode(child, 8_000);
+    assert.equal(exitCode, 0);
+  }
+});
+
+test("cli contract: command output cap flags override environment variables", async () => {
+  const port = await acquireFreePort();
+  const child = spawn(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      cliSourcePath,
+      "start",
+      "--port",
+      String(port),
+      "--command-stdout-max-bytes",
+      "4096",
+      "--command-stderr-max-bytes",
+      "12288"
+    ],
+    {
+      env: {
+        ...process.env,
+        FIGMAPIPE_WORKSPACE_HOST: "127.0.0.1",
+        FIGMAPIPE_WORKSPACE_COMMAND_STDOUT_MAX_BYTES: "9999",
+        FIGMAPIPE_WORKSPACE_COMMAND_STDERR_MAX_BYTES: "9999"
+      },
+      stdio: ["ignore", "pipe", "pipe"]
+    }
+  );
+
+  try {
+    const output = await waitForStdout(child, /Command output caps: stdout=4096, stderr=12288/i);
+    assert.match(output, /Command output caps: stdout=4096, stderr=12288/i);
+  } finally {
+    child.kill("SIGTERM");
+    const exitCode = await waitForExitCode(child, 8_000);
+    assert.equal(exitCode, 0);
+  }
+});
+
+test("cli contract: --lint-autofix is applied and logged", async () => {
+  const port = await acquireFreePort();
+  const child = spawn(
+    process.execPath,
+    ["--import", "tsx", cliSourcePath, "start", "--port", String(port), "--lint-autofix", "false"],
+    {
+      env: {
+        ...process.env,
+        FIGMAPIPE_WORKSPACE_HOST: "127.0.0.1"
+      },
+      stdio: ["ignore", "pipe", "pipe"]
+    }
+  );
+
+  try {
+    const output = await waitForStdout(child, /Lint auto-fix enabled: false/i);
+    assert.match(output, /Lint auto-fix enabled: false/i);
+  } finally {
+    child.kill("SIGTERM");
+    const exitCode = await waitForExitCode(child, 8_000);
+    assert.equal(exitCode, 0);
+  }
+});
+
+test("cli contract: --lint-autofix flag overrides environment variable", async () => {
+  const port = await acquireFreePort();
+  const child = spawn(
+    process.execPath,
+    ["--import", "tsx", cliSourcePath, "start", "--port", String(port), "--lint-autofix", "true"],
+    {
+      env: {
+        ...process.env,
+        FIGMAPIPE_WORKSPACE_HOST: "127.0.0.1",
+        FIGMAPIPE_WORKSPACE_ENABLE_LINT_AUTOFIX: "false"
+      },
+      stdio: ["ignore", "pipe", "pipe"]
+    }
+  );
+
+  try {
+    const output = await waitForStdout(child, /Lint auto-fix enabled: true/i);
+    assert.match(output, /Lint auto-fix enabled: true/i);
+  } finally {
+    child.kill("SIGTERM");
+    const exitCode = await waitForExitCode(child, 8_000);
+    assert.equal(exitCode, 0);
+  }
+});
+
+test("cli contract: --no-cache disables figma cache and is logged", async () => {
+  const port = await acquireFreePort();
+  const child = spawn(process.execPath, ["--import", "tsx", cliSourcePath, "start", "--port", String(port), "--no-cache"], {
+    env: {
+      ...process.env,
+      FIGMAPIPE_WORKSPACE_HOST: "127.0.0.1"
+    },
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+
+  try {
+    const output = await waitForStdout(child, /Figma cache enabled: false/i);
+    assert.match(output, /Figma cache enabled: false/i);
+  } finally {
+    child.kill("SIGTERM");
+    const exitCode = await waitForExitCode(child, 8_000);
+    assert.equal(exitCode, 0);
+  }
+});
+
+test("cli contract: figma circuit breaker flags are applied and logged", async () => {
+  const port = await acquireFreePort();
+  const child = spawn(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      cliSourcePath,
+      "start",
+      "--port",
+      String(port),
+      "--figma-circuit-breaker-failure-threshold",
+      "5",
+      "--figma-circuit-breaker-reset-timeout-ms",
+      "45000"
+    ],
+    {
+      env: {
+        ...process.env,
+        FIGMAPIPE_WORKSPACE_HOST: "127.0.0.1"
+      },
+      stdio: ["ignore", "pipe", "pipe"]
+    }
+  );
+
+  try {
+    const output = await waitForStdout(child, /Figma circuit breaker: threshold=5, resetTimeoutMs=45000/i);
+    assert.match(output, /Figma circuit breaker: threshold=5, resetTimeoutMs=45000/i);
+  } finally {
+    child.kill("SIGTERM");
+    const exitCode = await waitForExitCode(child, 8_000);
+    assert.equal(exitCode, 0);
+  }
+});
+
+test("cli contract: figma circuit breaker environment variables are applied and logged", async () => {
+  const port = await acquireFreePort();
+  const child = spawn(process.execPath, ["--import", "tsx", cliSourcePath, "start", "--port", String(port)], {
+    env: {
+      ...process.env,
+      FIGMAPIPE_WORKSPACE_HOST: "127.0.0.1",
+      FIGMAPIPE_WORKSPACE_FIGMA_CIRCUIT_BREAKER_FAILURE_THRESHOLD: "4",
+      FIGMAPIPE_WORKSPACE_FIGMA_CIRCUIT_BREAKER_RESET_TIMEOUT_MS: "60000"
+    },
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+
+  try {
+    const output = await waitForStdout(child, /Figma circuit breaker: threshold=4, resetTimeoutMs=60000/i);
+    assert.match(output, /Figma circuit breaker: threshold=4, resetTimeoutMs=60000/i);
+  } finally {
+    child.kill("SIGTERM");
+    const exitCode = await waitForExitCode(child, 8_000);
+    assert.equal(exitCode, 0);
+  }
+});
+
+test("cli contract: --figma-screen-name-pattern is applied and logged", async () => {
+  const port = await acquireFreePort();
+  const child = spawn(
+    process.execPath,
+    ["--import", "tsx", cliSourcePath, "start", "--port", String(port), "--figma-screen-name-pattern", "^auth/"],
+    {
+      env: {
+        ...process.env,
+        FIGMAPIPE_WORKSPACE_HOST: "127.0.0.1"
+      },
+      stdio: ["ignore", "pipe", "pipe"]
+    }
+  );
+
+  try {
+    const output = await waitForStdout(child, /Figma screen name pattern: \^auth\//i);
+    assert.match(output, /Figma screen name pattern: \^auth\//i);
+  } finally {
+    child.kill("SIGTERM");
+    const exitCode = await waitForExitCode(child, 8_000);
+    assert.equal(exitCode, 0);
+  }
+});
+
+test("cli contract: --icon-map-file is applied and logged", async () => {
+  const port = await acquireFreePort();
+  const child = spawn(
+    process.execPath,
+    ["--import", "tsx", cliSourcePath, "start", "--port", String(port), "--icon-map-file", "./tmp/icon-map.json"],
+    {
+      env: {
+        ...process.env,
+        FIGMAPIPE_WORKSPACE_HOST: "127.0.0.1"
+      },
+      stdio: ["ignore", "pipe", "pipe"]
+    }
+  );
+
+  try {
+    const output = await waitForStdout(child, /Icon fallback map file: .*tmp\/icon-map\.json/i);
+    assert.match(output, /Icon fallback map file: .*tmp\/icon-map\.json/i);
+  } finally {
+    child.kill("SIGTERM");
+    const exitCode = await waitForExitCode(child, 8_000);
+    assert.equal(exitCode, 0);
+  }
+});
+
+test("cli contract: --design-system-file is applied and logged", async () => {
+  const port = await acquireFreePort();
+  const child = spawn(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      cliSourcePath,
+      "start",
+      "--port",
+      String(port),
+      "--design-system-file",
+      "./tmp/design-system.json"
+    ],
+    {
+      env: {
+        ...process.env,
+        FIGMAPIPE_WORKSPACE_HOST: "127.0.0.1"
+      },
+      stdio: ["ignore", "pipe", "pipe"]
+    }
+  );
+
+  try {
+    const output = await waitForStdout(child, /Design system file: .*tmp\/design-system\.json/i);
+    assert.match(output, /Design system file: .*tmp\/design-system\.json/i);
+  } finally {
+    child.kill("SIGTERM");
+    const exitCode = await waitForExitCode(child, 8_000);
+    assert.equal(exitCode, 0);
+  }
+});
+
+test("cli contract: --export-images is applied and logged", async () => {
+  const port = await acquireFreePort();
+  const child = spawn(
+    process.execPath,
+    ["--import", "tsx", cliSourcePath, "start", "--port", String(port), "--export-images", "false"],
+    {
+      env: {
+        ...process.env,
+        FIGMAPIPE_WORKSPACE_HOST: "127.0.0.1"
+      },
+      stdio: ["ignore", "pipe", "pipe"]
+    }
+  );
+
+  try {
+    const output = await waitForStdout(child, /Export images: false/i);
+    assert.match(output, /Export images: false/i);
+  } finally {
+    child.kill("SIGTERM");
+    const exitCode = await waitForExitCode(child, 8_000);
+    assert.equal(exitCode, 0);
+  }
+});
+
+test("cli contract: --export-images flag overrides environment variable", async () => {
+  const port = await acquireFreePort();
+  const child = spawn(
+    process.execPath,
+    ["--import", "tsx", cliSourcePath, "start", "--port", String(port), "--export-images", "true"],
+    {
+      env: {
+        ...process.env,
+        FIGMAPIPE_WORKSPACE_HOST: "127.0.0.1",
+        FIGMAPIPE_WORKSPACE_EXPORT_IMAGES: "false"
+      },
+      stdio: ["ignore", "pipe", "pipe"]
+    }
+  );
+
+  try {
+    const output = await waitForStdout(child, /Export images: true/i);
+    assert.match(output, /Export images: true/i);
+  } finally {
+    child.kill("SIGTERM");
+    const exitCode = await waitForExitCode(child, 8_000);
+    assert.equal(exitCode, 0);
+  }
+});
+
+test("cli contract: --brand is applied and logged", async () => {
+  const port = await acquireFreePort();
+  const child = spawn(process.execPath, ["--import", "tsx", cliSourcePath, "start", "--port", String(port), "--brand", "sparkasse"], {
+    env: {
+      ...process.env,
+      FIGMAPIPE_WORKSPACE_HOST: "127.0.0.1"
+    },
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+
+  try {
+    const output = await waitForStdout(child, /Brand theme default: sparkasse/i);
+    assert.match(output, /Brand theme default: sparkasse/i);
+  } finally {
+    child.kill("SIGTERM");
+    const exitCode = await waitForExitCode(child, 8_000);
+    assert.equal(exitCode, 0);
+  }
+});
+
+test("cli contract: --generation-locale is applied and logged", async () => {
+  const port = await acquireFreePort();
+  const child = spawn(
+    process.execPath,
+    ["--import", "tsx", cliSourcePath, "start", "--port", String(port), "--generation-locale", "en-US"],
+    {
+      env: {
+        ...process.env,
+        FIGMAPIPE_WORKSPACE_HOST: "127.0.0.1"
+      },
+      stdio: ["ignore", "pipe", "pipe"]
+    }
+  );
+
+  try {
+    const output = await waitForStdout(child, /Generation locale default: en-US/i);
+    assert.match(output, /Generation locale default: en-US/i);
+  } finally {
+    child.kill("SIGTERM");
+    const exitCode = await waitForExitCode(child, 8_000);
+    assert.equal(exitCode, 0);
+  }
+});
+
+test("cli contract: --router is applied and logged", async () => {
+  const port = await acquireFreePort();
+  const child = spawn(process.execPath, ["--import", "tsx", cliSourcePath, "start", "--port", String(port), "--router", "hash"], {
+    env: {
+      ...process.env,
+      FIGMAPIPE_WORKSPACE_HOST: "127.0.0.1"
+    },
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+
+  try {
+    const output = await waitForStdout(child, /Router mode default: hash/i);
+    assert.match(output, /Router mode default: hash/i);
+  } finally {
+    child.kill("SIGTERM");
+    const exitCode = await waitForExitCode(child, 8_000);
+    assert.equal(exitCode, 0);
+  }
+});
+
+test("cli contract: --router flag overrides environment variable", async () => {
+  const port = await acquireFreePort();
+  const child = spawn(
+    process.execPath,
+    ["--import", "tsx", cliSourcePath, "start", "--port", String(port), "--router", "browser"],
+    {
+      env: {
+        ...process.env,
+        FIGMAPIPE_WORKSPACE_HOST: "127.0.0.1",
+        FIGMAPIPE_WORKSPACE_ROUTER: "hash"
+      },
+      stdio: ["ignore", "pipe", "pipe"]
+    }
+  );
+
+  try {
+    const output = await waitForStdout(child, /Router mode default: browser/i);
+    assert.match(output, /Router mode default: browser/i);
+  } finally {
+    child.kill("SIGTERM");
+    const exitCode = await waitForExitCode(child, 8_000);
+    assert.equal(exitCode, 0);
+  }
+});
+
+test("cli contract: --log-format json emits structured startup logs", async () => {
+  const port = await acquireFreePort();
+  const child = spawn(
+    process.execPath,
+    ["--import", "tsx", cliSourcePath, "start", "--port", String(port), "--log-format", "json"],
+    {
+      env: {
+        ...process.env,
+        FIGMAPIPE_WORKSPACE_HOST: "127.0.0.1"
+      },
+      stdio: ["ignore", "pipe", "pipe"]
+    }
+  );
+
+  try {
+    const output = await waitForStdout(child, /"msg":"Server ready at/);
+    const records = output
+      .split(/\r?\n/)
+      .filter((line) => line.trim().length > 0)
+      .map((line) => JSON.parse(line) as Record<string, string>);
+
+    assert.equal(records.every((record) => typeof record.ts === "string"), true);
+    assert.equal(records.every((record) => record.level === "info"), true);
+    assert.equal(
+      records.some((record) => record.msg === `Starting on http://127.0.0.1:${port}/workspace`),
+      true
+    );
+    assert.equal(
+      records.some((record) => record.msg === `Server ready at http://127.0.0.1:${port}/workspace`),
+      true
+    );
+  } finally {
+    child.kill("SIGTERM");
+    const exitCode = await waitForExitCode(child, 8_000);
+    assert.equal(exitCode, 0);
+  }
+});
+
+test("cli contract: --log-format flag overrides environment variable", async () => {
+  const port = await acquireFreePort();
+  const child = spawn(
+    process.execPath,
+    ["--import", "tsx", cliSourcePath, "start", "--port", String(port), "--log-format", "text"],
+    {
+      env: {
+        ...process.env,
+        FIGMAPIPE_WORKSPACE_HOST: "127.0.0.1",
+        FIGMAPIPE_WORKSPACE_LOG_FORMAT: "json"
+      },
+      stdio: ["ignore", "pipe", "pipe"]
+    }
+  );
+
+  try {
+    const output = await waitForStdout(child, /Log format: text/i);
+    assert.match(output, /\[workspace-dev\] Log format: text/i);
+    assert.doesNotMatch(output, /"level":"info"/);
+  } finally {
+    child.kill("SIGTERM");
+    const exitCode = await waitForExitCode(child, 8_000);
+    assert.equal(exitCode, 0);
+  }
+});
+
+test("cli contract: --figma-screen-element-max-depth is applied and logged", async () => {
+  const port = await acquireFreePort();
+  const child = spawn(
+    process.execPath,
+    ["--import", "tsx", cliSourcePath, "start", "--port", String(port), "--figma-screen-element-max-depth", "7"],
+    {
+      env: {
+        ...process.env,
+        FIGMAPIPE_WORKSPACE_HOST: "127.0.0.1"
+      },
+      stdio: ["ignore", "pipe", "pipe"]
+    }
+  );
+
+  try {
+    const output = await waitForStdout(child, /Figma screen depth max: 7/i);
+    assert.match(output, /Figma screen depth max: 7/i);
+  } finally {
+    child.kill("SIGTERM");
+    const exitCode = await waitForExitCode(child, 8_000);
+    assert.equal(exitCode, 0);
+  }
+});
+
+test("cli contract: pipeline diagnostic limit flags override env vars and are logged", async () => {
+  const port = await acquireFreePort();
+  const child = spawn(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      cliSourcePath,
+      "start",
+      "--port",
+      String(port),
+      "--pipeline-diagnostic-max-count",
+      "7"
+    ],
+    {
+      env: {
+        ...process.env,
+        FIGMAPIPE_WORKSPACE_HOST: "127.0.0.1",
+        FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_MAX_COUNT: "12",
+        FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_TEXT_MAX_LENGTH: "333"
+      },
+      stdio: ["ignore", "pipe", "pipe"]
+    }
+  );
+
+  try {
+    const output = await waitForStdout(child, /Pipeline diagnostic limits: count=7, text=333/i);
+    assert.match(output, /Pipeline diagnostic limits: count=7, text=333, detailKeys=30, detailItems=20, detailDepth=4/i);
+  } finally {
+    child.kill("SIGTERM");
+    const exitCode = await waitForExitCode(child, 8_000);
+    assert.equal(exitCode, 0);
+  }
+});
+
 test("cli contract: port collision returns deterministic error", async () => {
   const collisionPort = await acquireFreePort();
   const running = await createWorkspaceServer({ host: "127.0.0.1", port: collisionPort });
@@ -230,4 +1050,319 @@ test("cli contract: published binaries and quickstart command are in sync", asyn
   assert.equal(packageJson.bin?.["workspace-dev"], "./dist/cli.js");
   assert.deepEqual(Object.keys(packageJson.bin ?? {}).sort(), ["workspace-dev"]);
   assert.match(readme, /npx workspace-dev start/i);
+});
+
+// ---------------------------------------------------------------------------
+// test-intelligence run sub-command (Issue #1736)
+// ---------------------------------------------------------------------------
+
+test("cli contract: test-intelligence --help prints the available subcommands", async () => {
+  const result = await runCliToExit({ args: ["test-intelligence", "--help"] });
+  assert.equal(result.exitCode, 0, result.stderr);
+  assert.match(result.stdout, /test-intelligence run/i);
+  assert.match(result.stdout, /test-intelligence doctor/i);
+  assert.match(result.stdout, /audit-dossier/i);
+  assert.match(result.stdout, /audit-verify/i);
+});
+
+test("cli contract: test-intelligence run --help prints all required flags", async () => {
+  const result = await runCliToExit({
+    args: ["test-intelligence", "run", "--help"],
+  });
+  assert.equal(result.exitCode, 0, result.stderr);
+  assert.match(result.stdout, /--figma-url/i);
+  assert.match(result.stdout, /--figma-json-file/i);
+  assert.match(result.stdout, /--output/i);
+  assert.match(result.stdout, /--mode/i);
+  assert.match(result.stdout, /--enable-visual-sidecar/i);
+  assert.match(result.stdout, /--visual-primary-deployment/i);
+  assert.match(result.stdout, /--visual-fallback-deployment/i);
+  assert.match(result.stdout, /--a11y-judge-deployment/i);
+  assert.match(result.stdout, /--no-visual-sidecar/i);
+  assert.match(result.stdout, /--require-multi-agent-topology/i);
+  assert.match(result.stdout, /--risk-ranker-deployment/i);
+  assert.match(result.stdout, /--finops-budget/i);
+  assert.match(result.stdout, /--policy-profile/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_TI_ENABLE_VISUAL_SIDECAR/i);
+  assert.match(result.stdout, /dry_run/i);
+});
+
+test("cli contract: test-intelligence doctor --help prints doctor flags", async () => {
+  const result = await runCliToExit({
+    args: ["test-intelligence", "doctor", "--help"],
+  });
+  assert.equal(result.exitCode, 0, result.stderr);
+  assert.match(result.stdout, /--model-deployment/i);
+  assert.match(result.stdout, /--logic-judge-deployment/i);
+  assert.match(result.stdout, /--visual-primary-deployment/i);
+  assert.match(result.stdout, /--a11y-judge-deployment/i);
+});
+
+test("cli contract: test-intelligence audit-dossier --help prints bundle flags", async () => {
+  const result = await runCliToExit({
+    args: ["test-intelligence", "audit-dossier", "--help"],
+  });
+  assert.equal(result.exitCode, 0, result.stderr);
+  assert.match(result.stdout, /--run-dir/i);
+  assert.match(result.stdout, /--output/i);
+  assert.match(result.stdout, /--sign-key/i);
+  assert.match(result.stdout, /WORKSPACE_TEST_SPACE_AUDIT_SIGN_KEY/i);
+});
+
+test("cli contract: test-intelligence tms-push --help prints adapter flags", async () => {
+  const result = await runCliToExit({
+    args: ["test-intelligence", "tms-push", "--help"],
+  });
+  assert.equal(result.exitCode, 0, result.stderr);
+  assert.match(result.stdout, /--run-dir/i);
+  assert.match(result.stdout, /--tms/i);
+  assert.match(result.stdout, /--project/i);
+  assert.match(result.stdout, /xray\|alm\|qtest\|polarion/i);
+  assert.match(result.stdout, /WORKSPACE_TEST_SPACE_TMS_/i);
+});
+
+test("cli contract: test-intelligence tms-push without --tms exits with operator error", async () => {
+  const result = await runCliToExit({
+    args: ["test-intelligence", "tms-push", "--run-dir", "/tmp/none"],
+  });
+  assert.equal(result.exitCode, 1);
+  assert.match(result.stderr, /--tms is required/i);
+});
+
+test("cli contract: test-intelligence onboard --help prints onboarding flags", async () => {
+  const result = await runCliToExit({
+    args: ["test-intelligence", "onboard", "--help"],
+  });
+  assert.equal(result.exitCode, 0, result.stderr);
+  assert.match(result.stdout, /--tenant-id/i);
+  assert.match(result.stdout, /--legal-name/i);
+  assert.match(result.stdout, /--policy-profile/i);
+  assert.match(result.stdout, /--output-root/i);
+  assert.match(result.stdout, /--doctor/i);
+  assert.match(result.stdout, /Issue #2185/);
+});
+
+test("cli contract: test-intelligence onboard without --tenant-id exits 1 with operator error", async () => {
+  const result = await runCliToExit({
+    args: [
+      "test-intelligence",
+      "onboard",
+      "--legal-name",
+      "Acme",
+      "--policy-profile",
+      "eu-banking-default",
+      "--output-root",
+      "/tmp/none",
+    ],
+  });
+  assert.equal(result.exitCode, 1);
+  assert.match(result.stderr, /--tenant-id is required/i);
+});
+
+test("cli contract: test-intelligence onboard --doctor against missing tenant exits 2", async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-ti-onboard-"));
+  try {
+    const result = await runCliToExit({
+      args: [
+        "test-intelligence",
+        "onboard",
+        "--doctor",
+        "--tenant-id",
+        "ghost-bank",
+        "--output-root",
+        tmpDir,
+      ],
+    });
+    assert.equal(result.exitCode, 2);
+    assert.match(result.stdout, /Result: FAIL/i);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("cli contract: test-intelligence onboard end-to-end provisions a tenant directory the doctor approves", async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-ti-onboard-"));
+  try {
+    const provision = await runCliToExit({
+      args: [
+        "test-intelligence",
+        "onboard",
+        "--tenant-id",
+        "acme-bank",
+        "--legal-name",
+        "Acme Bank AG",
+        "--policy-profile",
+        "eu-banking-default",
+        "--output-root",
+        tmpDir,
+      ],
+    });
+    assert.equal(provision.exitCode, 0, provision.stderr);
+    assert.match(provision.stdout, /Tenant onboarding complete/);
+    const doctor = await runCliToExit({
+      args: [
+        "test-intelligence",
+        "onboard",
+        "--doctor",
+        "--tenant-id",
+        "acme-bank",
+        "--output-root",
+        tmpDir,
+      ],
+    });
+    assert.equal(doctor.exitCode, 0, doctor.stderr);
+    assert.match(doctor.stdout, /Result: PASS/);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("cli contract: test-intelligence run --enable-visual-sidecar fails closed when visual envs are missing", async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-ti-visual-"));
+  const figmaJsonPath = path.join(tmpDir, "figma.json");
+  await writeFile(
+    figmaJsonPath,
+    JSON.stringify({
+      fileKey: "abc",
+      name: "Test",
+      document: { id: "0:0", type: "DOCUMENT" },
+    }),
+  );
+
+  const result = await runCliToExit({
+    args: [
+      "test-intelligence",
+      "run",
+      "--figma-json-file",
+      figmaJsonPath,
+      "--output",
+      path.join(tmpDir, "out"),
+      "--model-endpoint",
+      "https://aoai.example/openai/v1",
+      "--model-api-key",
+      "k-key",
+      "--mode",
+      "deterministic_llm",
+      "--enable-visual-sidecar",
+    ],
+    env: {
+      FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE: "1",
+    },
+  });
+
+  assert.equal(result.exitCode, 1);
+  assert.match(
+    result.stderr,
+    /requires WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT, WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT, WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT/i,
+  );
+});
+
+test("cli contract: test-intelligence run without feature gate → exit 1 with clear error", async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-ti-"));
+  const figmaJsonPath = path.join(tmpDir, "figma.json");
+  await writeFile(
+    figmaJsonPath,
+    JSON.stringify({
+      fileKey: "abc",
+      name: "Test",
+      document: { id: "0:0", type: "DOCUMENT" },
+    }),
+  );
+
+  const result = await runCliToExit({
+    args: [
+      "test-intelligence",
+      "run",
+      "--figma-json-file",
+      figmaJsonPath,
+      "--output",
+      tmpDir,
+    ],
+    env: { FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE: "0" },
+  });
+
+  assert.equal(result.exitCode, 1, result.stdout);
+  assert.match(result.stderr, /FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE/i);
+});
+
+test("cli contract: test-intelligence run dry_run with gate set → exit 0", async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-ti-"));
+  const figmaJsonPath = path.join(tmpDir, "figma.json");
+  await writeFile(
+    figmaJsonPath,
+    JSON.stringify({
+      fileKey: "abc",
+      name: "Test",
+      document: { id: "0:0", type: "DOCUMENT" },
+    }),
+  );
+
+  const result = await runCliToExit({
+    args: [
+      "test-intelligence",
+      "run",
+      "--figma-json-file",
+      figmaJsonPath,
+      "--output",
+      tmpDir,
+      "--mode",
+      "dry_run",
+    ],
+    env: { FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE: "1" },
+    timeoutMs: 15_000,
+  });
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  assert.match(result.stdout, /dry_run/i);
+  assert.match(result.stdout, /job id/i);
+});
+
+test("cli contract: test-intelligence run without source → exit 1", async () => {
+  const result = await runCliToExit({
+    args: ["test-intelligence", "run", "--output", "/tmp/x"],
+    env: { FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE: "1" },
+  });
+  assert.equal(result.exitCode, 1);
+  assert.match(result.stderr, /--figma-url|--figma-json-file/i);
+});
+
+test("cli contract: test-intelligence doctor works without the feature gate", async () => {
+  const result = await runCliToExit({
+    args: [
+      "test-intelligence",
+      "doctor",
+      "--model-deployment",
+      "mistral-large-3",
+      "--logic-judge-deployment",
+      "gpt-oss-120b",
+      "--coverage-planner-deployment",
+      "phi-4-mini-instruct",
+      "--risk-ranker-deployment",
+      "phi-4",
+    ],
+    env: {
+      WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT:
+        "llama-4-maverick-vision",
+      WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT:
+        "phi-4-multimodal-instruct",
+      WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT:
+        "phi-4-multimodal-instruct",
+      WORKSPACE_TEST_SPACE_MODEL_ENDPOINT: "https://aoai.example/openai/v1",
+      WORKSPACE_TEST_SPACE_LLM_API_KEY: "secret-key",
+    },
+  });
+  assert.equal(result.exitCode, 0, result.stderr);
+  assert.match(result.stdout, /overall status: ok/i);
+  assert.doesNotMatch(result.stdout, /https:\/\/aoai\.example/i);
+  assert.doesNotMatch(result.stdout, /secret-key/i);
+});
+
+test("cli contract: test-intelligence run unknown sub-command → exit 1", async () => {
+  const result = await runCliToExit({
+    args: ["test-intelligence", "invalid-cmd"],
+    env: { FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE: "1" },
+  });
+  assert.equal(result.exitCode, 1);
+  assert.match(result.stderr, /unknown sub-command/i);
 });

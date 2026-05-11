@@ -1,0 +1,1102 @@
+{
+  "sourceName": "Payment Authorization Card Board",
+  "screens": [
+    {
+      "id": "screen-products",
+      "name": "PaymentAuthorizations",
+      "layoutMode": "VERTICAL",
+      "gap": 12,
+      "padding": {
+        "top": 16,
+        "right": 16,
+        "bottom": 16,
+        "left": 16
+      },
+      "children": [
+        {
+          "id": "list-title",
+          "name": "Title",
+          "nodeType": "TEXT",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "text",
+          "text": "Payment Approvals",
+          "x": 16,
+          "y": 16,
+          "width": 200,
+          "height": 32,
+          "fillColor": "#1c1f24",
+          "fontSize": 24,
+          "fontWeight": 700,
+          "fontFamily": "Inter",
+          "lineHeight": 32,
+          "textAlign": "LEFT"
+        },
+        {
+          "id": "product-card-1",
+          "name": "Authorization Card",
+          "nodeType": "FRAME",
+          "layoutMode": "HORIZONTAL",
+          "gap": 12,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "table",
+          "x": 16,
+          "y": 60,
+          "width": 358,
+          "height": 100,
+          "fillColor": "#ffffff",
+          "cornerRadius": 8,
+          "children": [
+            {
+              "id": "pc1-image",
+              "name": "Image",
+              "nodeType": "RECTANGLE",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "image",
+              "x": 28,
+              "y": 72,
+              "width": 76,
+              "height": 76,
+              "fillColor": "#e6e8ed"
+            },
+            {
+              "id": "pc1-info",
+              "name": "Info",
+              "nodeType": "FRAME",
+              "layoutMode": "VERTICAL",
+              "gap": 4,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "variantMapping": {
+                "properties": {
+                  "color": "info"
+                },
+                "muiProps": {
+                  "color": "info"
+                }
+              },
+              "type": "list",
+              "x": 116,
+              "y": 72,
+              "width": 240,
+              "height": 76,
+              "children": [
+                {
+                  "id": "pc1-name",
+                  "name": "Payment Title",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "SEPA Payroll Batch",
+                  "x": 116,
+                  "y": 72,
+                  "width": 240,
+                  "height": 24,
+                  "fillColor": "#1c1f24",
+                  "fontSize": 16,
+                  "fontWeight": 600,
+                  "fontFamily": "Inter",
+                  "lineHeight": 24,
+                  "textAlign": "LEFT"
+                },
+                {
+                  "id": "pc1-desc",
+                  "name": "Approval Context",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "variantMapping": {
+                    "properties": {
+                      "variant": "text"
+                    },
+                    "muiProps": {
+                      "variant": "text"
+                    }
+                  },
+                  "type": "text",
+                  "text": "Treasury desk approval",
+                  "x": 116,
+                  "y": 100,
+                  "width": 240,
+                  "height": 20,
+                  "fillColor": "#666b75",
+                  "fontSize": 14,
+                  "fontWeight": 400,
+                  "fontFamily": "Inter",
+                  "lineHeight": 20,
+                  "textAlign": "LEFT"
+                },
+                {
+                  "id": "pc1-price",
+                  "name": "Amount",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "EUR 84,200",
+                  "x": 116,
+                  "y": 124,
+                  "width": 80,
+                  "height": 24,
+                  "fillColor": "#1778f2",
+                  "fontSize": 16,
+                  "fontWeight": 700,
+                  "fontFamily": "Inter",
+                  "lineHeight": 24,
+                  "textAlign": "LEFT"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "product-card-2",
+          "name": "Authorization Card",
+          "nodeType": "FRAME",
+          "layoutMode": "HORIZONTAL",
+          "gap": 12,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "table",
+          "x": 16,
+          "y": 172,
+          "width": 358,
+          "height": 100,
+          "fillColor": "#ffffff",
+          "cornerRadius": 8,
+          "children": [
+            {
+              "id": "pc2-image",
+              "name": "Image",
+              "nodeType": "RECTANGLE",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "image",
+              "x": 28,
+              "y": 184,
+              "width": 76,
+              "height": 76,
+              "fillColor": "#e6e8ed"
+            },
+            {
+              "id": "pc2-info",
+              "name": "Info",
+              "nodeType": "FRAME",
+              "layoutMode": "VERTICAL",
+              "gap": 4,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "variantMapping": {
+                "properties": {
+                  "color": "info"
+                },
+                "muiProps": {
+                  "color": "info"
+                }
+              },
+              "type": "list",
+              "x": 116,
+              "y": 184,
+              "width": 240,
+              "height": 76,
+              "children": [
+                {
+                  "id": "pc2-name",
+                  "name": "Payment Title",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "Vendor Invoice Run",
+                  "x": 116,
+                  "y": 184,
+                  "width": 240,
+                  "height": 24,
+                  "fillColor": "#1c1f24",
+                  "fontSize": 16,
+                  "fontWeight": 600,
+                  "fontFamily": "Inter",
+                  "lineHeight": 24,
+                  "textAlign": "LEFT"
+                },
+                {
+                  "id": "pc2-desc",
+                  "name": "Approval Context",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "variantMapping": {
+                    "properties": {
+                      "variant": "text"
+                    },
+                    "muiProps": {
+                      "variant": "text"
+                    }
+                  },
+                  "type": "text",
+                  "text": "Dual-control review",
+                  "x": 116,
+                  "y": 212,
+                  "width": 240,
+                  "height": 20,
+                  "fillColor": "#666b75",
+                  "fontSize": 14,
+                  "fontWeight": 400,
+                  "fontFamily": "Inter",
+                  "lineHeight": 20,
+                  "textAlign": "LEFT"
+                },
+                {
+                  "id": "pc2-price",
+                  "name": "Amount",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "EUR 12,480",
+                  "x": 116,
+                  "y": 236,
+                  "width": 80,
+                  "height": 24,
+                  "fillColor": "#1778f2",
+                  "fontSize": 16,
+                  "fontWeight": 700,
+                  "fontFamily": "Inter",
+                  "lineHeight": 24,
+                  "textAlign": "LEFT"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "product-card-3",
+          "name": "Authorization Card",
+          "nodeType": "FRAME",
+          "layoutMode": "HORIZONTAL",
+          "gap": 12,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "table",
+          "x": 16,
+          "y": 284,
+          "width": 358,
+          "height": 100,
+          "fillColor": "#ffffff",
+          "cornerRadius": 8,
+          "children": [
+            {
+              "id": "pc3-image",
+              "name": "Image",
+              "nodeType": "RECTANGLE",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "image",
+              "x": 28,
+              "y": 296,
+              "width": 76,
+              "height": 76,
+              "fillColor": "#e6e8ed"
+            },
+            {
+              "id": "pc3-info",
+              "name": "Info",
+              "nodeType": "FRAME",
+              "layoutMode": "VERTICAL",
+              "gap": 4,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "variantMapping": {
+                "properties": {
+                  "color": "info"
+                },
+                "muiProps": {
+                  "color": "info"
+                }
+              },
+              "type": "list",
+              "x": 116,
+              "y": 296,
+              "width": 240,
+              "height": 76,
+              "children": [
+                {
+                  "id": "pc3-name",
+                  "name": "Payment Title",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "FX Settlement",
+                  "x": 116,
+                  "y": 296,
+                  "width": 240,
+                  "height": 24,
+                  "fillColor": "#1c1f24",
+                  "fontSize": 16,
+                  "fontWeight": 600,
+                  "fontFamily": "Inter",
+                  "lineHeight": 24,
+                  "textAlign": "LEFT"
+                },
+                {
+                  "id": "pc3-desc",
+                  "name": "Approval Context",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "variantMapping": {
+                    "properties": {
+                      "variant": "text"
+                    },
+                    "muiProps": {
+                      "variant": "text"
+                    }
+                  },
+                  "type": "text",
+                  "text": "Cutoff before 16:00 CET",
+                  "x": 116,
+                  "y": 324,
+                  "width": 240,
+                  "height": 20,
+                  "fillColor": "#666b75",
+                  "fontSize": 14,
+                  "fontWeight": 400,
+                  "fontFamily": "Inter",
+                  "lineHeight": 20,
+                  "textAlign": "LEFT"
+                },
+                {
+                  "id": "pc3-price",
+                  "name": "Amount",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "USD 52,100",
+                  "x": 116,
+                  "y": 348,
+                  "width": 80,
+                  "height": 24,
+                  "fillColor": "#1778f2",
+                  "fontSize": 16,
+                  "fontWeight": 700,
+                  "fontFamily": "Inter",
+                  "lineHeight": 24,
+                  "textAlign": "LEFT"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "product-card-4",
+          "name": "Authorization Card",
+          "nodeType": "FRAME",
+          "layoutMode": "HORIZONTAL",
+          "gap": 12,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "table",
+          "x": 16,
+          "y": 396,
+          "width": 358,
+          "height": 100,
+          "fillColor": "#ffffff",
+          "cornerRadius": 8,
+          "children": [
+            {
+              "id": "pc4-image",
+              "name": "Image",
+              "nodeType": "RECTANGLE",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "image",
+              "x": 28,
+              "y": 408,
+              "width": 76,
+              "height": 76,
+              "fillColor": "#e6e8ed"
+            },
+            {
+              "id": "pc4-info",
+              "name": "Info",
+              "nodeType": "FRAME",
+              "layoutMode": "VERTICAL",
+              "gap": 4,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "variantMapping": {
+                "properties": {
+                  "color": "info"
+                },
+                "muiProps": {
+                  "color": "info"
+                }
+              },
+              "type": "list",
+              "x": 116,
+              "y": 408,
+              "width": 240,
+              "height": 76,
+              "children": [
+                {
+                  "id": "pc4-name",
+                  "name": "Payment Title",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "Card Limit Change",
+                  "x": 116,
+                  "y": 408,
+                  "width": 240,
+                  "height": 24,
+                  "fillColor": "#1c1f24",
+                  "fontSize": 16,
+                  "fontWeight": 600,
+                  "fontFamily": "Inter",
+                  "lineHeight": 24,
+                  "textAlign": "LEFT"
+                },
+                {
+                  "id": "pc4-desc",
+                  "name": "Approval Context",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "variantMapping": {
+                    "properties": {
+                      "variant": "text"
+                    },
+                    "muiProps": {
+                      "variant": "text"
+                    }
+                  },
+                  "type": "text",
+                  "text": "Private banking review",
+                  "x": 116,
+                  "y": 436,
+                  "width": 240,
+                  "height": 20,
+                  "fillColor": "#666b75",
+                  "fontSize": 14,
+                  "fontWeight": 400,
+                  "fontFamily": "Inter",
+                  "lineHeight": 20,
+                  "textAlign": "LEFT"
+                },
+                {
+                  "id": "pc4-price",
+                  "name": "Amount",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "EUR 7,500",
+                  "x": 116,
+                  "y": 460,
+                  "width": 80,
+                  "height": 24,
+                  "fillColor": "#1778f2",
+                  "fontSize": 16,
+                  "fontWeight": 700,
+                  "fontFamily": "Inter",
+                  "lineHeight": 24,
+                  "textAlign": "LEFT"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "product-card-5",
+          "name": "Authorization Card",
+          "nodeType": "FRAME",
+          "layoutMode": "HORIZONTAL",
+          "gap": 12,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "table",
+          "x": 16,
+          "y": 508,
+          "width": 358,
+          "height": 100,
+          "fillColor": "#ffffff",
+          "cornerRadius": 8,
+          "children": [
+            {
+              "id": "pc5-image",
+              "name": "Image",
+              "nodeType": "RECTANGLE",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "image",
+              "x": 28,
+              "y": 520,
+              "width": 76,
+              "height": 76,
+              "fillColor": "#e6e8ed"
+            },
+            {
+              "id": "pc5-info",
+              "name": "Info",
+              "nodeType": "FRAME",
+              "layoutMode": "VERTICAL",
+              "gap": 4,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "variantMapping": {
+                "properties": {
+                  "color": "info"
+                },
+                "muiProps": {
+                  "color": "info"
+                }
+              },
+              "type": "list",
+              "x": 116,
+              "y": 520,
+              "width": 240,
+              "height": 76,
+              "children": [
+                {
+                  "id": "pc5-name",
+                  "name": "Payment Title",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "Instant Payment Hold",
+                  "x": 116,
+                  "y": 520,
+                  "width": 240,
+                  "height": 24,
+                  "fillColor": "#1c1f24",
+                  "fontSize": 16,
+                  "fontWeight": 600,
+                  "fontFamily": "Inter",
+                  "lineHeight": 24,
+                  "textAlign": "LEFT"
+                },
+                {
+                  "id": "pc5-desc",
+                  "name": "Approval Context",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "variantMapping": {
+                    "properties": {
+                      "variant": "text"
+                    },
+                    "muiProps": {
+                      "variant": "text"
+                    }
+                  },
+                  "type": "text",
+                  "text": "Fraud operations queue",
+                  "x": 116,
+                  "y": 548,
+                  "width": 240,
+                  "height": 20,
+                  "fillColor": "#666b75",
+                  "fontSize": 14,
+                  "fontWeight": 400,
+                  "fontFamily": "Inter",
+                  "lineHeight": 20,
+                  "textAlign": "LEFT"
+                },
+                {
+                  "id": "pc5-price",
+                  "name": "Amount",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "EUR 2,940",
+                  "x": 116,
+                  "y": 572,
+                  "width": 80,
+                  "height": 24,
+                  "fillColor": "#1778f2",
+                  "fontSize": 16,
+                  "fontWeight": 700,
+                  "fontFamily": "Inter",
+                  "lineHeight": 24,
+                  "textAlign": "LEFT"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "product-card-6",
+          "name": "Authorization Card",
+          "nodeType": "FRAME",
+          "layoutMode": "HORIZONTAL",
+          "gap": 12,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "table",
+          "x": 16,
+          "y": 620,
+          "width": 358,
+          "height": 100,
+          "fillColor": "#ffffff",
+          "cornerRadius": 8,
+          "children": [
+            {
+              "id": "pc6-image",
+              "name": "Image",
+              "nodeType": "RECTANGLE",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "image",
+              "x": 28,
+              "y": 632,
+              "width": 76,
+              "height": 76,
+              "fillColor": "#e6e8ed"
+            },
+            {
+              "id": "pc6-info",
+              "name": "Info",
+              "nodeType": "FRAME",
+              "layoutMode": "VERTICAL",
+              "gap": 4,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "variantMapping": {
+                "properties": {
+                  "color": "info"
+                },
+                "muiProps": {
+                  "color": "info"
+                }
+              },
+              "type": "list",
+              "x": 116,
+              "y": 632,
+              "width": 240,
+              "height": 76,
+              "children": [
+                {
+                  "id": "pc6-name",
+                  "name": "Payment Title",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "Liquidity Sweep",
+                  "x": 116,
+                  "y": 632,
+                  "width": 240,
+                  "height": 24,
+                  "fillColor": "#1c1f24",
+                  "fontSize": 16,
+                  "fontWeight": 600,
+                  "fontFamily": "Inter",
+                  "lineHeight": 24,
+                  "textAlign": "LEFT"
+                },
+                {
+                  "id": "pc6-desc",
+                  "name": "Approval Context",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "variantMapping": {
+                    "properties": {
+                      "variant": "text"
+                    },
+                    "muiProps": {
+                      "variant": "text"
+                    }
+                  },
+                  "type": "text",
+                  "text": "Corporate treasury rule",
+                  "x": 116,
+                  "y": 660,
+                  "width": 240,
+                  "height": 20,
+                  "fillColor": "#666b75",
+                  "fontSize": 14,
+                  "fontWeight": 400,
+                  "fontFamily": "Inter",
+                  "lineHeight": 20,
+                  "textAlign": "LEFT"
+                },
+                {
+                  "id": "pc6-price",
+                  "name": "Amount",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "EUR 125,000",
+                  "x": 116,
+                  "y": 684,
+                  "width": 80,
+                  "height": 24,
+                  "fillColor": "#1778f2",
+                  "fontSize": 16,
+                  "fontWeight": 700,
+                  "fontFamily": "Inter",
+                  "lineHeight": 24,
+                  "textAlign": "LEFT"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "width": 390,
+      "height": 1200,
+      "fillColor": "#f5f7fa"
+    }
+  ],
+  "tokens": {
+    "palette": {
+      "primary": "#1c1f24",
+      "secondary": "#1778f2",
+      "background": "#fbfcfd",
+      "text": "#666b75",
+      "success": "#16A34A",
+      "warning": "#D97706",
+      "error": "#DC2626",
+      "info": "#1778f2",
+      "divider": "#666b751f",
+      "action": {
+        "active": "#666b758a",
+        "hover": "#1c1f240a",
+        "selected": "#1c1f2414",
+        "disabled": "#666b7542",
+        "disabledBackground": "#666b751f",
+        "focus": "#1c1f241f"
+      }
+    },
+    "borderRadius": 8,
+    "spacingBase": 12,
+    "fontFamily": "Inter, Roboto, Arial, sans-serif",
+    "headingSize": 24,
+    "bodySize": 14,
+    "typography": {
+      "h1": {
+        "fontSizePx": 24,
+        "fontWeight": 700,
+        "lineHeightPx": 32,
+        "fontFamily": "Inter"
+      },
+      "h2": {
+        "fontSizePx": 16,
+        "fontWeight": 600,
+        "lineHeightPx": 24,
+        "fontFamily": "Inter"
+      },
+      "h3": {
+        "fontSizePx": 16,
+        "fontWeight": 600,
+        "lineHeightPx": 24,
+        "fontFamily": "Inter"
+      },
+      "h4": {
+        "fontSizePx": 16,
+        "fontWeight": 600,
+        "lineHeightPx": 24,
+        "fontFamily": "Inter"
+      },
+      "h5": {
+        "fontSizePx": 16,
+        "fontWeight": 600,
+        "lineHeightPx": 24,
+        "fontFamily": "Inter"
+      },
+      "h6": {
+        "fontSizePx": 16,
+        "fontWeight": 600,
+        "lineHeightPx": 24,
+        "fontFamily": "Inter"
+      },
+      "subtitle1": {
+        "fontSizePx": 16,
+        "fontWeight": 700,
+        "lineHeightPx": 32,
+        "fontFamily": "Inter"
+      },
+      "subtitle2": {
+        "fontSizePx": 16,
+        "fontWeight": 600,
+        "lineHeightPx": 24,
+        "fontFamily": "Inter"
+      },
+      "body1": {
+        "fontSizePx": 14,
+        "fontWeight": 400,
+        "lineHeightPx": 20,
+        "fontFamily": "Inter"
+      },
+      "body2": {
+        "fontSizePx": 14,
+        "fontWeight": 400,
+        "lineHeightPx": 20,
+        "fontFamily": "Inter"
+      },
+      "button": {
+        "fontSizePx": 14,
+        "fontWeight": 600,
+        "lineHeightPx": 24,
+        "fontFamily": "Inter",
+        "textTransform": "none"
+      },
+      "caption": {
+        "fontSizePx": 14,
+        "fontWeight": 400,
+        "lineHeightPx": 20,
+        "fontFamily": "Inter"
+      },
+      "overline": {
+        "fontSizePx": 14,
+        "fontWeight": 400,
+        "lineHeightPx": 20,
+        "fontFamily": "Inter",
+        "letterSpacingEm": 0.08
+      }
+    },
+    "tokenSource": {
+      "palette": "clustering",
+      "typography": "clustering",
+      "spacing": "clustering",
+      "borderRadius": "clustering",
+      "fontFamily": "clustering"
+    }
+  },
+  "metrics": {
+    "fetchedNodes": 0,
+    "skippedHidden": 0,
+    "skippedPlaceholders": 0,
+    "prototypeNavigationDetected": 0,
+    "prototypeNavigationResolved": 0,
+    "prototypeNavigationUnresolved": 0,
+    "screenElementCounts": [
+      {
+        "screenId": "screen-products",
+        "screenName": "PaymentAuthorizations",
+        "elements": 37
+      }
+    ],
+    "truncatedScreens": [],
+    "depthTruncatedScreens": [],
+    "classificationFallbacks": [],
+    "degradedGeometryNodes": [],
+    "nodeDiagnostics": []
+  },
+  "themeAnalysis": {
+    "darkModeDetected": false,
+    "signals": {
+      "luminance": false,
+      "naming": false,
+      "lightDarkPair": false
+    }
+  }
+}

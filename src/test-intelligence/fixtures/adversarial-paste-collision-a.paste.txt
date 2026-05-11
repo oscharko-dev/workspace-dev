@@ -1,0 +1,4 @@
+Key: PAY-1442
+Summary: Payment collision
+Status: Open
+Description: Reviewer A says the IBAN field is mandatory.

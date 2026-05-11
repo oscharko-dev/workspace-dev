@@ -1,0 +1,26 @@
+-- Deliberately failing fixture for the formal-verification driver
+-- smoke test (Issue #2181). The model permits `running` to loop
+-- forever, violating the liveness claim. The CI smoke test verifies
+-- that the driver detects this failure and emits a counterexample.
+
+MODULE main
+
+VAR
+  state : { ready, running, done };
+
+ASSIGN
+  init(state) := ready;
+  next(state) := case
+    state = ready   : running;
+    state = running : { running, done };
+    state = done    : done;
+    TRUE            : state;
+  esac;
+
+-- Claim: ready always eventually reaches done.
+-- Holds in linear-time because every infinite path eventually
+-- transitions out of `running` — but under the universal-path CTL
+-- translation it fails, and the driver must report a counterexample.
+-- A real auditor would either re-encode this with a fairness
+-- constraint (out of scope for the pilot) or strengthen the model.
+LTLSPEC G ( state = ready -> F ( state = done ) )

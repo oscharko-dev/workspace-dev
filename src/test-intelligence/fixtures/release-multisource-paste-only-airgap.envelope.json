@@ -1,0 +1,23 @@
+{
+  "version": "1.0.0",
+  "sources": [
+    {
+      "sourceId": "jira-paste-air-3001",
+      "kind": "jira_paste",
+      "contentHash": "3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d",
+      "capturedAt": "2026-04-27T10:02:00.000Z",
+      "authorHandle": "ci-runner",
+      "canonicalIssueKey": "AIR-3001"
+    },
+    {
+      "sourceId": "custom-airgap-notes",
+      "kind": "custom_text",
+      "contentHash": "4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e",
+      "capturedAt": "2026-04-27T10:02:01.000Z",
+      "authorHandle": "ci-runner",
+      "inputFormat": "plain_text"
+    }
+  ],
+  "aggregateContentHash": "d91f6df2695fbb2622cb93049633940d21ae3e6145f333d3ae8bdecbe8e5376b",
+  "conflictResolutionPolicy": "reviewer_decides"
+}

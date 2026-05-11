@@ -1,0 +1,10 @@
+{
+  "screens": [
+    {
+      "screenId": "screen-profile",
+      "screenName": "Profile",
+      "file": "src/pages/profile.tsx",
+      "components": []
+    }
+  ]
+}

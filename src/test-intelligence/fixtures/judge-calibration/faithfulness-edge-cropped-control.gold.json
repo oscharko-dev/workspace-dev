@@ -1,0 +1,37 @@
+{
+  "fixtureId": "faithfulness-edge-cropped-control",
+  "judge": "faithfulness",
+  "scenarioKind": "edge",
+  "humanVerdict": "repair",
+  "humanFindingCodes": [
+    "mismatch_cropped_control"
+  ],
+  "rationale": "The 'Continue' control is partially clipped by a sticky footer in the capture; reviewer flagged as repairable framing issue.",
+  "goldVerdicts": [
+    {
+      "reviewer": "reviewer:banking-sme:alpha",
+      "verdict": "repair",
+      "findingCodes": [
+        "mismatch_cropped_control"
+      ],
+      "rationale": "Banking-domain SME first-pass review: The 'Continue' control is partially clipped by a sticky footer in the capture; reviewer flagged as repairable framing issue.",
+      "timestamp": "2026-04-29T10:00:00.000Z"
+    },
+    {
+      "reviewer": "reviewer:banking-sme:beta",
+      "verdict": "repair",
+      "findingCodes": [
+        "mismatch_cropped_control"
+      ],
+      "rationale": "Independent second-reviewer pass: confirmed the first-pass verdict \u2014 The 'Continue' control is partially clipped by a sticky footer in the capture; reviewer flagged as repairable framing issue.",
+      "timestamp": "2026-04-30T14:00:00.000Z"
+    }
+  ],
+  "adjudicated": false,
+  "mockJudgeResponse": {
+    "predictedVerdict": "repair",
+    "predictedFindingCodes": [
+      "mismatch_cropped_control"
+    ]
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "judge": "logic",
+  "input": {
+    "testDesignModel": {
+      "screens": [{ "screenId": "10:1", "screenName": "Logout confirmation" }],
+      "fields": []
+    },
+    "coveragePlan": {
+      "perScreen": [{ "screenId": "10:1", "requiredFlows": ["confirm-logout"] }]
+    },
+    "generatedTestCases": {
+      "schemaVersion": "1.0.0",
+      "jobId": "calibration-logic-edge-single-step-tc",
+      "testCases": [
+        {
+          "id": "tc-logout-1",
+          "title": "Confirm logout",
+          "type": "functional",
+          "steps": [
+            {
+              "stepIndex": 1,
+              "action": "Click the Logout button",
+              "expected": "Session is terminated"
+            }
+          ],
+          "qualitySignals": {
+            "coveredFieldIds": [],
+            "coveredActionIds": ["confirm-logout"],
+            "coveredScreenIds": ["10:1"]
+          }
+        }
+      ]
+    }
+  }
+}

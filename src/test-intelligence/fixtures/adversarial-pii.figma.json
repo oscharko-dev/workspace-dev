@@ -1,0 +1,60 @@
+{
+  "source": {
+    "kind": "figma_local_json"
+  },
+  "screens": [
+    {
+      "screenId": "s-registration",
+      "screenName": "Registration Form",
+      "nodes": [
+        {
+          "nodeId": "n-email",
+          "nodeName": "Email",
+          "nodeType": "TEXT_INPUT",
+          "text": "john.doe@example.com",
+          "defaultValue": "john.doe@example.com",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-pan",
+          "nodeName": "Card Number",
+          "nodeType": "TEXT_INPUT",
+          "text": "Card Number",
+          "defaultValue": "4111111111111111",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-phone",
+          "nodeName": "Phone",
+          "nodeType": "TEXT_INPUT",
+          "text": "Phone",
+          "defaultValue": "+1 650 253-0000",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-ssn",
+          "nodeName": "SSN",
+          "nodeType": "TEXT_INPUT",
+          "text": "Social Security Number",
+          "defaultValue": "123-45-6789",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-token-note",
+          "nodeName": "API Token",
+          "nodeType": "TEXT_INPUT",
+          "text": "Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyLTEifQ.signature",
+          "defaultValue": "Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyLTEifQ.signature",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-submit",
+          "nodeName": "Register",
+          "nodeType": "BUTTON",
+          "text": "Register",
+          "childNodeIds": []
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "attributes": [
+    { "key": "data_class", "value": "PCI-DSS-3" },
+    { "key": "regulatory_scope", "value": "PCI-DSS" }
+  ]
+}

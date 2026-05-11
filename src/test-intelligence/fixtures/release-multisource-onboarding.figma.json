@@ -1,0 +1,71 @@
+{
+  "source": {
+    "kind": "figma_local_json"
+  },
+  "screens": [
+    {
+      "screenId": "s-acct-open",
+      "screenName": "Account Opening",
+      "nodes": [
+        {
+          "nodeId": "n-given-name",
+          "nodeName": "Given Name",
+          "nodeType": "TEXT_INPUT",
+          "text": "Given Name",
+          "defaultValue": "Anna",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-family-name",
+          "nodeName": "Family Name",
+          "nodeType": "TEXT_INPUT",
+          "text": "Family Name",
+          "defaultValue": "Beispiel",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-email",
+          "nodeName": "Email",
+          "nodeType": "TEXT_INPUT",
+          "text": "Email",
+          "defaultValue": "anna.beispiel@example.test",
+          "validations": ["Required", "Email format"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-continue",
+          "nodeName": "Continue",
+          "nodeType": "BUTTON",
+          "text": "Continue",
+          "navigationTarget": "s-kyc-upload",
+          "childNodeIds": []
+        }
+      ]
+    },
+    {
+      "screenId": "s-kyc-upload",
+      "screenName": "KYC Document Upload",
+      "nodes": [
+        {
+          "nodeId": "n-doc-type",
+          "nodeName": "Document Type",
+          "nodeType": "SELECT",
+          "text": "Document Type",
+          "defaultValue": "passport",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-upload-button",
+          "nodeName": "Upload Document",
+          "nodeType": "BUTTON",
+          "text": "Upload Document",
+          "navigationTarget": "s-kyc-done",
+          "childNodeIds": []
+        }
+      ]
+    }
+  ]
+}

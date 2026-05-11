@@ -1,4 +1,3 @@
-/* eslint-env node */
 import { spawn } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import net from "node:net";
@@ -17,6 +16,12 @@ const DEFAULT_BUDGETS = {
 const DEFAULT_ROUTES = ["/", "/overview", "/checkout"];
 const DEFAULT_PROFILES = ["mobile", "desktop"];
 const CHROME_FLAGS = "--headless --no-sandbox --disable-dev-shm-usage";
+const LIGHTHOUSE_TIMEOUT_MS =
+  Number(process.env.FIGMAPIPE_PERF_LIGHTHOUSE_TIMEOUT_MS ?? 180_000) || 180_000;
+const LIGHTHOUSE_MAX_ATTEMPTS = Math.max(
+  1,
+  Number(process.env.FIGMAPIPE_PERF_LIGHTHOUSE_MAX_ATTEMPTS ?? 2) || 2
+);
 
 const parseBooleanLike = (value, fallback) => {
   if (!value) {
@@ -68,6 +73,22 @@ const normalizeNumber = (value) => {
   return value;
 };
 
+const resolveLighthouseRoot = (report) => {
+  if (report && typeof report === "object" && report.lhr && typeof report.lhr === "object") {
+    return report.lhr;
+  }
+  return report;
+};
+
+const pickMetric = (candidates) => {
+  for (const candidate of candidates) {
+    if (typeof candidate.value === "number" && Number.isFinite(candidate.value)) {
+      return candidate;
+    }
+  }
+  return { value: undefined, source: "missing" };
+};
+
 const parseStringArray = ({ envValue, fallback }) => {
   if (envValue && envValue.trim().length > 0) {
     try {
@@ -102,18 +123,80 @@ const writeJson = async (filePath, payload) => {
   await writeFile(filePath, `${JSON.stringify(payload, null, 2)}\n`, "utf-8");
 };
 
-const runCommand = async ({ command, args, cwd, env }) => {
+const killProcessTree = (child, signal) => {
+  if (!child || child.killed) {
+    return;
+  }
+  try {
+    if (process.platform === "win32") {
+      child.kill(signal);
+      return;
+    }
+    if (typeof child.pid === "number" && child.pid > 0) {
+      process.kill(-child.pid, signal);
+      return;
+    }
+    child.kill(signal);
+  } catch (error) {
+    const errorCode =
+      error && typeof error === "object" && "code" in error ? error.code : undefined;
+    if (errorCode !== "ESRCH") {
+      child.kill(signal);
+    }
+  }
+};
+
+const runCommand = async ({ command, args, cwd, env, timeoutMs }) => {
   return await new Promise((resolve) => {
     const child = spawn(command, args, {
       cwd,
       env,
-      stdio: ["ignore", "pipe", "pipe"]
+      stdio: ["ignore", "pipe", "pipe"],
+      detached: process.platform !== "win32"
     });
     let settled = false;
+    let timedOut = false;
     let stdout = "";
     let stderr = "";
+    let forceKillTimer;
     child.stdout.setEncoding("utf-8");
     child.stderr.setEncoding("utf-8");
+    const timeoutTimer =
+      typeof timeoutMs === "number" && Number.isFinite(timeoutMs) && timeoutMs > 0
+        ? setTimeout(() => {
+            timedOut = true;
+            killProcessTree(child, "SIGTERM");
+            forceKillTimer = setTimeout(() => {
+              killProcessTree(child, "SIGKILL");
+              child.stdout.destroy();
+              child.stderr.destroy();
+              complete({
+                code: 124,
+                errorText: `[timeout] Command exceeded ${timeoutMs}ms and was terminated.`
+              });
+            }, 2_000);
+          }, timeoutMs)
+        : undefined;
+    const complete = ({ code, errorText }) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (timeoutTimer) {
+        clearTimeout(timeoutTimer);
+      }
+      if (forceKillTimer) {
+        clearTimeout(forceKillTimer);
+      }
+      resolve({
+        success: !timedOut && code === 0,
+        code,
+        timedOut,
+        stdout,
+        stderr,
+        combined: `${stdout}\n${stderr}${errorText ? `\n${errorText}` : ""}`
+      });
+    };
     child.stdout.on("data", (chunk) => {
       stdout += chunk;
     });
@@ -121,29 +204,18 @@ const runCommand = async ({ command, args, cwd, env }) => {
       stderr += chunk;
     });
     child.on("error", (error) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      resolve({
-        success: false,
-        code: 1,
-        stdout,
-        stderr,
-        combined: `${stdout}\n${stderr}\n${error instanceof Error ? error.message : String(error)}`
+      complete({
+        code: timedOut ? 124 : 1,
+        errorText: error instanceof Error ? error.message : String(error)
       });
     });
     child.on("close", (code) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      resolve({
-        success: code === 0,
-        code: code ?? 1,
-        stdout,
-        stderr,
-        combined: `${stdout}\n${stderr}`
+      complete({
+        code: timedOut ? 124 : code ?? 1,
+        errorText:
+          timedOut && typeof timeoutMs === "number"
+            ? `[timeout] Command exceeded ${timeoutMs}ms and was terminated.`
+            : undefined
       });
     });
   });
@@ -228,12 +300,12 @@ const resolveScriptConfig = async () => {
   }).filter((entry) => entry === "mobile" || entry === "desktop");
   const artifactDir = process.env.FIGMAPIPE_PERF_ARTIFACT_DIR?.trim() || path.join(process.cwd(), "artifacts", "performance");
   const baselinePath =
-    process.env.FIGMAPIPE_PERF_BASELINE_PATH?.trim() || path.join(artifactDir, "perf-baseline.json");
+    process.env.FIGMAPIPE_PERF_BASELINE_PATH?.trim() || path.join(process.cwd(), "perf-baseline.json");
   const reportPath = process.env.FIGMAPIPE_PERF_REPORT_PATH?.trim() || path.join(artifactDir, `perf-${mode}-report.json`);
   const regressionTolerancePct =
     Number(process.env.FIGMAPIPE_PERF_REGRESSION_TOLERANCE_PCT ?? budgetConfig.regressionTolerancePct ?? 10) || 10;
   const strict = parseBooleanLike(process.env.FIGMAPIPE_PERF_STRICT, mode === "assert");
-  const allowBaselineBootstrap = parseBooleanLike(process.env.FIGMAPIPE_PERF_ALLOW_BASELINE_BOOTSTRAP, true);
+  const allowBaselineBootstrap = parseBooleanLike(process.env.FIGMAPIPE_PERF_ALLOW_BASELINE_BOOTSTRAP, mode === "baseline");
   const previewHost = process.env.FIGMAPIPE_PERF_PREVIEW_HOST?.trim() || "127.0.0.1";
   const configuredPort = Number(process.env.FIGMAPIPE_PERF_PREVIEW_PORT);
   const previewPort =
@@ -278,19 +350,41 @@ const collectAuditForRoute = async ({
     args.push("--preset=desktop");
   }
 
-  const runResult = await runCommand({
-    command: "pnpm",
-    args,
-    cwd: process.cwd(),
-    env: process.env
-  });
+  let runResult;
+  for (let attempt = 1; attempt <= LIGHTHOUSE_MAX_ATTEMPTS; attempt += 1) {
+    console.log(
+      `[perf-runner] lighthouse profile=${profile} route=${route} attempt ${attempt}/${LIGHTHOUSE_MAX_ATTEMPTS}`
+    );
+    runResult = await runCommand({
+      command: "pnpm",
+      args,
+      cwd: process.cwd(),
+      env: process.env,
+      timeoutMs: LIGHTHOUSE_TIMEOUT_MS
+    });
+    if (runResult.success) {
+      break;
+    }
+    const reason = runResult.timedOut
+      ? `timed out after ${LIGHTHOUSE_TIMEOUT_MS}ms`
+      : `exited with code ${runResult.code}`;
+    console.warn(
+      `[perf-runner] lighthouse ${profile} ${route} attempt ${attempt}/${LIGHTHOUSE_MAX_ATTEMPTS} ${reason}`
+    );
+    if (attempt < LIGHTHOUSE_MAX_ATTEMPTS) {
+      await new Promise((resolve) => {
+        setTimeout(resolve, attempt * 1_000);
+      });
+    }
+  }
 
-  if (!runResult.success) {
+  if (!runResult?.success) {
     throw new Error(`Lighthouse failed for ${profile} ${route}: ${runResult.combined.slice(0, 2000)}`);
   }
 
   const report = JSON.parse(await readFile(outputPath, "utf-8"));
-  const audits = report.lhr?.audits ?? {};
+  const lhr = resolveLighthouseRoot(report);
+  const audits = lhr?.audits ?? {};
   const resourceSummaryItems = audits["resource-summary"]?.details?.items;
   const jsBytes =
     Array.isArray(resourceSummaryItems) && resourceSummaryItems.length > 0
@@ -299,23 +393,62 @@ const collectAuditForRoute = async ({
           .reduce((total, item) => total + (Number(item.transferSize) || 0), 0)
       : normalizeNumber(audits["total-byte-weight"]?.numericValue) ?? 0;
 
-  const inpAudit = normalizeNumber(audits["interaction-to-next-paint"]?.numericValue);
-  const fallbackInp = normalizeNumber(audits["total-blocking-time"]?.numericValue);
+  const inpMetric = pickMetric([
+    {
+      value: normalizeNumber(audits["interaction-to-next-paint"]?.numericValue),
+      source: "interaction-to-next-paint"
+    },
+    {
+      value: normalizeNumber(audits["experimental-interaction-to-next-paint"]?.numericValue),
+      source: "experimental-interaction-to-next-paint"
+    },
+    {
+      value: normalizeNumber(audits["total-blocking-time"]?.numericValue),
+      source: "total-blocking-time-proxy"
+    },
+    {
+      value: normalizeNumber(audits.interactive?.numericValue),
+      source: "interactive-proxy"
+    }
+  ]);
+  const lcpMetricValue = normalizeNumber(audits["largest-contentful-paint"]?.numericValue);
+  const interactiveMetricValue = normalizeNumber(audits.interactive?.numericValue);
+  const routeTransitionMetric = pickMetric([
+    {
+      value:
+        typeof interactiveMetricValue === "number" && typeof lcpMetricValue === "number"
+          ? Math.max(0, interactiveMetricValue - lcpMetricValue)
+          : undefined,
+      source: "interactive-minus-lcp"
+    },
+    {
+      value: normalizeNumber(audits["total-blocking-time"]?.numericValue),
+      source: "total-blocking-time-proxy"
+    },
+    {
+      value: interactiveMetricValue,
+      source: "interactive"
+    }
+  ]);
 
   return {
     profile,
     route,
     url,
     metrics: {
-      inp_ms: inpAudit ?? fallbackInp,
-      lcp_ms: normalizeNumber(audits["largest-contentful-paint"]?.numericValue),
+      inp_ms: inpMetric.value,
+      lcp_ms: lcpMetricValue,
       cls: normalizeNumber(audits["cumulative-layout-shift"]?.numericValue),
       initial_js_kb: Math.round((jsBytes / 1024) * 100) / 100,
-      route_transition_ms: normalizeNumber(audits.interactive?.numericValue)
+      route_transition_ms: routeTransitionMetric.value
+    },
+    metricSources: {
+      inp: inpMetric.source,
+      route_transition_ms: routeTransitionMetric.source
     },
     audits: {
-      performance_score: normalizeNumber(report.lhr?.categories?.performance?.score),
-      fetch_time: report.lhr?.fetchTime
+      performance_score: normalizeNumber(lhr?.categories?.performance?.score),
+      fetch_time: lhr?.fetchTime
     },
     artifacts: {
       lighthouseReport: outputPath
@@ -339,6 +472,22 @@ const aggregateMetrics = (samples) => {
     initial_js_kb: p75(jsValues),
     route_transition_ms: p75(routeTransitionValues)
   };
+};
+
+const summarizeMetricSources = (samples) => {
+  const sourceCounts = {
+    inp: {},
+    route_transition_ms: {}
+  };
+
+  for (const sample of samples) {
+    const inpSource = sample.metricSources?.inp ?? "missing";
+    const routeSource = sample.metricSources?.route_transition_ms ?? "missing";
+    sourceCounts.inp[inpSource] = (sourceCounts.inp[inpSource] ?? 0) + 1;
+    sourceCounts.route_transition_ms[routeSource] = (sourceCounts.route_transition_ms[routeSource] ?? 0) + 1;
+  }
+
+  return sourceCounts;
 };
 
 const compareAgainstBudgets = ({ aggregate, budgets }) => {
@@ -528,6 +677,7 @@ const run = async () => {
         previewOrigin: origin
       },
       aggregate,
+      metricSources: summarizeMetricSources(samples),
       baselineStatus,
       checks: {
         budgets: budgetChecks,
@@ -556,6 +706,7 @@ const run = async () => {
       `[perf-runner] mode=${mode} samples=${samples.length} failedBudgets=${failedBudgetChecks.length} failedRegression=${failedRegressionChecks.length} strict=${config.strict}`
     );
     console.log(`[perf-runner] report=${config.reportPath}`);
+    console.log(`[perf-runner] baselineStatus=${baselineStatus}`);
 
     if (strictFailure) {
       process.exitCode = 1;

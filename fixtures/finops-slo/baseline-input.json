@@ -1,0 +1,78 @@
+{
+  "generatedAt": "2026-05-10T12:00:00.000Z",
+  "policy": {
+    "rollingWindowDays": 7,
+    "historyRetentionDays": 30,
+    "latencyBudgetOverageFraction": 0.15,
+    "tokenBudgets": {
+      "generator": 12000,
+      "judge": 6000,
+      "visual_sidecar": 1000
+    },
+    "latencyBudgetsMs": {
+      "default": 1000,
+      "byFixture": {
+        "baseline-simple-form": 1000,
+        "baseline-calculation": 1050
+      }
+    },
+    "minimumRoutingSavingsRatio": 0.5
+  },
+  "store": {
+    "schemaVersion": "1.0.0",
+    "records": [
+      {
+        "jobId": "job-fixture-1",
+        "generatedAt": "2026-05-04T12:00:00.000Z",
+        "outcome": "completed",
+        "fixtureId": "baseline-simple-form",
+        "totals": {
+          "durationMs": 920,
+          "inputTokens": 11600,
+          "outputTokens": 3700,
+          "estimatedCost": 0.12
+        },
+        "roles": {
+          "generator": { "tokens": 10000 },
+          "judge": { "tokens": 4500 },
+          "visual_sidecar": { "tokens": 800 }
+        }
+      },
+      {
+        "jobId": "job-fixture-2",
+        "generatedAt": "2026-05-06T12:00:00.000Z",
+        "outcome": "completed",
+        "fixtureId": "baseline-simple-form",
+        "totals": {
+          "durationMs": 980,
+          "inputTokens": 11800,
+          "outputTokens": 3900,
+          "estimatedCost": 0.13
+        },
+        "roles": {
+          "generator": { "tokens": 10200 },
+          "judge": { "tokens": 4700 },
+          "visual_sidecar": { "tokens": 820 }
+        }
+      },
+      {
+        "jobId": "job-fixture-3",
+        "generatedAt": "2026-05-09T12:00:00.000Z",
+        "outcome": "completed",
+        "fixtureId": "baseline-calculation",
+        "totals": {
+          "durationMs": 1010,
+          "inputTokens": 11900,
+          "outputTokens": 3950,
+          "estimatedCost": 0.13
+        },
+        "roles": {
+          "generator": { "tokens": 10300 },
+          "judge": { "tokens": 4800 },
+          "visual_sidecar": { "tokens": 810 }
+        }
+      }
+    ]
+  },
+  "routingSavingsRatio": 0.61
+}

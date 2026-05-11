@@ -1,0 +1,852 @@
+{
+  "sourceName": "Design System Mapped Board",
+  "screens": [
+    {
+      "id": "screen-profile",
+      "name": "Profile",
+      "layoutMode": "VERTICAL",
+      "gap": 16,
+      "padding": {
+        "top": 24,
+        "right": 24,
+        "bottom": 24,
+        "left": 24
+      },
+      "children": [
+        {
+          "id": "profile-title",
+          "name": "Title",
+          "nodeType": "TEXT",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "text",
+          "text": "User Profile",
+          "x": 24,
+          "y": 24,
+          "width": 200,
+          "height": 32,
+          "fillColor": "#212121",
+          "fontSize": 24,
+          "fontWeight": 700,
+          "fontFamily": "Roboto",
+          "lineHeight": 32,
+          "textAlign": "LEFT"
+        },
+        {
+          "id": "avatar-section",
+          "name": "Avatar Section",
+          "nodeType": "FRAME",
+          "layoutMode": "HORIZONTAL",
+          "gap": 16,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "avatar",
+          "x": 24,
+          "y": 72,
+          "width": 752,
+          "height": 80,
+          "children": [
+            {
+              "id": "avatar",
+              "name": "MuiAvatarRoot",
+              "nodeType": "ELLIPSE",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "avatar",
+              "x": 24,
+              "y": 72,
+              "width": 64,
+              "height": 64,
+              "fillColor": "#617df5"
+            },
+            {
+              "id": "avatar-info",
+              "name": "Info",
+              "nodeType": "FRAME",
+              "layoutMode": "VERTICAL",
+              "gap": 4,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "variantMapping": {
+                "properties": {
+                  "color": "info"
+                },
+                "muiProps": {
+                  "color": "info"
+                }
+              },
+              "type": "stack",
+              "x": 104,
+              "y": 72,
+              "width": 400,
+              "height": 64,
+              "children": [
+                {
+                  "id": "user-name",
+                  "name": "Name",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "Jane Smith",
+                  "x": 104,
+                  "y": 72,
+                  "width": 200,
+                  "height": 28,
+                  "fillColor": "#212121",
+                  "fontSize": 20,
+                  "fontWeight": 600,
+                  "fontFamily": "Roboto",
+                  "lineHeight": 28,
+                  "textAlign": "LEFT"
+                },
+                {
+                  "id": "user-role",
+                  "name": "Role",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "Senior Engineer",
+                  "x": 104,
+                  "y": 104,
+                  "width": 200,
+                  "height": 20,
+                  "fillColor": "#757575",
+                  "fontSize": 14,
+                  "fontWeight": 400,
+                  "fontFamily": "Roboto",
+                  "lineHeight": 20,
+                  "textAlign": "LEFT"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "stats-card-1",
+          "name": "Stats Card",
+          "nodeType": "FRAME",
+          "layoutMode": "VERTICAL",
+          "gap": 8,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "card",
+          "x": 24,
+          "y": 168,
+          "width": 240,
+          "height": 120,
+          "fillColor": "#ffffff",
+          "cornerRadius": 12,
+          "children": [
+            {
+              "id": "stat1-label",
+              "name": "Label",
+              "nodeType": "TEXT",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "text",
+              "text": "Projects",
+              "x": 40,
+              "y": 184,
+              "width": 80,
+              "height": 20,
+              "fillColor": "#757575",
+              "fontSize": 14,
+              "fontWeight": 500,
+              "fontFamily": "Roboto",
+              "lineHeight": 20,
+              "textAlign": "LEFT"
+            },
+            {
+              "id": "stat1-value",
+              "name": "Value",
+              "nodeType": "TEXT",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "text",
+              "text": "42",
+              "x": 40,
+              "y": 212,
+              "width": 60,
+              "height": 44,
+              "fillColor": "#212121",
+              "fontSize": 36,
+              "fontWeight": 700,
+              "fontFamily": "Roboto",
+              "lineHeight": 44,
+              "textAlign": "LEFT"
+            }
+          ]
+        },
+        {
+          "id": "stats-card-2",
+          "name": "Stats Card",
+          "nodeType": "FRAME",
+          "layoutMode": "VERTICAL",
+          "gap": 8,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "card",
+          "x": 280,
+          "y": 168,
+          "width": 240,
+          "height": 120,
+          "fillColor": "#ffffff",
+          "cornerRadius": 12,
+          "children": [
+            {
+              "id": "stat2-label",
+              "name": "Label",
+              "nodeType": "TEXT",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "text",
+              "text": "Contributions",
+              "x": 296,
+              "y": 184,
+              "width": 120,
+              "height": 20,
+              "fillColor": "#757575",
+              "fontSize": 14,
+              "fontWeight": 500,
+              "fontFamily": "Roboto",
+              "lineHeight": 20,
+              "textAlign": "LEFT"
+            },
+            {
+              "id": "stat2-value",
+              "name": "Value",
+              "nodeType": "TEXT",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "text",
+              "text": "1,284",
+              "x": 296,
+              "y": 212,
+              "width": 100,
+              "height": 44,
+              "fillColor": "#212121",
+              "fontSize": 36,
+              "fontWeight": 700,
+              "fontFamily": "Roboto",
+              "lineHeight": 44,
+              "textAlign": "LEFT"
+            }
+          ]
+        },
+        {
+          "id": "stats-card-3",
+          "name": "Stats Card",
+          "nodeType": "FRAME",
+          "layoutMode": "VERTICAL",
+          "gap": 8,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "card",
+          "x": 536,
+          "y": 168,
+          "width": 240,
+          "height": 120,
+          "fillColor": "#ffffff",
+          "cornerRadius": 12,
+          "children": [
+            {
+              "id": "stat3-label",
+              "name": "Label",
+              "nodeType": "TEXT",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "text",
+              "text": "Reviews",
+              "x": 552,
+              "y": 184,
+              "width": 80,
+              "height": 20,
+              "fillColor": "#757575",
+              "fontSize": 14,
+              "fontWeight": 500,
+              "fontFamily": "Roboto",
+              "lineHeight": 20,
+              "textAlign": "LEFT"
+            },
+            {
+              "id": "stat3-value",
+              "name": "Value",
+              "nodeType": "TEXT",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "text",
+              "text": "89",
+              "x": 552,
+              "y": 212,
+              "width": 50,
+              "height": 44,
+              "fillColor": "#212121",
+              "fontSize": 36,
+              "fontWeight": 700,
+              "fontFamily": "Roboto",
+              "lineHeight": 44,
+              "textAlign": "LEFT"
+            }
+          ]
+        },
+        {
+          "id": "divider-1",
+          "name": "MuiDividerRoot",
+          "nodeType": "LINE",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "divider",
+          "x": 24,
+          "y": 304,
+          "width": 752,
+          "height": 1,
+          "strokeColor": "#e0e0e0",
+          "strokeWidth": 1
+        },
+        {
+          "id": "chip-section",
+          "name": "Skills",
+          "nodeType": "FRAME",
+          "layoutMode": "HORIZONTAL",
+          "gap": 8,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "stack",
+          "x": 24,
+          "y": 321,
+          "width": 752,
+          "height": 40,
+          "children": [
+            {
+              "id": "chip-1",
+              "name": "MuiChipRoot",
+              "nodeType": "FRAME",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "chip",
+              "x": 24,
+              "y": 321,
+              "width": 80,
+              "height": 32,
+              "fillColor": "#e8edfc",
+              "cornerRadius": 16,
+              "children": [
+                {
+                  "id": "chip-1-label",
+                  "name": "Label",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "React",
+                  "x": 40,
+                  "y": 328,
+                  "width": 48,
+                  "height": 18,
+                  "fillColor": "#3d52b5",
+                  "fontSize": 13,
+                  "fontWeight": 500,
+                  "fontFamily": "Roboto",
+                  "lineHeight": 18,
+                  "textAlign": "CENTER"
+                }
+              ]
+            },
+            {
+              "id": "chip-2",
+              "name": "MuiChipRoot",
+              "nodeType": "FRAME",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "chip",
+              "x": 112,
+              "y": 321,
+              "width": 100,
+              "height": 32,
+              "fillColor": "#e8edfc",
+              "cornerRadius": 16,
+              "children": [
+                {
+                  "id": "chip-2-label",
+                  "name": "Label",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "TypeScript",
+                  "x": 128,
+                  "y": 328,
+                  "width": 68,
+                  "height": 18,
+                  "fillColor": "#3d52b5",
+                  "fontSize": 13,
+                  "fontWeight": 500,
+                  "fontFamily": "Roboto",
+                  "lineHeight": 18,
+                  "textAlign": "CENTER"
+                }
+              ]
+            },
+            {
+              "id": "chip-3",
+              "name": "MuiChipRoot",
+              "nodeType": "FRAME",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "chip",
+              "x": 220,
+              "y": 321,
+              "width": 80,
+              "height": 32,
+              "fillColor": "#e8edfc",
+              "cornerRadius": 16,
+              "children": [
+                {
+                  "id": "chip-3-label",
+                  "name": "Label",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "Node.js",
+                  "x": 236,
+                  "y": 328,
+                  "width": 48,
+                  "height": 18,
+                  "fillColor": "#3d52b5",
+                  "fontSize": 13,
+                  "fontWeight": 500,
+                  "fontFamily": "Roboto",
+                  "lineHeight": 18,
+                  "textAlign": "CENTER"
+                }
+              ]
+            },
+            {
+              "id": "chip-4",
+              "name": "MuiChipRoot",
+              "nodeType": "FRAME",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "chip",
+              "x": 308,
+              "y": 321,
+              "width": 100,
+              "height": 32,
+              "fillColor": "#e8edfc",
+              "cornerRadius": 16,
+              "children": [
+                {
+                  "id": "chip-4-label",
+                  "name": "Label",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "PostgreSQL",
+                  "x": 324,
+                  "y": 328,
+                  "width": 68,
+                  "height": 18,
+                  "fillColor": "#3d52b5",
+                  "fontSize": 13,
+                  "fontWeight": 500,
+                  "fontFamily": "Roboto",
+                  "lineHeight": 18,
+                  "textAlign": "CENTER"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "badge-item",
+          "name": "MuiBadgeRoot",
+          "nodeType": "FRAME",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "badge",
+          "x": 24,
+          "y": 377,
+          "width": 48,
+          "height": 48,
+          "children": [
+            {
+              "id": "badge-icon",
+              "name": "Icon",
+              "nodeType": "ELLIPSE",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "container",
+              "x": 24,
+              "y": 377,
+              "width": 40,
+              "height": 40,
+              "fillColor": "#d9d9d9"
+            },
+            {
+              "id": "badge-count",
+              "name": "Badge",
+              "nodeType": "ELLIPSE",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "badge",
+              "x": 52,
+              "y": 377,
+              "width": 20,
+              "height": 20,
+              "fillColor": "#f54236",
+              "children": [
+                {
+                  "id": "badge-text",
+                  "name": "Count",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "3",
+                  "x": 58,
+                  "y": 379,
+                  "width": 8,
+                  "height": 16,
+                  "fillColor": "#ffffff",
+                  "fontSize": 12,
+                  "fontWeight": 600,
+                  "fontFamily": "Roboto",
+                  "lineHeight": 16,
+                  "textAlign": "CENTER"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "width": 800,
+      "height": 1000,
+      "fillColor": "#f7f7fa"
+    }
+  ],
+  "tokens": {
+    "palette": {
+      "primary": "#212121",
+      "secondary": "#617df5",
+      "background": "#f2f4fc",
+      "text": "#212121",
+      "success": "#16A34A",
+      "warning": "#D97706",
+      "error": "#f54236",
+      "info": "#3d52b5",
+      "divider": "#dbdbdb",
+      "action": {
+        "active": "#2121218a",
+        "hover": "#2121210a",
+        "selected": "#21212114",
+        "disabled": "#21212142",
+        "disabledBackground": "#2121211f",
+        "focus": "#2121211f"
+      }
+    },
+    "borderRadius": 16,
+    "spacingBase": 8,
+    "fontFamily": "Roboto, Arial, sans-serif",
+    "headingSize": 36,
+    "bodySize": 14,
+    "typography": {
+      "h1": {
+        "fontSizePx": 36,
+        "fontWeight": 700,
+        "lineHeightPx": 44,
+        "fontFamily": "Roboto"
+      },
+      "h2": {
+        "fontSizePx": 24,
+        "fontWeight": 700,
+        "lineHeightPx": 32,
+        "fontFamily": "Roboto"
+      },
+      "h3": {
+        "fontSizePx": 20,
+        "fontWeight": 600,
+        "lineHeightPx": 28,
+        "fontFamily": "Roboto"
+      },
+      "h4": {
+        "fontSizePx": 20,
+        "fontWeight": 600,
+        "lineHeightPx": 28,
+        "fontFamily": "Roboto"
+      },
+      "h5": {
+        "fontSizePx": 20,
+        "fontWeight": 600,
+        "lineHeightPx": 28,
+        "fontFamily": "Roboto"
+      },
+      "h6": {
+        "fontSizePx": 20,
+        "fontWeight": 600,
+        "lineHeightPx": 28,
+        "fontFamily": "Roboto"
+      },
+      "subtitle1": {
+        "fontSizePx": 20,
+        "fontWeight": 700,
+        "lineHeightPx": 32,
+        "fontFamily": "Roboto"
+      },
+      "subtitle2": {
+        "fontSizePx": 20,
+        "fontWeight": 600,
+        "lineHeightPx": 28,
+        "fontFamily": "Roboto"
+      },
+      "body1": {
+        "fontSizePx": 14,
+        "fontWeight": 500,
+        "lineHeightPx": 20,
+        "fontFamily": "Roboto"
+      },
+      "body2": {
+        "fontSizePx": 13,
+        "fontWeight": 500,
+        "lineHeightPx": 18,
+        "fontFamily": "Roboto"
+      },
+      "button": {
+        "fontSizePx": 13,
+        "fontWeight": 700,
+        "lineHeightPx": 44,
+        "fontFamily": "Roboto",
+        "textTransform": "none"
+      },
+      "caption": {
+        "fontSizePx": 12,
+        "fontWeight": 600,
+        "lineHeightPx": 16,
+        "fontFamily": "Roboto"
+      },
+      "overline": {
+        "fontSizePx": 12,
+        "fontWeight": 600,
+        "lineHeightPx": 16,
+        "fontFamily": "Roboto",
+        "letterSpacingEm": 0.08
+      }
+    },
+    "tokenSource": {
+      "palette": "clustering",
+      "typography": "clustering",
+      "spacing": "clustering",
+      "borderRadius": "clustering",
+      "fontFamily": "clustering"
+    }
+  },
+  "metrics": {
+    "fetchedNodes": 0,
+    "skippedHidden": 0,
+    "skippedPlaceholders": 0,
+    "prototypeNavigationDetected": 0,
+    "prototypeNavigationResolved": 0,
+    "prototypeNavigationUnresolved": 0,
+    "screenElementCounts": [
+      {
+        "screenId": "screen-profile",
+        "screenName": "Profile",
+        "elements": 29
+      }
+    ],
+    "truncatedScreens": [],
+    "depthTruncatedScreens": [],
+    "classificationFallbacks": [
+      {
+        "screenId": "screen-profile",
+        "screenName": "Profile",
+        "nodeId": "badge-icon",
+        "nodeName": "Icon",
+        "nodeType": "ELLIPSE",
+        "depth": 1
+      }
+    ],
+    "degradedGeometryNodes": [],
+    "nodeDiagnostics": [
+      {
+        "nodeId": "badge-icon",
+        "category": "classification-fallback",
+        "reason": "Element type classification used fallback rule for Figma node type 'ELLIPSE'.",
+        "screenId": "screen-profile"
+      }
+    ]
+  },
+  "themeAnalysis": {
+    "darkModeDetected": false,
+    "signals": {
+      "luminance": false,
+      "naming": false,
+      "lightDarkPair": false
+    }
+  }
+}

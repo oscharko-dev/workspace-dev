@@ -1,0 +1,761 @@
+{
+  "cases": [
+    {
+      "adjudicated": false,
+      "caseId": "cs-cz-gold-001",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer A verdict for cs-cz-gold-001",
+          "reviewer": "cz-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer B verdict for cs-cz-gold-001",
+          "reviewer": "cz-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        }
+      ],
+      "label": 1,
+      "locale": "CS-CZ",
+      "rawScore": 0.82,
+      "riskCategory": "high"
+    },
+    {
+      "adjudicated": false,
+      "caseId": "cs-cz-gold-002",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer A verdict for cs-cz-gold-002",
+          "reviewer": "cz-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer B verdict for cs-cz-gold-002",
+          "reviewer": "cz-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        }
+      ],
+      "label": 1,
+      "locale": "CS-CZ",
+      "rawScore": 0.84,
+      "riskCategory": "regulated_data"
+    },
+    {
+      "adjudicated": false,
+      "caseId": "cs-cz-gold-003",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer A verdict for cs-cz-gold-003",
+          "reviewer": "cz-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer B verdict for cs-cz-gold-003",
+          "reviewer": "cz-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        }
+      ],
+      "label": 1,
+      "locale": "CS-CZ",
+      "rawScore": 0.86,
+      "riskCategory": "financial_transaction"
+    },
+    {
+      "adjudicated": false,
+      "caseId": "cs-cz-gold-004",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer A verdict for cs-cz-gold-004",
+          "reviewer": "cz-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer B verdict for cs-cz-gold-004",
+          "reviewer": "cz-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        }
+      ],
+      "label": 1,
+      "locale": "CS-CZ",
+      "rawScore": 0.88,
+      "riskCategory": "high"
+    },
+    {
+      "adjudicated": false,
+      "caseId": "cs-cz-gold-005",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer A verdict for cs-cz-gold-005",
+          "reviewer": "cz-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer B verdict for cs-cz-gold-005",
+          "reviewer": "cz-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        }
+      ],
+      "label": 1,
+      "locale": "CS-CZ",
+      "rawScore": 0.9,
+      "riskCategory": "regulated_data"
+    },
+    {
+      "adjudicated": false,
+      "caseId": "cs-cz-gold-006",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer A verdict for cs-cz-gold-006",
+          "reviewer": "cz-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer B verdict for cs-cz-gold-006",
+          "reviewer": "cz-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        }
+      ],
+      "label": 1,
+      "locale": "CS-CZ",
+      "rawScore": 0.92,
+      "riskCategory": "financial_transaction"
+    },
+    {
+      "adjudicated": false,
+      "caseId": "cs-cz-gold-007",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer A verdict for cs-cz-gold-007",
+          "reviewer": "cz-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer B verdict for cs-cz-gold-007",
+          "reviewer": "cz-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        }
+      ],
+      "label": 1,
+      "locale": "CS-CZ",
+      "rawScore": 0.94,
+      "riskCategory": "high"
+    },
+    {
+      "adjudicated": false,
+      "caseId": "cs-cz-gold-008",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer A verdict for cs-cz-gold-008",
+          "reviewer": "cz-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer B verdict for cs-cz-gold-008",
+          "reviewer": "cz-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        }
+      ],
+      "label": 1,
+      "locale": "CS-CZ",
+      "rawScore": 0.82,
+      "riskCategory": "regulated_data"
+    },
+    {
+      "adjudicated": false,
+      "caseId": "cs-cz-gold-009",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer A verdict for cs-cz-gold-009",
+          "reviewer": "cz-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer B verdict for cs-cz-gold-009",
+          "reviewer": "cz-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        }
+      ],
+      "label": 1,
+      "locale": "CS-CZ",
+      "rawScore": 0.84,
+      "riskCategory": "financial_transaction"
+    },
+    {
+      "adjudicated": false,
+      "caseId": "cs-cz-gold-010",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer A verdict for cs-cz-gold-010",
+          "reviewer": "cz-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer B verdict for cs-cz-gold-010",
+          "reviewer": "cz-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        }
+      ],
+      "label": 1,
+      "locale": "CS-CZ",
+      "rawScore": 0.86,
+      "riskCategory": "high"
+    },
+    {
+      "adjudicated": false,
+      "caseId": "cs-cz-gold-011",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer A verdict for cs-cz-gold-011",
+          "reviewer": "cz-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer B verdict for cs-cz-gold-011",
+          "reviewer": "cz-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        }
+      ],
+      "label": 1,
+      "locale": "CS-CZ",
+      "rawScore": 0.88,
+      "riskCategory": "regulated_data"
+    },
+    {
+      "adjudicated": false,
+      "caseId": "cs-cz-gold-012",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer A verdict for cs-cz-gold-012",
+          "reviewer": "cz-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer B verdict for cs-cz-gold-012",
+          "reviewer": "cz-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        }
+      ],
+      "label": 1,
+      "locale": "CS-CZ",
+      "rawScore": 0.9,
+      "riskCategory": "financial_transaction"
+    },
+    {
+      "adjudicated": false,
+      "caseId": "cs-cz-gold-013",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer A verdict for cs-cz-gold-013",
+          "reviewer": "cz-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer B verdict for cs-cz-gold-013",
+          "reviewer": "cz-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        }
+      ],
+      "label": 1,
+      "locale": "CS-CZ",
+      "rawScore": 0.92,
+      "riskCategory": "high"
+    },
+    {
+      "adjudicated": false,
+      "caseId": "cs-cz-gold-014",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer A verdict for cs-cz-gold-014",
+          "reviewer": "cz-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer B verdict for cs-cz-gold-014",
+          "reviewer": "cz-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        }
+      ],
+      "label": 1,
+      "locale": "CS-CZ",
+      "rawScore": 0.94,
+      "riskCategory": "regulated_data"
+    },
+    {
+      "adjudicated": false,
+      "caseId": "cs-cz-gold-015",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer A verdict for cs-cz-gold-015",
+          "reviewer": "cz-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer B verdict for cs-cz-gold-015",
+          "reviewer": "cz-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        }
+      ],
+      "label": 1,
+      "locale": "CS-CZ",
+      "rawScore": 0.82,
+      "riskCategory": "financial_transaction"
+    },
+    {
+      "adjudicated": false,
+      "caseId": "cs-cz-gold-016",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer A verdict for cs-cz-gold-016",
+          "reviewer": "cz-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer B verdict for cs-cz-gold-016",
+          "reviewer": "cz-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        }
+      ],
+      "label": 1,
+      "locale": "CS-CZ",
+      "rawScore": 0.84,
+      "riskCategory": "high"
+    },
+    {
+      "adjudicated": false,
+      "caseId": "cs-cz-gold-017",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer A verdict for cs-cz-gold-017",
+          "reviewer": "cz-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer B verdict for cs-cz-gold-017",
+          "reviewer": "cz-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        }
+      ],
+      "label": 1,
+      "locale": "CS-CZ",
+      "rawScore": 0.86,
+      "riskCategory": "regulated_data"
+    },
+    {
+      "adjudicated": false,
+      "caseId": "cs-cz-gold-018",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer A verdict for cs-cz-gold-018",
+          "reviewer": "cz-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer B verdict for cs-cz-gold-018",
+          "reviewer": "cz-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        }
+      ],
+      "label": 1,
+      "locale": "CS-CZ",
+      "rawScore": 0.88,
+      "riskCategory": "financial_transaction"
+    },
+    {
+      "adjudicated": false,
+      "caseId": "cs-cz-gold-019",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer A verdict for cs-cz-gold-019",
+          "reviewer": "cz-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "reject"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer B verdict for cs-cz-gold-019",
+          "reviewer": "cz-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "reject"
+        }
+      ],
+      "label": 0,
+      "locale": "CS-CZ",
+      "rawScore": 0.18,
+      "riskCategory": "high"
+    },
+    {
+      "adjudicated": false,
+      "caseId": "cs-cz-gold-020",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer A verdict for cs-cz-gold-020",
+          "reviewer": "cz-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "reject"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer B verdict for cs-cz-gold-020",
+          "reviewer": "cz-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "reject"
+        }
+      ],
+      "label": 0,
+      "locale": "CS-CZ",
+      "rawScore": 0.2,
+      "riskCategory": "regulated_data"
+    },
+    {
+      "adjudicated": false,
+      "caseId": "cs-cz-gold-021",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer A verdict for cs-cz-gold-021",
+          "reviewer": "cz-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "reject"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer B verdict for cs-cz-gold-021",
+          "reviewer": "cz-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "reject"
+        }
+      ],
+      "label": 0,
+      "locale": "CS-CZ",
+      "rawScore": 0.12,
+      "riskCategory": "financial_transaction"
+    },
+    {
+      "adjudicated": false,
+      "caseId": "cs-cz-gold-022",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer A verdict for cs-cz-gold-022",
+          "reviewer": "cz-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "reject"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer B verdict for cs-cz-gold-022",
+          "reviewer": "cz-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "reject"
+        }
+      ],
+      "label": 0,
+      "locale": "CS-CZ",
+      "rawScore": 0.14,
+      "riskCategory": "high"
+    },
+    {
+      "adjudicated": false,
+      "caseId": "cs-cz-gold-023",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer A verdict for cs-cz-gold-023",
+          "reviewer": "cz-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "reject"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer B verdict for cs-cz-gold-023",
+          "reviewer": "cz-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "reject"
+        }
+      ],
+      "label": 0,
+      "locale": "CS-CZ",
+      "rawScore": 0.16,
+      "riskCategory": "regulated_data"
+    },
+    {
+      "adjudicated": false,
+      "caseId": "cs-cz-gold-024",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer A verdict for cs-cz-gold-024",
+          "reviewer": "cz-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "reject"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer B verdict for cs-cz-gold-024",
+          "reviewer": "cz-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "reject"
+        }
+      ],
+      "label": 0,
+      "locale": "CS-CZ",
+      "rawScore": 0.18,
+      "riskCategory": "financial_transaction"
+    },
+    {
+      "adjudicated": false,
+      "caseId": "cs-cz-gold-025",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer A verdict for cs-cz-gold-025",
+          "reviewer": "cz-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "reject"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer B verdict for cs-cz-gold-025",
+          "reviewer": "cz-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "reject"
+        }
+      ],
+      "label": 0,
+      "locale": "CS-CZ",
+      "rawScore": 0.2,
+      "riskCategory": "high"
+    },
+    {
+      "adjudicated": false,
+      "caseId": "cs-cz-gold-026",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer A verdict for cs-cz-gold-026",
+          "reviewer": "cz-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "reject"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer B verdict for cs-cz-gold-026",
+          "reviewer": "cz-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "reject"
+        }
+      ],
+      "label": 0,
+      "locale": "CS-CZ",
+      "rawScore": 0.12,
+      "riskCategory": "regulated_data"
+    },
+    {
+      "adjudicated": true,
+      "adjudication": {
+        "arbiter": "cz-arbiter-1",
+        "findingCodes": [],
+        "rationale": "CS-CZ arbiter resolution for cs-cz-gold-027",
+        "timestamp": "2026-04-15T08:00:00.000Z",
+        "verdict": "accept"
+      },
+      "caseId": "cs-cz-gold-027",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer A verdict for cs-cz-gold-027",
+          "reviewer": "cz-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer B verdict for cs-cz-gold-027",
+          "reviewer": "cz-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "reject"
+        }
+      ],
+      "label": 1,
+      "locale": "CS-CZ",
+      "rawScore": 0.48,
+      "riskCategory": "financial_transaction"
+    },
+    {
+      "adjudicated": true,
+      "adjudication": {
+        "arbiter": "cz-arbiter-1",
+        "findingCodes": [],
+        "rationale": "CS-CZ arbiter resolution for cs-cz-gold-028",
+        "timestamp": "2026-04-15T08:00:00.000Z",
+        "verdict": "reject"
+      },
+      "caseId": "cs-cz-gold-028",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer A verdict for cs-cz-gold-028",
+          "reviewer": "cz-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "reject"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer B verdict for cs-cz-gold-028",
+          "reviewer": "cz-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        }
+      ],
+      "label": 0,
+      "locale": "CS-CZ",
+      "rawScore": 0.52,
+      "riskCategory": "high"
+    },
+    {
+      "adjudicated": true,
+      "adjudication": {
+        "arbiter": "cz-arbiter-1",
+        "findingCodes": [],
+        "rationale": "CS-CZ arbiter resolution for cs-cz-gold-029",
+        "timestamp": "2026-04-15T08:00:00.000Z",
+        "verdict": "accept"
+      },
+      "caseId": "cs-cz-gold-029",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer A verdict for cs-cz-gold-029",
+          "reviewer": "cz-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer B verdict for cs-cz-gold-029",
+          "reviewer": "cz-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "reject"
+        }
+      ],
+      "label": 1,
+      "locale": "CS-CZ",
+      "rawScore": 0.56,
+      "riskCategory": "regulated_data"
+    },
+    {
+      "adjudicated": true,
+      "adjudication": {
+        "arbiter": "cz-arbiter-1",
+        "findingCodes": [],
+        "rationale": "CS-CZ arbiter resolution for cs-cz-gold-030",
+        "timestamp": "2026-04-15T08:00:00.000Z",
+        "verdict": "reject"
+      },
+      "caseId": "cs-cz-gold-030",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer A verdict for cs-cz-gold-030",
+          "reviewer": "cz-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "reject"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "CS-CZ reviewer B verdict for cs-cz-gold-030",
+          "reviewer": "cz-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        }
+      ],
+      "label": 0,
+      "locale": "CS-CZ",
+      "rawScore": 0.6,
+      "riskCategory": "financial_transaction"
+    }
+  ],
+  "description": "Native-speaker-labeled calibration gold set for CS-CZ. 30 cases (18 accept, 8 reject, 4 adjudicated) chosen to satisfy the per-locale Platt-curve fit and inter-rater κ ≥ 0.7 gates.",
+  "issueRef": "Issue #2188",
+  "locale": "CS-CZ",
+  "reviewerPool": [
+    "cz-reviewer-1",
+    "cz-reviewer-2",
+    "cz-arbiter-1"
+  ],
+  "schemaVersion": "1.0.0"
+}

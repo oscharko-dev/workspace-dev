@@ -1,0 +1,17 @@
+{
+  "issues": [
+    {
+      "key": "PAY-1440",
+      "fields": {
+        "issuetype": {
+          "name": "Task"
+        },
+        "summary": "Synthetic Bearer jira-token-value-123 leak candidate",
+        "description": "Authorization: Basic dXNlcjpzZWNyZXQ= and OAuth oauth-token-value-456 must be redacted",
+        "status": {
+          "name": "Open"
+        }
+      }
+    }
+  ]
+}

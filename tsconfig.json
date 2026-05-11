@@ -4,10 +4,13 @@
     "module": "node20",
     "moduleResolution": "node16",
     "lib": ["ES2023"],
+    "types": ["node"],
     "outDir": "dist",
     "rootDir": "src",
     "declaration": true,
     "declarationMap": true,
+    "incremental": true,
+    "tsBuildInfoFile": "node_modules/.cache/tsc/root.tsbuildinfo",
     "isolatedDeclarations": true,
     "sourceMap": true,
     "strict": true,
@@ -21,8 +24,12 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
-    "exactOptionalPropertyTypes": true
+    "exactOptionalPropertyTypes": true,
+    "noUncheckedSideEffectImports": true,
+    "erasableSyntaxOnly": true,
+    "rewriteRelativeImportExtensions": true,
+    "ignoreDeprecations": "6.0"
   },
   "include": ["src"],
-  "exclude": ["node_modules", "dist", "src/**/*.test.ts"]
+  "exclude": ["node_modules", "dist", "src/**/*.test.ts", "src/parity/fixtures/golden/**"]
 }

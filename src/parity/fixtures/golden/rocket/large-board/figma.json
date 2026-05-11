@@ -1,0 +1,172 @@
+{
+  "name": "Large Board",
+  "document": {
+    "id": "0:0",
+    "type": "DOCUMENT",
+    "children": [
+      {
+        "id": "0:1",
+        "type": "CANVAS",
+        "name": "Page 1",
+        "children": [
+          {
+            "id": "screen-splash",
+            "type": "FRAME",
+            "name": "Splash",
+            "layoutMode": "VERTICAL",
+            "itemSpacing": 16,
+            "paddingTop": 200, "paddingRight": 24, "paddingBottom": 200, "paddingLeft": 24,
+            "absoluteBoundingBox": { "x": 0, "y": 0, "width": 390, "height": 844 },
+            "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.15, "g": 0.36, "b": 0.96, "a": 1 } }],
+            "children": [
+              { "id": "splash-title", "type": "TEXT", "name": "Title", "characters": "AppName", "style": { "fontSize": 40, "fontWeight": 800, "fontFamily": "Inter", "lineHeightPx": 48, "textAlignHorizontal": "CENTER" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }], "absoluteBoundingBox": { "x": 24, "y": 380, "width": 342, "height": 48 } },
+              { "id": "splash-tagline", "type": "TEXT", "name": "Tagline", "characters": "Your digital companion", "style": { "fontSize": 16, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 24, "textAlignHorizontal": "CENTER" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.85, "g": 0.9, "b": 1, "a": 1 } }], "absoluteBoundingBox": { "x": 24, "y": 444, "width": 342, "height": 24 } }
+            ]
+          },
+          {
+            "id": "screen-onboarding",
+            "type": "FRAME",
+            "name": "Onboarding",
+            "layoutMode": "VERTICAL",
+            "itemSpacing": 24,
+            "paddingTop": 48, "paddingRight": 24, "paddingBottom": 24, "paddingLeft": 24,
+            "absoluteBoundingBox": { "x": 430, "y": 0, "width": 390, "height": 844 },
+            "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }],
+            "children": [
+              { "id": "onb-title", "type": "TEXT", "name": "Title", "characters": "Welcome", "style": { "fontSize": 28, "fontWeight": 700, "fontFamily": "Inter", "lineHeightPx": 36, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }], "absoluteBoundingBox": { "x": 454, "y": 48, "width": 342, "height": 36 } },
+              { "id": "onb-body", "type": "TEXT", "name": "Body", "characters": "Let us set up your account in a few easy steps.", "style": { "fontSize": 16, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 24, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }], "absoluteBoundingBox": { "x": 454, "y": 108, "width": 342, "height": 48 } }
+            ]
+          },
+          {
+            "id": "screen-login",
+            "type": "FRAME",
+            "name": "Login",
+            "layoutMode": "VERTICAL",
+            "itemSpacing": 16,
+            "paddingTop": 48, "paddingRight": 24, "paddingBottom": 24, "paddingLeft": 24,
+            "absoluteBoundingBox": { "x": 860, "y": 0, "width": 390, "height": 844 },
+            "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }],
+            "children": [
+              { "id": "login-title", "type": "TEXT", "name": "Title", "characters": "Sign In", "style": { "fontSize": 28, "fontWeight": 700, "fontFamily": "Inter", "lineHeightPx": 36, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }], "absoluteBoundingBox": { "x": 884, "y": 48, "width": 342, "height": 36 } },
+              { "id": "login-email", "type": "FRAME", "name": "MuiFormControlRoot", "layoutMode": "HORIZONTAL", "itemSpacing": 8, "primaryAxisAlignItems": "SPACE_BETWEEN", "counterAxisAlignItems": "CENTER", "absoluteBoundingBox": { "x": 884, "y": 100, "width": 342, "height": 56 }, "children": [{ "id": "login-email-label", "type": "TEXT", "name": "Label", "characters": "Email", "style": { "fontSize": 14, "fontWeight": 500, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }], "absoluteBoundingBox": { "x": 896, "y": 116, "width": 60, "height": 20 } }] },
+              { "id": "login-password", "type": "FRAME", "name": "MuiFormControlRoot", "layoutMode": "HORIZONTAL", "itemSpacing": 8, "primaryAxisAlignItems": "SPACE_BETWEEN", "counterAxisAlignItems": "CENTER", "absoluteBoundingBox": { "x": 884, "y": 172, "width": 342, "height": 56 }, "children": [{ "id": "login-pw-label", "type": "TEXT", "name": "Label", "characters": "Password", "style": { "fontSize": 14, "fontWeight": 500, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }], "absoluteBoundingBox": { "x": 896, "y": 188, "width": 80, "height": 20 } }] }
+            ]
+          },
+          {
+            "id": "screen-register",
+            "type": "FRAME",
+            "name": "Register",
+            "layoutMode": "VERTICAL",
+            "itemSpacing": 16,
+            "paddingTop": 48, "paddingRight": 24, "paddingBottom": 24, "paddingLeft": 24,
+            "absoluteBoundingBox": { "x": 1290, "y": 0, "width": 390, "height": 844 },
+            "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }],
+            "children": [
+              { "id": "reg-title", "type": "TEXT", "name": "Title", "characters": "Create Account", "style": { "fontSize": 28, "fontWeight": 700, "fontFamily": "Inter", "lineHeightPx": 36, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }], "absoluteBoundingBox": { "x": 1314, "y": 48, "width": 342, "height": 36 } },
+              { "id": "reg-name", "type": "FRAME", "name": "MuiFormControlRoot", "layoutMode": "HORIZONTAL", "itemSpacing": 8, "primaryAxisAlignItems": "SPACE_BETWEEN", "counterAxisAlignItems": "CENTER", "absoluteBoundingBox": { "x": 1314, "y": 100, "width": 342, "height": 56 }, "children": [{ "id": "reg-name-label", "type": "TEXT", "name": "Label", "characters": "Full Name", "style": { "fontSize": 14, "fontWeight": 500, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }], "absoluteBoundingBox": { "x": 1326, "y": 116, "width": 80, "height": 20 } }] }
+            ]
+          },
+          {
+            "id": "screen-home",
+            "type": "FRAME",
+            "name": "Home",
+            "layoutMode": "VERTICAL",
+            "itemSpacing": 16,
+            "paddingTop": 16, "paddingRight": 16, "paddingBottom": 16, "paddingLeft": 16,
+            "absoluteBoundingBox": { "x": 1720, "y": 0, "width": 390, "height": 844 },
+            "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.97, "g": 0.98, "b": 0.99, "a": 1 } }],
+            "children": [
+              { "id": "home-greeting", "type": "TEXT", "name": "Greeting", "characters": "Good Morning", "style": { "fontSize": 24, "fontWeight": 700, "fontFamily": "Inter", "lineHeightPx": 32, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }], "absoluteBoundingBox": { "x": 1736, "y": 16, "width": 358, "height": 32 } },
+              { "id": "home-subtitle", "type": "TEXT", "name": "Subtitle", "characters": "Here is your daily summary", "style": { "fontSize": 14, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }], "absoluteBoundingBox": { "x": 1736, "y": 52, "width": 358, "height": 20 } }
+            ]
+          },
+          {
+            "id": "screen-feed",
+            "type": "FRAME",
+            "name": "Feed",
+            "layoutMode": "VERTICAL",
+            "itemSpacing": 12,
+            "paddingTop": 16, "paddingRight": 16, "paddingBottom": 16, "paddingLeft": 16,
+            "absoluteBoundingBox": { "x": 2150, "y": 0, "width": 390, "height": 844 },
+            "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.97, "g": 0.98, "b": 0.99, "a": 1 } }],
+            "children": [
+              { "id": "feed-title", "type": "TEXT", "name": "Title", "characters": "Activity Feed", "style": { "fontSize": 24, "fontWeight": 700, "fontFamily": "Inter", "lineHeightPx": 32, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }], "absoluteBoundingBox": { "x": 2166, "y": 16, "width": 358, "height": 32 } }
+            ]
+          },
+          {
+            "id": "screen-search",
+            "type": "FRAME",
+            "name": "Search",
+            "layoutMode": "VERTICAL",
+            "itemSpacing": 16,
+            "paddingTop": 16, "paddingRight": 16, "paddingBottom": 16, "paddingLeft": 16,
+            "absoluteBoundingBox": { "x": 2580, "y": 0, "width": 390, "height": 844 },
+            "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }],
+            "children": [
+              { "id": "search-title", "type": "TEXT", "name": "Title", "characters": "Search", "style": { "fontSize": 24, "fontWeight": 700, "fontFamily": "Inter", "lineHeightPx": 32, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }], "absoluteBoundingBox": { "x": 2596, "y": 16, "width": 358, "height": 32 } },
+              { "id": "search-field", "type": "FRAME", "name": "MuiFormControlRoot", "layoutMode": "HORIZONTAL", "itemSpacing": 8, "primaryAxisAlignItems": "SPACE_BETWEEN", "counterAxisAlignItems": "CENTER", "absoluteBoundingBox": { "x": 2596, "y": 64, "width": 358, "height": 48 }, "children": [{ "id": "search-label", "type": "TEXT", "name": "Label", "characters": "Search", "style": { "fontSize": 14, "fontWeight": 500, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }], "absoluteBoundingBox": { "x": 2608, "y": 78, "width": 60, "height": 20 } }] }
+            ]
+          },
+          {
+            "id": "screen-profile",
+            "type": "FRAME",
+            "name": "Profile",
+            "layoutMode": "VERTICAL",
+            "itemSpacing": 16,
+            "paddingTop": 24, "paddingRight": 24, "paddingBottom": 24, "paddingLeft": 24,
+            "absoluteBoundingBox": { "x": 3010, "y": 0, "width": 390, "height": 844 },
+            "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }],
+            "children": [
+              { "id": "prof-title", "type": "TEXT", "name": "Title", "characters": "My Profile", "style": { "fontSize": 24, "fontWeight": 700, "fontFamily": "Inter", "lineHeightPx": 32, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }], "absoluteBoundingBox": { "x": 3034, "y": 24, "width": 342, "height": 32 } },
+              { "id": "prof-avatar", "type": "ELLIPSE", "name": "Avatar", "absoluteBoundingBox": { "x": 3034, "y": 72, "width": 80, "height": 80 }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.85, "g": 0.85, "b": 0.9, "a": 1 } }] }
+            ]
+          },
+          {
+            "id": "screen-settings",
+            "type": "FRAME",
+            "name": "Settings",
+            "layoutMode": "VERTICAL",
+            "itemSpacing": 12,
+            "paddingTop": 16, "paddingRight": 16, "paddingBottom": 16, "paddingLeft": 16,
+            "absoluteBoundingBox": { "x": 3440, "y": 0, "width": 390, "height": 844 },
+            "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }],
+            "children": [
+              { "id": "set-title", "type": "TEXT", "name": "Title", "characters": "Settings", "style": { "fontSize": 24, "fontWeight": 700, "fontFamily": "Inter", "lineHeightPx": 32, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }], "absoluteBoundingBox": { "x": 3456, "y": 16, "width": 358, "height": 32 } },
+              { "id": "set-item1", "type": "TEXT", "name": "Item", "characters": "Notifications", "style": { "fontSize": 16, "fontWeight": 500, "fontFamily": "Inter", "lineHeightPx": 24, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }], "absoluteBoundingBox": { "x": 3456, "y": 60, "width": 358, "height": 24 } },
+              { "id": "set-item2", "type": "TEXT", "name": "Item", "characters": "Privacy", "style": { "fontSize": 16, "fontWeight": 500, "fontFamily": "Inter", "lineHeightPx": 24, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }], "absoluteBoundingBox": { "x": 3456, "y": 96, "width": 358, "height": 24 } }
+            ]
+          },
+          {
+            "id": "screen-notifications",
+            "type": "FRAME",
+            "name": "Notifications",
+            "layoutMode": "VERTICAL",
+            "itemSpacing": 8,
+            "paddingTop": 16, "paddingRight": 16, "paddingBottom": 16, "paddingLeft": 16,
+            "absoluteBoundingBox": { "x": 3870, "y": 0, "width": 390, "height": 844 },
+            "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }],
+            "children": [
+              { "id": "notif-title", "type": "TEXT", "name": "Title", "characters": "Notifications", "style": { "fontSize": 24, "fontWeight": 700, "fontFamily": "Inter", "lineHeightPx": 32, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }], "absoluteBoundingBox": { "x": 3886, "y": 16, "width": 358, "height": 32 } },
+              { "id": "notif-empty", "type": "TEXT", "name": "Empty State", "characters": "No new notifications", "style": { "fontSize": 14, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "CENTER" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.6, "g": 0.62, "b": 0.66, "a": 1 } }], "absoluteBoundingBox": { "x": 3886, "y": 300, "width": 358, "height": 20 } }
+            ]
+          },
+          {
+            "id": "screen-about",
+            "type": "FRAME",
+            "name": "About",
+            "layoutMode": "VERTICAL",
+            "itemSpacing": 16,
+            "paddingTop": 24, "paddingRight": 24, "paddingBottom": 24, "paddingLeft": 24,
+            "absoluteBoundingBox": { "x": 4300, "y": 0, "width": 390, "height": 844 },
+            "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }],
+            "children": [
+              { "id": "about-title", "type": "TEXT", "name": "Title", "characters": "About", "style": { "fontSize": 24, "fontWeight": 700, "fontFamily": "Inter", "lineHeightPx": 32, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }], "absoluteBoundingBox": { "x": 4324, "y": 24, "width": 342, "height": 32 } },
+              { "id": "about-version", "type": "TEXT", "name": "Version", "characters": "Version 2.1.0", "style": { "fontSize": 14, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }], "absoluteBoundingBox": { "x": 4324, "y": 72, "width": 342, "height": 20 } },
+              { "id": "about-body", "type": "TEXT", "name": "Body", "characters": "Built with care by the engineering team.", "style": { "fontSize": 16, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 24, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }], "absoluteBoundingBox": { "x": 4324, "y": 108, "width": 342, "height": 24 } }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

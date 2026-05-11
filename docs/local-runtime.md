@@ -1,44 +1,70 @@
-# No-K8s Local Runtime Path
+# Local Runtime
 
-## Overview
+`workspace-dev` runs as a local-only runtime for deterministic generation and validation inside the current repository.
 
-`workspace-dev` runs as a local Node.js runtime without Kubernetes or external backend infrastructure.
+## Mode lock
 
-## Capabilities
+Enforce mode lock (`rest|hybrid|local_json|figma_paste|figma_plugin` + `deterministic`) for all local runtime entry points.
 
-- Start local runtime on localhost
-- Serve reduced workspace UI on `/workspace/ui` and `/workspace/:figmaFileKey`
-- Enforce mode lock (`rest` + `deterministic`)
-- Execute autonomous job lifecycle (`queued -> running -> completed|failed`)
-- Fetch Figma file over REST
-- Derive deterministic IR and generate local code artifacts
-- Export and serve local preview from `.workspace-dev/repros/<jobId>`
+## Figma MCP resolver cache scope
 
-## Explicit Non-Goals
+The Figma MCP resolver caches both completed payloads and in-flight de-duplication
+promises in the runtime process. To preserve confidentiality boundaries when more
+than one job runs concurrently against different Figma access tokens, the cache
+key is scoped per token.
 
-- No MCP mode
-- No hybrid mode
-- No `llm_strict`
-- No Redis/Postgres queueing stack
-- No dependency on Workspace Dev platform API services
+The cache key is `${fileKey}:${nodeId}:${version}:${tokenScope}`, where
+`tokenScope` is the first 16 hex characters of `sha256(accessToken)` — opaque,
+non-reversible, and never reconstructable back into the token. Jobs without an
+access token use a distinct `anon` scope so anonymous and authenticated payloads
+never share an entry.
 
-## On-Prem Boundary
+A new payload resolved under token A is therefore never served to a job
+authenticated under token B, even when both reference the same `fileKey:nodeId`.
+Regression coverage lives in
+`src/job-engine/figma-mcp-resolver.token-isolation.test.ts` (issue #1669,
+audit-2026-05 Wave 8a).
 
-`workspace-dev` is scoped to a developer workstation process boundary:
+## Test-intelligence visual sidecar smoke
 
-1. Binds to localhost by default (`127.0.0.1`).
-2. Requires no backend infrastructure.
-3. Executes deterministic generation only.
-4. Writes output under project-local `.workspace-dev`.
+The Figma-to-QC test-intelligence path is opt-in. Runtime routes remain disabled
+unless both the startup option `testIntelligence.enabled=true` and
+`FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE=1` are set.
 
-## Separation from Full Workspace Dev Platform
+The Wave 1 visual sidecar smoke test is also disabled by default. It exercises
+the role-separated model setup for screenshot understanding:
 
-| Aspect | workspace-dev | Full Workspace Dev Platform |
-| ------ | ------------- | -------------- |
-| Runtime | Local Node.js process | Multi-service runtime |
-| Database | None | PostgreSQL |
-| Queue | None | Redis/BullMQ |
-| Source modes | REST only | REST + MCP + Hybrid |
-| Codegen modes | Deterministic only | Deterministic + LLM |
-| Preview | Local static export | Full platform preview |
-| Git automation | Optional `git.pr` (opt-in) | Available in full stack |
+- `WORKSPACE_TEST_SPACE_MODEL_ENDPOINT`
+- `WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT`
+- `WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT`
+- `WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT`
+- `WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT`
+- `WORKSPACE_TEST_SPACE_LLM_API_KEY`. This is the only supported API-key
+  variable for the Test-Intelligence LLM gateway.
+
+Run the operator-controlled smoke only from an environment that already has the
+API key in process memory:
+
+```bash
+pnpm run test:ti-live-smoke
+```
+
+Expected role bindings are:
+
+| Role                            | Deployment                    |
+| ------------------------------- | ----------------------------- |
+| Structured test-case generation | `mistral-large-3`             |
+| Primary visual sidecar          | `llama-4-maverick-vision`     |
+| Fallback visual sidecar         | `phi-4-multimodal-instruct`   |
+
+The `mistral-document-ai-2512` deployment exposes `chatCompletion: false`
+on Azure AI Foundry and is **not** a valid value for either visual-sidecar
+slot. It is reserved for the future OCR-sidecar role. See operator
+runbook §1b/§1c for the full Stable-deployment matrix and the Wave-0
+substitution rationale.
+
+The default CI path uses deterministic mocks and fixture captures instead of
+live network calls. Evidence artifacts store deployment names, schema versions,
+policy decisions, SHA-256 hashes, and confidence summaries. They must not store
+raw screenshots, local filesystem paths, API keys, bearer tokens, or other
+secret values.

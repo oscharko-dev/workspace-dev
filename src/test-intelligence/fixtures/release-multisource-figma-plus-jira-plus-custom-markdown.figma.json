@@ -1,0 +1,29 @@
+{
+  "source": {
+    "kind": "figma_local_json"
+  },
+  "screens": [
+    {
+      "screenId": "s-consent",
+      "screenName": "Consent Management",
+      "nodes": [
+        {
+          "nodeId": "n-consent-checkbox",
+          "nodeName": "I consent",
+          "nodeType": "CHECKBOX",
+          "text": "I consent to the processing of my personal data",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-accept",
+          "nodeName": "Accept",
+          "nodeType": "BUTTON",
+          "text": "Accept",
+          "navigationTarget": "s-consent-confirm",
+          "childNodeIds": []
+        }
+      ]
+    }
+  ]
+}

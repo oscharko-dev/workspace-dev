@@ -1,0 +1,406 @@
+{
+  "name": "Risk Alert Modal Board",
+  "document": {
+    "id": "0:0",
+    "type": "DOCUMENT",
+    "children": [
+      {
+        "id": "0:1",
+        "type": "CANVAS",
+        "name": "Page 1",
+        "children": [
+          {
+            "id": "screen-risk-alert-modal",
+            "type": "FRAME",
+            "name": "RiskAlertModal",
+            "absoluteBoundingBox": {
+              "x": 0,
+              "y": 0,
+              "width": 720,
+              "height": 560
+            },
+            "fills": [
+              {
+                "type": "SOLID",
+                "visible": true,
+                "color": {
+                  "r": 0.94,
+                  "g": 0.95,
+                  "b": 0.97,
+                  "a": 1
+                }
+              }
+            ],
+            "children": [
+              {
+                "id": "modal-card",
+                "type": "FRAME",
+                "name": "Risk Alert Modal",
+                "cornerRadius": 16,
+                "absoluteBoundingBox": {
+                  "x": 72,
+                  "y": 72,
+                  "width": 576,
+                  "height": 416
+                },
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "visible": true,
+                    "color": {
+                      "r": 1,
+                      "g": 1,
+                      "b": 1,
+                      "a": 1
+                    }
+                  }
+                ],
+                "children": [
+                  {
+                    "id": "risk-severity-badge",
+                    "type": "FRAME",
+                    "name": "Severity Badge",
+                    "cornerRadius": 16,
+                    "absoluteBoundingBox": {
+                      "x": 104,
+                      "y": 104,
+                      "width": 128,
+                      "height": 32
+                    },
+                    "fills": [
+                      {
+                        "type": "SOLID",
+                        "visible": true,
+                        "color": {
+                          "r": 1,
+                          "g": 0.91,
+                          "b": 0.82,
+                          "a": 1
+                        }
+                      }
+                    ],
+                    "children": [
+                      {
+                        "id": "risk-severity-label",
+                        "type": "TEXT",
+                        "name": "Label",
+                        "characters": "High Risk",
+                        "style": {
+                          "fontSize": 13,
+                          "fontWeight": 700,
+                          "fontFamily": "Inter",
+                          "lineHeightPx": 18,
+                          "textAlignHorizontal": "CENTER"
+                        },
+                        "fills": [
+                          {
+                            "type": "SOLID",
+                            "visible": true,
+                            "color": {
+                              "r": 0.68,
+                              "g": 0.29,
+                              "b": 0.02,
+                              "a": 1
+                            }
+                          }
+                        ],
+                        "absoluteBoundingBox": {
+                          "x": 124,
+                          "y": 111,
+                          "width": 88,
+                          "height": 18
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "risk-title",
+                    "type": "TEXT",
+                    "name": "Modal Title",
+                    "characters": "Review payment anomaly",
+                    "style": {
+                      "fontSize": 28,
+                      "fontWeight": 700,
+                      "fontFamily": "Inter",
+                      "lineHeightPx": 36,
+                      "textAlignHorizontal": "LEFT"
+                    },
+                    "fills": [
+                      {
+                        "type": "SOLID",
+                        "visible": true,
+                        "color": {
+                          "r": 0.11,
+                          "g": 0.12,
+                          "b": 0.14,
+                          "a": 1
+                        }
+                      }
+                    ],
+                    "absoluteBoundingBox": {
+                      "x": 104,
+                      "y": 156,
+                      "width": 360,
+                      "height": 36
+                    }
+                  },
+                  {
+                    "id": "risk-body",
+                    "type": "TEXT",
+                    "name": "Modal Body",
+                    "characters": "Synthetic rule hit: payment velocity exceeds the configured demo threshold for this segment.",
+                    "style": {
+                      "fontSize": 16,
+                      "fontWeight": 400,
+                      "fontFamily": "Inter",
+                      "lineHeightPx": 28,
+                      "textAlignHorizontal": "LEFT"
+                    },
+                    "fills": [
+                      {
+                        "type": "SOLID",
+                        "visible": true,
+                        "color": {
+                          "r": 0.34,
+                          "g": 0.36,
+                          "b": 0.4,
+                          "a": 1
+                        }
+                      }
+                    ],
+                    "absoluteBoundingBox": {
+                      "x": 104,
+                      "y": 208,
+                      "width": 448,
+                      "height": 56
+                    }
+                  },
+                  {
+                    "id": "risk-summary-panel",
+                    "type": "FRAME",
+                    "name": "Risk Summary Panel",
+                    "cornerRadius": 12,
+                    "absoluteBoundingBox": {
+                      "x": 104,
+                      "y": 288,
+                      "width": 448,
+                      "height": 72
+                    },
+                    "fills": [
+                      {
+                        "type": "SOLID",
+                        "visible": true,
+                        "color": {
+                          "r": 0.97,
+                          "g": 0.98,
+                          "b": 1,
+                          "a": 1
+                        }
+                      }
+                    ],
+                    "children": [
+                      {
+                        "id": "risk-summary-label",
+                        "type": "TEXT",
+                        "name": "Label",
+                        "characters": "Exposure under review",
+                        "style": {
+                          "fontSize": 14,
+                          "fontWeight": 500,
+                          "fontFamily": "Inter",
+                          "lineHeightPx": 20,
+                          "textAlignHorizontal": "LEFT"
+                        },
+                        "fills": [
+                          {
+                            "type": "SOLID",
+                            "visible": true,
+                            "color": {
+                              "r": 0.4,
+                              "g": 0.42,
+                              "b": 0.46,
+                              "a": 1
+                            }
+                          }
+                        ],
+                        "absoluteBoundingBox": {
+                          "x": 124,
+                          "y": 302,
+                          "width": 180,
+                          "height": 20
+                        }
+                      },
+                      {
+                        "id": "risk-summary-value",
+                        "type": "TEXT",
+                        "name": "Value",
+                        "characters": "EUR 2.4M synthetic portfolio",
+                        "style": {
+                          "fontSize": 20,
+                          "fontWeight": 700,
+                          "fontFamily": "Inter",
+                          "lineHeightPx": 28,
+                          "textAlignHorizontal": "LEFT"
+                        },
+                        "fills": [
+                          {
+                            "type": "SOLID",
+                            "visible": true,
+                            "color": {
+                              "r": 0.11,
+                              "g": 0.12,
+                              "b": 0.14,
+                              "a": 1
+                            }
+                          }
+                        ],
+                        "absoluteBoundingBox": {
+                          "x": 124,
+                          "y": 326,
+                          "width": 280,
+                          "height": 28
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "risk-actions",
+                    "type": "FRAME",
+                    "name": "Action Row",
+                    "layoutMode": "HORIZONTAL",
+                    "itemSpacing": 12,
+                    "primaryAxisAlignItems": "MIN",
+                    "counterAxisAlignItems": "CENTER",
+                    "absoluteBoundingBox": {
+                      "x": 288,
+                      "y": 392,
+                      "width": 264,
+                      "height": 48
+                    },
+                    "children": [
+                      {
+                        "id": "risk-secondary-button",
+                        "type": "FRAME",
+                        "name": "Secondary Button",
+                        "cornerRadius": 8,
+                        "absoluteBoundingBox": {
+                          "x": 288,
+                          "y": 392,
+                          "width": 120,
+                          "height": 48
+                        },
+                        "strokes": [
+                          {
+                            "type": "SOLID",
+                            "visible": true,
+                            "color": {
+                              "r": 0.74,
+                              "g": 0.77,
+                              "b": 0.82,
+                              "a": 1
+                            }
+                          }
+                        ],
+                        "strokeWeight": 1,
+                        "children": [
+                          {
+                            "id": "risk-secondary-label",
+                            "type": "TEXT",
+                            "name": "Label",
+                            "characters": "Dismiss",
+                            "style": {
+                              "fontSize": 16,
+                              "fontWeight": 600,
+                              "fontFamily": "Inter",
+                              "lineHeightPx": 22,
+                              "textAlignHorizontal": "CENTER"
+                            },
+                            "fills": [
+                              {
+                                "type": "SOLID",
+                                "visible": true,
+                                "color": {
+                                  "r": 0.11,
+                                  "g": 0.12,
+                                  "b": 0.14,
+                                  "a": 1
+                                }
+                              }
+                            ],
+                            "absoluteBoundingBox": {
+                              "x": 320,
+                              "y": 405,
+                              "width": 56,
+                              "height": 22
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "id": "risk-primary-button",
+                        "type": "FRAME",
+                        "name": "Primary Button",
+                        "cornerRadius": 8,
+                        "absoluteBoundingBox": {
+                          "x": 420,
+                          "y": 392,
+                          "width": 132,
+                          "height": 48
+                        },
+                        "fills": [
+                          {
+                            "type": "SOLID",
+                            "visible": true,
+                            "color": {
+                              "r": 0.93,
+                              "g": 0,
+                              "b": 0.12,
+                              "a": 1
+                            }
+                          }
+                        ],
+                        "children": [
+                          {
+                            "id": "risk-primary-label",
+                            "type": "TEXT",
+                            "name": "Label",
+                            "characters": "Open Case",
+                            "style": {
+                              "fontSize": 16,
+                              "fontWeight": 600,
+                              "fontFamily": "Inter",
+                              "lineHeightPx": 22,
+                              "textAlignHorizontal": "CENTER"
+                            },
+                            "fills": [
+                              {
+                                "type": "SOLID",
+                                "visible": true,
+                                "color": {
+                                  "r": 1,
+                                  "g": 1,
+                                  "b": 1,
+                                  "a": 1
+                                }
+                              }
+                            ],
+                            "absoluteBoundingBox": {
+                              "x": 444,
+                              "y": 405,
+                              "width": 84,
+                              "height": 22
+                            }
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

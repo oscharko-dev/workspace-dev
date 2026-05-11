@@ -1,0 +1,40 @@
+{
+  "viewports": [
+    {
+      "id": "desktop",
+      "label": "Desktop",
+      "width": 1280,
+      "height": 800,
+      "deviceScaleFactor": 1
+    },
+    {
+      "id": "tablet",
+      "label": "Tablet",
+      "width": 768,
+      "height": 1024,
+      "deviceScaleFactor": 2
+    },
+    {
+      "id": "mobile",
+      "label": "Mobile",
+      "width": 390,
+      "height": 844,
+      "deviceScaleFactor": 3
+    }
+  ],
+  "regression": {
+    "historySize": 20,
+    "maxScoreDropPercent": 5,
+    "neutralTolerance": 1
+  },
+  "thresholds": {
+    "warn": 80
+  },
+  "weights": {
+    "colorFidelity": 0.25,
+    "componentStructure": 0.15,
+    "layoutAccuracy": 0.3,
+    "spacingAlignment": 0.1,
+    "typography": 0.2
+  }
+}

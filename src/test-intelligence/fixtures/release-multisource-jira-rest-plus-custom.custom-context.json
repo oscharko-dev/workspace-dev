@@ -1,0 +1,9 @@
+{
+  "notes": [
+    {
+      "text": "Priority: high. Non-functional: latency < 200ms.",
+      "authorHandle": "product-owner"
+    }
+  ],
+  "attributes": [{ "key": "priority_hint", "value": "high" }]
+}

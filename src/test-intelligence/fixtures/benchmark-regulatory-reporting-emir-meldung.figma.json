@@ -1,0 +1,207 @@
+{
+  "source": {
+    "kind": "figma_local_json"
+  },
+  "screens": [
+    {
+      "screenId": "s-emir",
+      "screenName": "EMIR-Trade-Meldung",
+      "screenPath": "/regulatory/emir/report",
+      "nodes": [
+        {
+          "nodeId": "n-uti",
+          "nodeName": "Unique Trade Identifier",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "trade/uti",
+          "text": "Unique Trade Identifier",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Length 52",
+            "ISO-23897"
+          ]
+        },
+        {
+          "nodeId": "n-isin",
+          "nodeName": "Instrument ISIN",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "trade/isin",
+          "text": "Instrument ISIN",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Length 12",
+            "ISIN-checksum"
+          ]
+        },
+        {
+          "nodeId": "n-cpty-lei",
+          "nodeName": "Counterparty LEI",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "trade/counterparty-lei",
+          "text": "Counterparty LEI",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Length 20",
+            "LEI-checksum"
+          ]
+        },
+        {
+          "nodeId": "n-other-cpty-lei",
+          "nodeName": "Other Counterparty LEI",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "trade/other-counterparty-lei",
+          "text": "Other Counterparty LEI",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Length 20",
+            "LEI-checksum"
+          ]
+        },
+        {
+          "nodeId": "n-notional",
+          "nodeName": "Notional",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "trade/notional",
+          "text": "Notional",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Numeric",
+            "Min 0.01"
+          ]
+        },
+        {
+          "nodeId": "n-asset-class",
+          "nodeName": "Asset class",
+          "nodeType": "SELECT_FIELD",
+          "nodePath": "trade/asset-class",
+          "text": "Asset class",
+          "childNodeIds": [],
+          "defaultValue": "INTR",
+          "validations": [
+            "Required",
+            "ESMA RTS-1 codeset"
+          ]
+        },
+        {
+          "nodeId": "n-cleared",
+          "nodeName": "Cleared",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "trade/cleared",
+          "text": "Cleared",
+          "childNodeIds": [],
+          "defaultValue": "No",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-ccp-lei",
+          "nodeName": "CCP-LEI",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "trade/ccp-lei",
+          "text": "CCP-LEI",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required if cleared is Yes",
+            "Length 20",
+            "LEI-checksum"
+          ]
+        },
+        {
+          "nodeId": "n-collat",
+          "nodeName": "Collateralised",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "trade/collateralised",
+          "text": "Collateralised",
+          "childNodeIds": [],
+          "defaultValue": "No",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-collat-portfolio",
+          "nodeName": "Collateral portfolio code",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "trade/collateral-portfolio",
+          "text": "Collateral portfolio code",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required if collateralised is Yes",
+            "Max 52 characters"
+          ]
+        },
+        {
+          "nodeId": "n-source",
+          "nodeName": "Trade source",
+          "nodeType": "SELECT_FIELD",
+          "nodePath": "trade/source",
+          "text": "Trade source",
+          "childNodeIds": [],
+          "defaultValue": "Voice",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-mtm",
+          "nodeName": "Mark-to-market value",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "trade/mtm-value",
+          "text": "Mark-to-market value",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Numeric"
+          ]
+        },
+        {
+          "nodeId": "n-late",
+          "nodeName": "Late report",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "trade/late-report",
+          "text": "Late report",
+          "childNodeIds": [],
+          "defaultValue": "No",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-late-reason",
+          "nodeName": "Reason for late report",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "trade/late-reason",
+          "text": "Reason for late report",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required if late-report is Yes",
+            "Min 30 characters",
+            "Max 280 characters"
+          ]
+        },
+        {
+          "nodeId": "n-submit",
+          "nodeName": "Meldung einreichen",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/submit",
+          "text": "Meldung einreichen",
+          "childNodeIds": []
+        }
+      ]
+    }
+  ]
+}

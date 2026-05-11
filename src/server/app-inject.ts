@@ -14,7 +14,7 @@ export interface InjectRequest {
   payload?: unknown;
 }
 
-type InjectBody = string | Uint8Array | undefined;
+type InjectBody = NonNullable<RequestInit["body"]> | undefined;
 
 export interface WorkspaceServerApp {
   close: () => Promise<void>;

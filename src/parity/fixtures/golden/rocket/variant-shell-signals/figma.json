@@ -1,0 +1,501 @@
+{
+  "name": "Variant Shell Signals Board",
+  "styles": {
+    "style-local-text": {
+      "name": "Typography / Heading",
+      "styleType": "TEXT"
+    }
+  },
+  "document": {
+    "id": "0:0",
+    "type": "DOCUMENT",
+    "children": [
+      {
+        "id": "0:1",
+        "type": "CANVAS",
+        "name": "Page 1",
+        "children": [
+          {
+            "id": "1:100",
+            "type": "SECTION",
+            "name": "Bedarfsermittlung Investitionskredit Flow ID-003",
+            "children": [
+              {
+                "id": "1:63230",
+                "type": "FRAME",
+                "name": "ID-003.5 Brutto + Betriebsmittel, alle Cluster eingeklappt",
+                "layoutMode": "VERTICAL",
+                "absoluteBoundingBox": { "x": 0, "y": 0, "width": 1336, "height": 2354 },
+                "children": [
+                  {
+                    "id": "1:63230-header",
+                    "type": "FRAME",
+                    "name": "Header",
+                    "layoutMode": "HORIZONTAL",
+                    "absoluteBoundingBox": { "x": 0, "y": 0, "width": 1336, "height": 128 },
+                    "children": [
+                      {
+                        "id": "1:63230-title",
+                        "type": "TEXT",
+                        "name": "Title",
+                        "characters": "Bedarfsermittlung Investitionskredit",
+                        "textStyleId": "style-local-text",
+                        "absoluteBoundingBox": { "x": 32, "y": 24, "width": 520, "height": 36 }
+                      },
+                      {
+                        "id": "1:63230-mode",
+                        "type": "TEXT",
+                        "name": "Mode",
+                        "characters": "Brutto",
+                        "absoluteBoundingBox": { "x": 32, "y": 72, "width": 160, "height": 24 }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "1:63230-body",
+                    "type": "FRAME",
+                    "name": "Form Body",
+                    "layoutMode": "VERTICAL",
+                    "fillStyleId": "style-linked-fill",
+                    "boundVariables": {
+                      "fills": {
+                        "color": {
+                          "id": "120:1",
+                          "resolvedModeId": "20708:1"
+                        }
+                      }
+                    },
+                    "absoluteBoundingBox": { "x": 24, "y": 152, "width": 1288, "height": 2178 },
+                    "children": [
+                      {
+                        "id": "1:63230-card-1",
+                        "type": "INSTANCE",
+                        "name": "Card / Summary",
+                        "componentId": "component-card",
+                        "fillStyleId": "style-linked-card",
+                        "absoluteBoundingBox": { "x": 32, "y": 176, "width": 1240, "height": 192 }
+                      },
+                      {
+                        "id": "1:63230-accordion-1",
+                        "type": "INSTANCE",
+                        "name": "Accordion, State=Collapsed",
+                        "componentId": "component-accordion",
+                        "componentSetId": "set-accordion",
+                        "componentProperties": {
+                          "State": { "type": "VARIANT", "value": "Collapsed" }
+                        },
+                        "absoluteBoundingBox": { "x": 32, "y": 392, "width": 1240, "height": 320 },
+                        "children": [
+                          {
+                            "id": "1:63230-accordion-card-a",
+                            "type": "INSTANCE",
+                            "name": "Card / Detail",
+                            "componentId": "component-card",
+                            "absoluteBoundingBox": { "x": 48, "y": 432, "width": 1180, "height": 128 }
+                          },
+                          {
+                            "id": "1:63230-accordion-card-b",
+                            "type": "INSTANCE",
+                            "name": "Card / Detail",
+                            "componentId": "component-card",
+                            "absoluteBoundingBox": { "x": 48, "y": 576, "width": 1180, "height": 128 }
+                          },
+                          {
+                            "id": "1:63230-accordion-card-c",
+                            "type": "INSTANCE",
+                            "name": "Card / Detail",
+                            "componentId": "component-card",
+                            "absoluteBoundingBox": { "x": 48, "y": 720, "width": 1180, "height": 128 }
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "1:64644",
+                "type": "FRAME",
+                "name": "ID-003.4 Netto + Betriebsmittel, alle Cluster expanded",
+                "layoutMode": "VERTICAL",
+                "absoluteBoundingBox": { "x": 1400, "y": 0, "width": 1336, "height": 3718 },
+                "children": [
+                  {
+                    "id": "1:64644-header",
+                    "type": "FRAME",
+                    "name": "Header",
+                    "layoutMode": "HORIZONTAL",
+                    "absoluteBoundingBox": { "x": 1400, "y": 0, "width": 1336, "height": 128 },
+                    "children": [
+                      {
+                        "id": "1:64644-title",
+                        "type": "TEXT",
+                        "name": "Title",
+                        "characters": "Bedarfsermittlung Investitionskredit",
+                        "textStyleId": "style-local-text",
+                        "absoluteBoundingBox": { "x": 1432, "y": 24, "width": 520, "height": 36 }
+                      },
+                      {
+                        "id": "1:64644-mode",
+                        "type": "TEXT",
+                        "name": "Mode",
+                        "characters": "Netto",
+                        "absoluteBoundingBox": { "x": 1432, "y": 72, "width": 160, "height": 24 }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "1:64644-body",
+                    "type": "FRAME",
+                    "name": "Form Body",
+                    "layoutMode": "VERTICAL",
+                    "fillStyleId": "style-linked-fill",
+                    "boundVariables": {
+                      "fills": {
+                        "color": {
+                          "id": "120:1",
+                          "resolvedModeId": "20708:1"
+                        }
+                      }
+                    },
+                    "absoluteBoundingBox": { "x": 1424, "y": 152, "width": 1288, "height": 3542 },
+                    "children": [
+                      {
+                        "id": "1:64644-card-1",
+                        "type": "INSTANCE",
+                        "name": "Card / Summary",
+                        "componentId": "component-card",
+                        "fillStyleId": "style-linked-card",
+                        "absoluteBoundingBox": { "x": 1432, "y": 176, "width": 1240, "height": 192 }
+                      },
+                      {
+                        "id": "1:64644-accordion-1",
+                        "type": "INSTANCE",
+                        "name": "Accordion, State=Expanded",
+                        "componentId": "component-accordion",
+                        "componentSetId": "set-accordion",
+                        "componentProperties": {
+                          "State": { "type": "VARIANT", "value": "Expanded" }
+                        },
+                        "absoluteBoundingBox": { "x": 1432, "y": 392, "width": 1240, "height": 680 },
+                        "children": [
+                          {
+                            "id": "1:64644-accordion-card-a",
+                            "type": "INSTANCE",
+                            "name": "Card / Detail",
+                            "componentId": "component-card",
+                            "absoluteBoundingBox": { "x": 1448, "y": 432, "width": 1180, "height": 128 }
+                          },
+                          {
+                            "id": "1:64644-accordion-card-b",
+                            "type": "INSTANCE",
+                            "name": "Card / Detail",
+                            "componentId": "component-card",
+                            "absoluteBoundingBox": { "x": 1448, "y": 576, "width": 1180, "height": 128 }
+                          },
+                          {
+                            "id": "1:64644-accordion-card-c",
+                            "type": "INSTANCE",
+                            "name": "Card / Detail",
+                            "componentId": "component-card",
+                            "absoluteBoundingBox": { "x": 1448, "y": 720, "width": 1180, "height": 128 }
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "1:66050",
+                "type": "FRAME",
+                "name": "ID-003.3 Netto + Betriebsmittel, alle Cluster eingeklappt",
+                "layoutMode": "VERTICAL",
+                "absoluteBoundingBox": { "x": 2800, "y": 0, "width": 1336, "height": 2378 },
+                "children": [
+                  {
+                    "id": "1:66050-header",
+                    "type": "FRAME",
+                    "name": "Header",
+                    "layoutMode": "HORIZONTAL",
+                    "absoluteBoundingBox": { "x": 2800, "y": 0, "width": 1336, "height": 128 },
+                    "children": [
+                      {
+                        "id": "1:66050-title",
+                        "type": "TEXT",
+                        "name": "Title",
+                        "characters": "Bedarfsermittlung Investitionskredit",
+                        "textStyleId": "style-local-text",
+                        "absoluteBoundingBox": { "x": 2832, "y": 24, "width": 520, "height": 36 }
+                      },
+                      {
+                        "id": "1:66050-mode",
+                        "type": "TEXT",
+                        "name": "Mode",
+                        "characters": "Netto",
+                        "absoluteBoundingBox": { "x": 2832, "y": 72, "width": 160, "height": 24 }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "1:66050-body",
+                    "type": "FRAME",
+                    "name": "Form Body",
+                    "layoutMode": "VERTICAL",
+                    "fillStyleId": "style-linked-fill",
+                    "boundVariables": {
+                      "fills": {
+                        "color": {
+                          "id": "120:1",
+                          "resolvedModeId": "20708:1"
+                        }
+                      }
+                    },
+                    "absoluteBoundingBox": { "x": 2824, "y": 152, "width": 1288, "height": 2202 },
+                    "children": [
+                      {
+                        "id": "1:66050-card-1",
+                        "type": "INSTANCE",
+                        "name": "Card / Summary",
+                        "componentId": "component-card",
+                        "fillStyleId": "style-linked-card",
+                        "absoluteBoundingBox": { "x": 2832, "y": 176, "width": 1240, "height": 192 }
+                      },
+                      {
+                        "id": "1:66050-accordion-1",
+                        "type": "INSTANCE",
+                        "name": "Accordion, State=Collapsed",
+                        "componentId": "component-accordion",
+                        "componentSetId": "set-accordion",
+                        "componentProperties": {
+                          "State": { "type": "VARIANT", "value": "Collapsed" }
+                        },
+                        "absoluteBoundingBox": { "x": 2832, "y": 392, "width": 1240, "height": 320 },
+                        "children": [
+                          {
+                            "id": "1:66050-accordion-card-a",
+                            "type": "INSTANCE",
+                            "name": "Card / Detail",
+                            "componentId": "component-card",
+                            "absoluteBoundingBox": { "x": 2848, "y": 432, "width": 1180, "height": 128 }
+                          },
+                          {
+                            "id": "1:66050-accordion-card-b",
+                            "type": "INSTANCE",
+                            "name": "Card / Detail",
+                            "componentId": "component-card",
+                            "absoluteBoundingBox": { "x": 2848, "y": 576, "width": 1180, "height": 128 }
+                          },
+                          {
+                            "id": "1:66050-accordion-card-c",
+                            "type": "INSTANCE",
+                            "name": "Card / Detail",
+                            "componentId": "component-card",
+                            "absoluteBoundingBox": { "x": 2848, "y": 720, "width": 1180, "height": 128 }
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "1:67464",
+                "type": "FRAME",
+                "name": "ID-003.2 Netto + Betriebsmittel, alle Cluster eingeklappt v1",
+                "layoutMode": "VERTICAL",
+                "absoluteBoundingBox": { "x": 4200, "y": 0, "width": 1336, "height": 2134 },
+                "children": [
+                  {
+                    "id": "1:67464-header",
+                    "type": "FRAME",
+                    "name": "Header",
+                    "layoutMode": "HORIZONTAL",
+                    "absoluteBoundingBox": { "x": 4200, "y": 0, "width": 1336, "height": 128 },
+                    "children": [
+                      {
+                        "id": "1:67464-title",
+                        "type": "TEXT",
+                        "name": "Title",
+                        "characters": "Bedarfsermittlung Investitionskredit",
+                        "textStyleId": "style-local-text",
+                        "absoluteBoundingBox": { "x": 4232, "y": 24, "width": 520, "height": 36 }
+                      },
+                      {
+                        "id": "1:67464-mode",
+                        "type": "TEXT",
+                        "name": "Mode",
+                        "characters": "Netto",
+                        "absoluteBoundingBox": { "x": 4232, "y": 72, "width": 160, "height": 24 }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "1:67464-body",
+                    "type": "FRAME",
+                    "name": "Form Body",
+                    "layoutMode": "VERTICAL",
+                    "fillStyleId": "style-linked-fill",
+                    "boundVariables": {
+                      "fills": {
+                        "color": {
+                          "id": "120:1",
+                          "resolvedModeId": "20708:1"
+                        }
+                      }
+                    },
+                    "absoluteBoundingBox": { "x": 4224, "y": 152, "width": 1288, "height": 1958 },
+                    "children": [
+                      {
+                        "id": "1:67464-card-1",
+                        "type": "INSTANCE",
+                        "name": "Card / Summary",
+                        "componentId": "component-card",
+                        "fillStyleId": "style-linked-card",
+                        "absoluteBoundingBox": { "x": 4232, "y": 176, "width": 1240, "height": 192 }
+                      },
+                      {
+                        "id": "1:67464-accordion-1",
+                        "type": "INSTANCE",
+                        "name": "Accordion, State=Collapsed",
+                        "componentId": "component-accordion",
+                        "componentSetId": "set-accordion",
+                        "componentProperties": {
+                          "State": { "type": "VARIANT", "value": "Collapsed" }
+                        },
+                        "absoluteBoundingBox": { "x": 4232, "y": 392, "width": 1240, "height": 320 },
+                        "children": [
+                          {
+                            "id": "1:67464-accordion-card-a",
+                            "type": "INSTANCE",
+                            "name": "Card / Detail",
+                            "componentId": "component-card",
+                            "absoluteBoundingBox": { "x": 4248, "y": 432, "width": 1180, "height": 128 }
+                          },
+                          {
+                            "id": "1:67464-accordion-card-b",
+                            "type": "INSTANCE",
+                            "name": "Card / Detail",
+                            "componentId": "component-card",
+                            "absoluteBoundingBox": { "x": 4248, "y": 576, "width": 1180, "height": 128 }
+                          },
+                          {
+                            "id": "1:67464-accordion-card-c",
+                            "type": "INSTANCE",
+                            "name": "Card / Detail",
+                            "componentId": "component-card",
+                            "absoluteBoundingBox": { "x": 4248, "y": 720, "width": 1180, "height": 128 }
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "1:68884",
+                "type": "FRAME",
+                "name": "ID-003.1 Fehlermeldungen",
+                "layoutMode": "VERTICAL",
+                "absoluteBoundingBox": { "x": 5600, "y": 0, "width": 1336, "height": 2406 },
+                "children": [
+                  {
+                    "id": "1:68884-header",
+                    "type": "FRAME",
+                    "name": "Header",
+                    "layoutMode": "HORIZONTAL",
+                    "absoluteBoundingBox": { "x": 5600, "y": 0, "width": 1336, "height": 128 },
+                    "children": [
+                      {
+                        "id": "1:68884-title",
+                        "type": "TEXT",
+                        "name": "Title",
+                        "characters": "Bedarfsermittlung Investitionskredit",
+                        "textStyleId": "style-local-text",
+                        "absoluteBoundingBox": { "x": 5632, "y": 24, "width": 520, "height": 36 }
+                      },
+                      {
+                        "id": "1:68884-mode",
+                        "type": "TEXT",
+                        "name": "Mode",
+                        "characters": "Netto",
+                        "absoluteBoundingBox": { "x": 5632, "y": 72, "width": 160, "height": 24 }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "1:68884-body",
+                    "type": "FRAME",
+                    "name": "Form Body",
+                    "layoutMode": "VERTICAL",
+                    "fillStyleId": "style-linked-fill",
+                    "boundVariables": {
+                      "fills": {
+                        "color": {
+                          "id": "120:1",
+                          "resolvedModeId": "20708:1"
+                        }
+                      }
+                    },
+                    "absoluteBoundingBox": { "x": 5624, "y": 152, "width": 1288, "height": 2230 },
+                    "children": [
+                      {
+                        "id": "1:68884-card-1",
+                        "type": "INSTANCE",
+                        "name": "Card / Summary",
+                        "componentId": "component-card",
+                        "fillStyleId": "style-linked-card",
+                        "absoluteBoundingBox": { "x": 5632, "y": 176, "width": 1240, "height": 192 }
+                      },
+                      {
+                        "id": "1:68884-accordion-1",
+                        "type": "INSTANCE",
+                        "name": "Accordion, State=Collapsed",
+                        "componentId": "component-accordion",
+                        "componentSetId": "set-accordion",
+                        "componentProperties": {
+                          "State": { "type": "VARIANT", "value": "Collapsed" }
+                        },
+                        "absoluteBoundingBox": { "x": 5632, "y": 392, "width": 1240, "height": 320 },
+                        "children": [
+                          {
+                            "id": "1:68884-accordion-card-a",
+                            "type": "INSTANCE",
+                            "name": "Card / Detail",
+                            "componentId": "component-card",
+                            "absoluteBoundingBox": { "x": 5648, "y": 432, "width": 1180, "height": 128 }
+                          },
+                          {
+                            "id": "1:68884-accordion-card-b",
+                            "type": "INSTANCE",
+                            "name": "Card / Detail",
+                            "componentId": "component-card",
+                            "absoluteBoundingBox": { "x": 5648, "y": 576, "width": 1180, "height": 128 }
+                          },
+                          {
+                            "id": "1:68884-accordion-card-c",
+                            "type": "INSTANCE",
+                            "name": "Card / Detail",
+                            "componentId": "component-card",
+                            "absoluteBoundingBox": { "x": 5648, "y": 720, "width": 1180, "height": 128 }
+                          }
+                        ]
+                      },
+                      {
+                        "id": "1:68884-error",
+                        "type": "TEXT",
+                        "name": "Error Text",
+                        "characters": "Fehler bei der Validierung",
+                        "absoluteBoundingBox": { "x": 5632, "y": 2300, "width": 420, "height": 24 }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

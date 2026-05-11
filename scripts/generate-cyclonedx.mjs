@@ -3,18 +3,74 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const packageRoot = path.resolve(__dirname, "..");
+const repoRoot = path.resolve(__dirname, "..");
+const require = createRequire(import.meta.url);
+const cyclonedxPackageEntryPath = require.resolve("@cyclonedx/cyclonedx-npm");
+const cyclonedxCliPath = path.resolve(
+  path.dirname(cyclonedxPackageEntryPath),
+  "bin/cyclonedx-npm-cli.js"
+);
 
-const run = (command, args) =>
+const parseArgs = () => {
+  const args = process.argv.slice(2);
+  let outputPath = "artifacts/sbom/workspace-dev.cdx.json";
+  let packageRoot = repoRoot;
+  let ignoreNpmErrors = false;
+
+  for (let index = 0; index < args.length; index += 1) {
+    const current = args[index];
+    if (!current) {
+      continue;
+    }
+    if (current === "--ignore-npm-errors") {
+      ignoreNpmErrors = true;
+      continue;
+    }
+    if (current === "--package-root") {
+      const next = args[index + 1];
+      if (!next) {
+        throw new Error("Missing value for --package-root.");
+      }
+      packageRoot = path.resolve(repoRoot, next);
+      index += 1;
+      continue;
+    }
+    if (current.startsWith("--package-root=")) {
+      packageRoot = path.resolve(repoRoot, current.slice("--package-root=".length));
+      continue;
+    }
+    outputPath = current;
+  }
+
+  return {
+    ignoreNpmErrors,
+    outputPath,
+    packageRoot
+  };
+};
+
+const run = (command, args, cwd, { quiet = false } = {}) =>
   new Promise((resolve, reject) => {
+    const env = { ...process.env };
+    delete env.npm_execpath;
+
     const child = spawn(command, args, {
-      cwd: packageRoot,
-      env: process.env,
-      stdio: "inherit"
+      cwd,
+      env,
+      stdio: quiet ? ["ignore", "pipe", "pipe"] : "inherit"
     });
+    let stderr = "";
+    if (quiet) {
+      child.stdout.resume();
+      child.stderr.setEncoding("utf8");
+      child.stderr.on("data", (chunk) => {
+        stderr += chunk;
+      });
+    }
 
     child.once("error", reject);
     child.once("close", (code) => {
@@ -22,21 +78,22 @@ const run = (command, args) =>
         resolve(undefined);
         return;
       }
-      reject(new Error(`Command failed with exit code ${code ?? 1}: ${command} ${args.join(" ")}`));
+      reject(
+        new Error(
+          `Command failed with exit code ${code ?? 1}: ${command} ${args.join(" ")}${stderr ? `\n${stderr}` : ""}`
+        )
+      );
     });
   });
 
 const main = async () => {
-  const outputPath = process.argv[2] ?? "artifacts/sbom/workspace-dev.cdx.json";
-  const absoluteOutputPath = path.resolve(packageRoot, outputPath);
+  const { ignoreNpmErrors, outputPath, packageRoot } = parseArgs();
+  const absoluteOutputPath = path.resolve(repoRoot, outputPath);
   await mkdir(path.dirname(absoluteOutputPath), { recursive: true });
 
-  await run("npm", [
-    "exec",
-    "--yes",
-    "--",
-    "cyclonedx-npm",
-    "--ignore-npm-errors",
+  await run(process.execPath, [
+    cyclonedxCliPath,
+    ...(ignoreNpmErrors ? ["--ignore-npm-errors"] : []),
     "--omit",
     "dev",
     "--spec-version",
@@ -44,9 +101,9 @@ const main = async () => {
     "--output-reproducible",
     "--output-file",
     absoluteOutputPath
-  ]);
+  ], packageRoot, { quiet: ignoreNpmErrors });
 
-  console.log(`[sbom] CycloneDX written to ${absoluteOutputPath}`);
+  console.log(`[sbom] CycloneDX written to ${absoluteOutputPath} (packageRoot=${packageRoot})`);
 };
 
 main().catch((error) => {

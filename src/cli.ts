@@ -6,13 +6,134 @@
  *   workspace-dev start [--port 1983] [--host 127.0.0.1]
  */
 
+import type {
+  WorkspaceBrandTheme,
+  WorkspaceCompositeQualityWeightsInput,
+  WorkspaceLogFormat,
+  WorkspaceRouterMode,
+  WorkspaceVisualBrowserName,
+  WorkspaceVisualQualityReferenceMode,
+} from "./contracts/index.js";
+import {
+  getDefaultDesignSystemConfigPath,
+  inferDesignSystemConfigFromProject,
+  writeDesignSystemConfigFile,
+} from "./design-system.js";
+import {
+  DEFAULT_GENERATION_LOCALE,
+  resolveGenerationLocale,
+} from "./generation-locale.js";
+import {
+  createWorkspaceLogger,
+  DEFAULT_WORKSPACE_LOG_FORMAT,
+  resolveWorkspaceLogFormat,
+} from "./logging.js";
+import { DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS } from "./job-engine/errors.js";
+import { parseVisualBrowserList } from "./job-engine/visual-browser-matrix.js";
 import { createWorkspaceServer } from "./server.js";
+import {
+  parseTestIntelligenceAuditDossierArgs,
+  parseTestIntelligenceAuditVerifyArgs,
+  parseTestIntelligenceDoctorArgs,
+  parseTestIntelligenceRunArgs,
+  parseTestIntelligenceVerifyProvenanceArgs,
+  parseTestIntelligenceVerifySealArgs,
+  runTestIntelligenceAuditDossierCommand,
+  runTestIntelligenceAuditVerifyCommand,
+  runTestIntelligenceDoctorCommand,
+  runTestIntelligenceCommand,
+  runTestIntelligenceVerifyProvenanceCommand,
+  runTestIntelligenceVerifySealCommand,
+  TEST_INTELLIGENCE_AUDIT_DOSSIER_HELP,
+  TEST_INTELLIGENCE_AUDIT_VERIFY_HELP,
+  TEST_INTELLIGENCE_DOCTOR_HELP,
+  TEST_INTELLIGENCE_HELP,
+  TEST_INTELLIGENCE_RUN_HELP,
+  TEST_INTELLIGENCE_VERIFY_PROVENANCE_HELP,
+  TEST_INTELLIGENCE_VERIFY_SEAL_HELP,
+  TestIntelligenceRunOperatorError,
+} from "./test-intelligence-run-cli.js";
+import {
+  parseTestIntelligenceReviewDecideArgs,
+  parseTestIntelligenceReviewGetArgs,
+  parseTestIntelligenceReviewListArgs,
+  runTestIntelligenceReviewDecideCommand,
+  runTestIntelligenceReviewGetCommand,
+  runTestIntelligenceReviewListCommand,
+  TEST_INTELLIGENCE_REVIEW_HELP,
+  TestIntelligenceReviewOperatorError,
+} from "./test-intelligence-review-cli.js";
+import {
+  parseTestIntelligenceCalibrationRefitArgs,
+  runTestIntelligenceCalibrationRefitCommand,
+  TEST_INTELLIGENCE_CALIBRATION_REFIT_HELP,
+} from "./test-intelligence-calibration-refit-cli.js";
+import { CalibrationRefitOperatorError } from "./test-intelligence/self-improving-calibration.js";
+import {
+  parseTestIntelligenceTmsPushArgs,
+  runTestIntelligenceTmsPushCommand,
+  TEST_INTELLIGENCE_TMS_PUSH_HELP,
+  TestIntelligenceTmsPushOperatorError,
+} from "./test-intelligence-tms-push-cli.js";
+import {
+  parseTestIntelligenceOnboardArgs,
+  runTestIntelligenceOnboardCommand,
+  TEST_INTELLIGENCE_ONBOARD_HELP,
+  TestIntelligenceOnboardOperatorError,
+} from "./test-intelligence-onboard-cli.js";
+import {
+  parseTestIntelligenceExecutionPullArgs,
+  runTestIntelligenceExecutionPullCommand,
+  TEST_INTELLIGENCE_EXECUTION_PULL_HELP,
+  TestIntelligenceExecutionPullOperatorError,
+} from "./test-intelligence-execution-pull-cli.js";
+import { runFigmaExportCli } from "./test-intelligence-figma-export-cli.js";
+import path from "node:path";
 
 const DEFAULT_PORT = 1983;
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_OUTPUT_ROOT = ".workspace-dev";
 const DEFAULT_FIGMA_TIMEOUT_MS = 30_000;
 const DEFAULT_FIGMA_RETRIES = 3;
+const DEFAULT_FIGMA_CIRCUIT_BREAKER_FAILURE_THRESHOLD = 3;
+const DEFAULT_FIGMA_CIRCUIT_BREAKER_RESET_TIMEOUT_MS = 30_000;
+const DEFAULT_FIGMA_BOOTSTRAP_DEPTH = 5;
+const DEFAULT_FIGMA_NODE_BATCH_SIZE = 6;
+const DEFAULT_FIGMA_NODE_FETCH_CONCURRENCY = 3;
+const DEFAULT_FIGMA_ADAPTIVE_BATCHING = true;
+const DEFAULT_FIGMA_MAX_SCREEN_CANDIDATES = 40;
+const DEFAULT_FIGMA_CACHE_ENABLED = true;
+const DEFAULT_FIGMA_CACHE_TTL_MS = 15 * 60_000;
+const DEFAULT_FIGMA_PASTE_TEMP_TTL_MS = 24 * 60 * 60_000;
+const DEFAULT_EXPORT_IMAGES = true;
+const DEFAULT_FIGMA_SCREEN_ELEMENT_BUDGET = 1_200;
+const DEFAULT_FIGMA_SCREEN_ELEMENT_MAX_DEPTH = 14;
+const DEFAULT_BRAND_THEME: WorkspaceBrandTheme = "derived";
+const DEFAULT_ROUTER_MODE: WorkspaceRouterMode = "browser";
+const DEFAULT_COMMAND_TIMEOUT_MS = 15 * 60_000;
+const DEFAULT_COMMAND_STDOUT_MAX_BYTES = 1_048_576;
+const DEFAULT_COMMAND_STDERR_MAX_BYTES = 1_048_576;
+const DEFAULT_PIPELINE_DIAGNOSTIC_MAX_COUNT =
+  DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS.maxDiagnostics;
+const DEFAULT_PIPELINE_DIAGNOSTIC_TEXT_MAX_LENGTH =
+  DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS.textMaxLength;
+const DEFAULT_PIPELINE_DIAGNOSTIC_DETAILS_MAX_KEYS =
+  DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS.detailsMaxKeys;
+const DEFAULT_PIPELINE_DIAGNOSTIC_DETAILS_MAX_ITEMS =
+  DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS.detailsMaxItems;
+const DEFAULT_PIPELINE_DIAGNOSTIC_DETAILS_MAX_DEPTH =
+  DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS.detailsMaxDepth;
+const DEFAULT_ENABLE_VISUAL_QUALITY_VALIDATION = false;
+const DEFAULT_VISUAL_QUALITY_REFERENCE_MODE: WorkspaceVisualQualityReferenceMode =
+  "figma_api";
+const DEFAULT_VISUAL_QUALITY_VIEWPORT_WIDTH = 1280;
+const DEFAULT_INSTALL_PREFER_OFFLINE = true;
+const DEFAULT_SKIP_INSTALL = false;
+const DEFAULT_ENABLE_LINT_AUTOFIX = true;
+const DEFAULT_MAX_CONCURRENT_JOBS = 1;
+const DEFAULT_MAX_QUEUED_JOBS = 20;
+const DEFAULT_RATE_LIMIT_PER_MINUTE = 10;
+const DEFAULT_SHUTDOWN_TIMEOUT_MS = 10_000;
 
 interface CliOptions {
   command: string;
@@ -21,11 +142,70 @@ interface CliOptions {
   outputRoot: string;
   figmaTimeoutMs: number;
   figmaRetries: number;
+  figmaCircuitBreakerFailureThreshold: number;
+  figmaCircuitBreakerResetTimeoutMs: number;
+  figmaBootstrapDepth: number;
+  figmaNodeBatchSize: number;
+  figmaNodeFetchConcurrency: number;
+  figmaAdaptiveBatchingEnabled: boolean;
+  figmaMaxScreenCandidates: number;
+  figmaScreenNamePattern: string | undefined;
+  figmaCacheEnabled: boolean;
+  figmaCacheTtlMs: number;
+  figmaPasteTempTtlMs: number;
+  iconMapFilePath: string | undefined;
+  designSystemFilePath: string | undefined;
+  exportImages: boolean;
+  figmaScreenElementBudget: number;
+  figmaScreenElementMaxDepth: number;
+  brandTheme: WorkspaceBrandTheme;
+  sparkasseTokensFilePath: string | undefined;
+  generationLocale: string;
+  routerMode: WorkspaceRouterMode;
+  commandTimeoutMs: number;
+  commandStdoutMaxBytes: number;
+  commandStderrMaxBytes: number;
+  pipelineDiagnosticMaxCount: number;
+  pipelineDiagnosticTextMaxLength: number;
+  pipelineDiagnosticDetailsMaxKeys: number;
+  pipelineDiagnosticDetailsMaxItems: number;
+  pipelineDiagnosticDetailsMaxDepth: number;
+  enableUiValidation: boolean | undefined;
+  enableVisualQualityValidation: boolean;
+  compositeQualityWeights?: WorkspaceCompositeQualityWeightsInput;
+  visualQualityReferenceMode: WorkspaceVisualQualityReferenceMode;
+  visualQualityViewportWidth: number;
+  visualQualityBrowsers: WorkspaceVisualBrowserName[];
+  enableUnitTestValidation: boolean | undefined;
+  installPreferOffline: boolean;
+  skipInstall: boolean;
+  maxConcurrentJobs: number;
+  maxQueuedJobs: number;
+  rateLimitPerMinute: number;
+  shutdownTimeoutMs: number;
+  importSessionEventBearerToken: string | undefined;
+  logFormat: WorkspaceLogFormat;
+  enableLintAutofix: boolean;
   enablePreview: boolean;
-  enablePerfValidation: boolean;
+  enablePerfValidation: boolean | undefined;
+  scanProjectRoot: string;
+  scanOutputPath: string | undefined;
+  scanLibrary: string | undefined;
+  scanForce: boolean;
+  /**
+   * Opt-in startup feature gate for the Figma-to-QC test-intelligence
+   * Inspector surface (Issue #1733/#1735/#1736). Defaults to env-var
+   * `FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE`. The runtime gate combines
+   * this with the env var; both must be true for the
+   * `figma_to_qc_test_cases` job type to be accepted.
+   */
+  enableTestIntelligence: boolean;
 }
 
-const parseBooleanLike = (value: string | undefined, fallback: boolean): boolean => {
+const parseBooleanLike = (
+  value: string | undefined,
+  fallback: boolean,
+): boolean => {
   if (!value) {
     return fallback;
   }
@@ -39,11 +219,29 @@ const parseBooleanLike = (value: string | undefined, fallback: boolean): boolean
   return fallback;
 };
 
+// Variant that returns `undefined` when no explicit boolean is provided, so
+// callers can distinguish "user opted in/out" from "user did not say". Used
+// for validation flags whose absence delegates to per-pipeline policy in the
+// runtime/job-engine layer.
+const parseBooleanFlag = (value: string | undefined): boolean | undefined => {
+  if (!value) {
+    return undefined;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) {
+    return true;
+  }
+  if (["0", "false", "no", "off"].includes(normalized)) {
+    return false;
+  }
+  return undefined;
+};
+
 const parseIntInRange = ({
   raw,
   fallback,
   min,
-  max
+  max,
 }: {
   raw: string | undefined;
   fallback: number;
@@ -60,6 +258,65 @@ const parseIntInRange = ({
   return Math.max(min, Math.min(max, parsed));
 };
 
+const parseOptionalFloat = (value: string | undefined): number | undefined => {
+  if (!value) {
+    return undefined;
+  }
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+const parseBrandTheme = ({
+  value,
+  fallback,
+}: {
+  value: string | undefined;
+  fallback: WorkspaceBrandTheme;
+}): WorkspaceBrandTheme => {
+  if (!value) {
+    return fallback;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "derived" || normalized === "sparkasse") {
+    return normalized;
+  }
+  return fallback;
+};
+
+const parseRouterMode = ({
+  value,
+  fallback,
+}: {
+  value: string | undefined;
+  fallback: WorkspaceRouterMode;
+}): WorkspaceRouterMode => {
+  if (!value) {
+    return fallback;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "browser" || normalized === "hash") {
+    return normalized;
+  }
+  return fallback;
+};
+
+const parseVisualQualityReferenceMode = ({
+  value,
+  fallback,
+}: {
+  value: string | undefined;
+  fallback: WorkspaceVisualQualityReferenceMode;
+}): WorkspaceVisualQualityReferenceMode => {
+  if (!value) {
+    return fallback;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "figma_api" || normalized === "frozen_fixture") {
+    return normalized;
+  }
+  return fallback;
+};
+
 const parseArgs = (argv: string[]): CliOptions => {
   const args = argv.slice(2);
   const command = args[0] ?? "start";
@@ -68,27 +325,274 @@ const parseArgs = (argv: string[]): CliOptions => {
     raw: process.env.FIGMAPIPE_WORKSPACE_PORT,
     fallback: DEFAULT_PORT,
     min: 1,
-    max: 65535
+    max: 65535,
   });
   let host = process.env.FIGMAPIPE_WORKSPACE_HOST?.trim() || DEFAULT_HOST;
-  let outputRoot = process.env.FIGMAPIPE_WORKSPACE_OUTPUT_ROOT?.trim() || DEFAULT_OUTPUT_ROOT;
+  let outputRoot =
+    process.env.FIGMAPIPE_WORKSPACE_OUTPUT_ROOT?.trim() || DEFAULT_OUTPUT_ROOT;
   let figmaTimeoutMs = parseIntInRange({
     raw: process.env.FIGMAPIPE_WORKSPACE_FIGMA_TIMEOUT_MS,
     fallback: DEFAULT_FIGMA_TIMEOUT_MS,
     min: 1_000,
-    max: 120_000
+    max: 120_000,
   });
   let figmaRetries = parseIntInRange({
     raw: process.env.FIGMAPIPE_WORKSPACE_FIGMA_RETRIES,
     fallback: DEFAULT_FIGMA_RETRIES,
     min: 1,
-    max: 10
+    max: 10,
   });
-  let enablePreview = parseBooleanLike(process.env.FIGMAPIPE_WORKSPACE_ENABLE_PREVIEW, true);
-  let enablePerfValidation = parseBooleanLike(
-    process.env.FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION ?? process.env.FIGMAPIPE_ENABLE_PERF_VALIDATION,
-    false
+  let figmaCircuitBreakerFailureThreshold = parseIntInRange({
+    raw: process.env
+      .FIGMAPIPE_WORKSPACE_FIGMA_CIRCUIT_BREAKER_FAILURE_THRESHOLD,
+    fallback: DEFAULT_FIGMA_CIRCUIT_BREAKER_FAILURE_THRESHOLD,
+    min: 1,
+    max: 20,
+  });
+  let figmaCircuitBreakerResetTimeoutMs = parseIntInRange({
+    raw: process.env.FIGMAPIPE_WORKSPACE_FIGMA_CIRCUIT_BREAKER_RESET_TIMEOUT_MS,
+    fallback: DEFAULT_FIGMA_CIRCUIT_BREAKER_RESET_TIMEOUT_MS,
+    min: 1_000,
+    max: 60 * 60_000,
+  });
+  let figmaBootstrapDepth = parseIntInRange({
+    raw: process.env.FIGMAPIPE_WORKSPACE_FIGMA_BOOTSTRAP_DEPTH,
+    fallback: DEFAULT_FIGMA_BOOTSTRAP_DEPTH,
+    min: 1,
+    max: 10,
+  });
+  let figmaNodeBatchSize = parseIntInRange({
+    raw: process.env.FIGMAPIPE_WORKSPACE_FIGMA_NODE_BATCH_SIZE,
+    fallback: DEFAULT_FIGMA_NODE_BATCH_SIZE,
+    min: 1,
+    max: 20,
+  });
+  let figmaNodeFetchConcurrency = parseIntInRange({
+    raw: process.env.FIGMAPIPE_WORKSPACE_FIGMA_NODE_FETCH_CONCURRENCY,
+    fallback: DEFAULT_FIGMA_NODE_FETCH_CONCURRENCY,
+    min: 1,
+    max: 10,
+  });
+  let figmaAdaptiveBatchingEnabled = parseBooleanLike(
+    process.env.FIGMAPIPE_WORKSPACE_FIGMA_ADAPTIVE_BATCHING,
+    DEFAULT_FIGMA_ADAPTIVE_BATCHING,
   );
+  let figmaMaxScreenCandidates = parseIntInRange({
+    raw: process.env.FIGMAPIPE_WORKSPACE_FIGMA_MAX_SCREEN_CANDIDATES,
+    fallback: DEFAULT_FIGMA_MAX_SCREEN_CANDIDATES,
+    min: 1,
+    max: 200,
+  });
+  let figmaScreenNamePattern =
+    process.env.FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_NAME_PATTERN?.trim() ||
+    undefined;
+  let figmaCacheEnabled = !parseBooleanLike(
+    process.env.FIGMAPIPE_WORKSPACE_NO_CACHE,
+    !DEFAULT_FIGMA_CACHE_ENABLED,
+  );
+  let figmaCacheTtlMs = parseIntInRange({
+    raw: process.env.FIGMAPIPE_WORKSPACE_FIGMA_CACHE_TTL_MS,
+    fallback: DEFAULT_FIGMA_CACHE_TTL_MS,
+    min: 1_000,
+    max: 24 * 60 * 60_000,
+  });
+  let figmaPasteTempTtlMs = parseIntInRange({
+    raw: process.env.FIGMAPIPE_WORKSPACE_FIGMA_PASTE_TEMP_TTL_MS,
+    fallback: DEFAULT_FIGMA_PASTE_TEMP_TTL_MS,
+    min: 0,
+    max: 30 * 24 * 60 * 60_000,
+  });
+  let iconMapFilePath =
+    process.env.FIGMAPIPE_WORKSPACE_ICON_MAP_FILE?.trim() || undefined;
+  let designSystemFilePath =
+    process.env.FIGMAPIPE_WORKSPACE_DESIGN_SYSTEM_FILE?.trim() || undefined;
+  let exportImages = parseBooleanLike(
+    process.env.FIGMAPIPE_WORKSPACE_EXPORT_IMAGES,
+    DEFAULT_EXPORT_IMAGES,
+  );
+  let figmaScreenElementBudget = parseIntInRange({
+    raw: process.env.FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_ELEMENT_BUDGET,
+    fallback: DEFAULT_FIGMA_SCREEN_ELEMENT_BUDGET,
+    min: 100,
+    max: 10000,
+  });
+  let figmaScreenElementMaxDepth = parseIntInRange({
+    raw: process.env.FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_ELEMENT_MAX_DEPTH,
+    fallback: DEFAULT_FIGMA_SCREEN_ELEMENT_MAX_DEPTH,
+    min: 1,
+    max: 64,
+  });
+  let brandTheme = parseBrandTheme({
+    value: process.env.FIGMAPIPE_WORKSPACE_BRAND,
+    fallback: DEFAULT_BRAND_THEME,
+  });
+  const sparkasseTokensFilePath =
+    process.env.FIGMAPIPE_WORKSPACE_SPARKASSE_TOKENS_FILE?.trim() ||
+    process.env.BRAND_TOKENS_FILE?.trim() ||
+    undefined;
+  let generationLocale = resolveGenerationLocale({
+    requestedLocale: process.env.FIGMAPIPE_WORKSPACE_GENERATION_LOCALE,
+    fallbackLocale: DEFAULT_GENERATION_LOCALE,
+  }).locale;
+  let routerMode = parseRouterMode({
+    value: process.env.FIGMAPIPE_WORKSPACE_ROUTER,
+    fallback: DEFAULT_ROUTER_MODE,
+  });
+  let commandTimeoutMs = parseIntInRange({
+    raw: process.env.FIGMAPIPE_WORKSPACE_COMMAND_TIMEOUT_MS,
+    fallback: DEFAULT_COMMAND_TIMEOUT_MS,
+    min: 5_000,
+    max: 60 * 60_000,
+  });
+  let commandStdoutMaxBytes = parseIntInRange({
+    raw: process.env.FIGMAPIPE_WORKSPACE_COMMAND_STDOUT_MAX_BYTES,
+    fallback: DEFAULT_COMMAND_STDOUT_MAX_BYTES,
+    min: 4_096,
+    max: 16_777_216,
+  });
+  let commandStderrMaxBytes = parseIntInRange({
+    raw: process.env.FIGMAPIPE_WORKSPACE_COMMAND_STDERR_MAX_BYTES,
+    fallback: DEFAULT_COMMAND_STDERR_MAX_BYTES,
+    min: 4_096,
+    max: 16_777_216,
+  });
+  let pipelineDiagnosticMaxCount = parseIntInRange({
+    raw: process.env.FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_MAX_COUNT,
+    fallback: DEFAULT_PIPELINE_DIAGNOSTIC_MAX_COUNT,
+    min: 1,
+    max: 500,
+  });
+  let pipelineDiagnosticTextMaxLength = parseIntInRange({
+    raw: process.env.FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_TEXT_MAX_LENGTH,
+    fallback: DEFAULT_PIPELINE_DIAGNOSTIC_TEXT_MAX_LENGTH,
+    min: 16,
+    max: 4_000,
+  });
+  let pipelineDiagnosticDetailsMaxKeys = parseIntInRange({
+    raw: process.env.FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_DETAILS_MAX_KEYS,
+    fallback: DEFAULT_PIPELINE_DIAGNOSTIC_DETAILS_MAX_KEYS,
+    min: 1,
+    max: 200,
+  });
+  let pipelineDiagnosticDetailsMaxItems = parseIntInRange({
+    raw: process.env.FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_DETAILS_MAX_ITEMS,
+    fallback: DEFAULT_PIPELINE_DIAGNOSTIC_DETAILS_MAX_ITEMS,
+    min: 1,
+    max: 200,
+  });
+  let pipelineDiagnosticDetailsMaxDepth = parseIntInRange({
+    raw: process.env.FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_DETAILS_MAX_DEPTH,
+    fallback: DEFAULT_PIPELINE_DIAGNOSTIC_DETAILS_MAX_DEPTH,
+    min: 1,
+    max: 10,
+  });
+  let enableUiValidation: boolean | undefined = parseBooleanFlag(
+    process.env.FIGMAPIPE_WORKSPACE_ENABLE_UI_VALIDATION,
+  );
+  let enableVisualQualityValidation = parseBooleanLike(
+    process.env.FIGMAPIPE_WORKSPACE_ENABLE_VISUAL_QUALITY_VALIDATION,
+    DEFAULT_ENABLE_VISUAL_QUALITY_VALIDATION,
+  );
+  const compositeQualityVisualWeight = parseOptionalFloat(
+    process.env.FIGMAPIPE_WORKSPACE_COMPOSITE_QUALITY_VISUAL_WEIGHT,
+  );
+  const compositeQualityPerformanceWeight = parseOptionalFloat(
+    process.env.FIGMAPIPE_WORKSPACE_COMPOSITE_QUALITY_PERFORMANCE_WEIGHT,
+  );
+  const compositeQualityWeights =
+    compositeQualityVisualWeight !== undefined ||
+    compositeQualityPerformanceWeight !== undefined
+      ? {
+          ...(compositeQualityVisualWeight !== undefined
+            ? { visual: compositeQualityVisualWeight }
+            : {}),
+          ...(compositeQualityPerformanceWeight !== undefined
+            ? { performance: compositeQualityPerformanceWeight }
+            : {}),
+        }
+      : undefined;
+  let visualQualityReferenceMode = parseVisualQualityReferenceMode({
+    value: process.env.FIGMAPIPE_WORKSPACE_VISUAL_QUALITY_REFERENCE_MODE,
+    fallback: DEFAULT_VISUAL_QUALITY_REFERENCE_MODE,
+  });
+  let visualQualityViewportWidth = parseIntInRange({
+    raw: process.env.FIGMAPIPE_WORKSPACE_VISUAL_QUALITY_VIEWPORT_WIDTH,
+    fallback: DEFAULT_VISUAL_QUALITY_VIEWPORT_WIDTH,
+    min: 320,
+    max: 4096,
+  });
+  let visualQualityBrowsers = (() => {
+    const raw = process.env.FIGMAPIPE_WORKSPACE_VISUAL_QUALITY_BROWSERS;
+    if (!raw || raw.trim().length === 0) {
+      return ["chromium"] as WorkspaceVisualBrowserName[];
+    }
+    return parseVisualBrowserList(
+      raw,
+      "FIGMAPIPE_WORKSPACE_VISUAL_QUALITY_BROWSERS",
+    );
+  })();
+  let enableUnitTestValidation: boolean | undefined = parseBooleanFlag(
+    process.env.FIGMAPIPE_WORKSPACE_ENABLE_UNIT_TEST_VALIDATION,
+  );
+  let installPreferOffline = parseBooleanLike(
+    process.env.FIGMAPIPE_WORKSPACE_INSTALL_PREFER_OFFLINE,
+    DEFAULT_INSTALL_PREFER_OFFLINE,
+  );
+  let skipInstall = parseBooleanLike(
+    process.env.FIGMAPIPE_WORKSPACE_SKIP_INSTALL,
+    DEFAULT_SKIP_INSTALL,
+  );
+  let maxConcurrentJobs = parseIntInRange({
+    raw: process.env.FIGMAPIPE_WORKSPACE_MAX_CONCURRENT_JOBS,
+    fallback: DEFAULT_MAX_CONCURRENT_JOBS,
+    min: 1,
+    max: 16,
+  });
+  let maxQueuedJobs = parseIntInRange({
+    raw: process.env.FIGMAPIPE_WORKSPACE_MAX_QUEUED_JOBS,
+    fallback: DEFAULT_MAX_QUEUED_JOBS,
+    min: 0,
+    max: 1000,
+  });
+  let rateLimitPerMinute = parseIntInRange({
+    raw: process.env.FIGMAPIPE_WORKSPACE_RATE_LIMIT_PER_MINUTE,
+    fallback: DEFAULT_RATE_LIMIT_PER_MINUTE,
+    min: 0,
+    max: 1000,
+  });
+  let shutdownTimeoutMs = parseIntInRange({
+    raw: process.env.FIGMAPIPE_WORKSPACE_SHUTDOWN_TIMEOUT_MS,
+    fallback: DEFAULT_SHUTDOWN_TIMEOUT_MS,
+    min: 0,
+    max: 60 * 60_000,
+  });
+  const importSessionEventBearerToken =
+    process.env.FIGMAPIPE_WORKSPACE_IMPORT_SESSION_EVENT_BEARER_TOKEN?.trim() ||
+    undefined;
+  let logFormat = resolveWorkspaceLogFormat({
+    value: process.env.FIGMAPIPE_WORKSPACE_LOG_FORMAT,
+    fallback: DEFAULT_WORKSPACE_LOG_FORMAT,
+  });
+  let enableLintAutofix = parseBooleanLike(
+    process.env.FIGMAPIPE_WORKSPACE_ENABLE_LINT_AUTOFIX,
+    DEFAULT_ENABLE_LINT_AUTOFIX,
+  );
+  let enablePreview = parseBooleanLike(
+    process.env.FIGMAPIPE_WORKSPACE_ENABLE_PREVIEW,
+    true,
+  );
+  let enablePerfValidation: boolean | undefined = parseBooleanFlag(
+    process.env.FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION ??
+      process.env.FIGMAPIPE_ENABLE_PERF_VALIDATION,
+  );
+  let enableTestIntelligence = parseBooleanLike(
+    process.env.FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE,
+    false,
+  );
+  let scanProjectRoot = process.cwd();
+  let scanOutputPath: string | undefined;
+  let scanLibrary: string | undefined;
+  let scanForce = false;
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
@@ -98,7 +602,7 @@ const parseArgs = (argv: string[]): CliOptions => {
         raw: args[index + 1],
         fallback: port,
         min: 1,
-        max: 65535
+        max: 65535,
       });
       index += 1;
       continue;
@@ -127,7 +631,7 @@ const parseArgs = (argv: string[]): CliOptions => {
         raw: args[index + 1],
         fallback: figmaTimeoutMs,
         min: 1_000,
-        max: 120_000
+        max: 120_000,
       });
       index += 1;
       continue;
@@ -138,8 +642,414 @@ const parseArgs = (argv: string[]): CliOptions => {
         raw: args[index + 1],
         fallback: figmaRetries,
         min: 1,
-        max: 10
+        max: 10,
       });
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--figma-circuit-breaker-failure-threshold") {
+      figmaCircuitBreakerFailureThreshold = parseIntInRange({
+        raw: args[index + 1],
+        fallback: figmaCircuitBreakerFailureThreshold,
+        min: 1,
+        max: 20,
+      });
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--figma-circuit-breaker-reset-timeout-ms") {
+      figmaCircuitBreakerResetTimeoutMs = parseIntInRange({
+        raw: args[index + 1],
+        fallback: figmaCircuitBreakerResetTimeoutMs,
+        min: 1_000,
+        max: 60 * 60_000,
+      });
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--figma-bootstrap-depth") {
+      figmaBootstrapDepth = parseIntInRange({
+        raw: args[index + 1],
+        fallback: figmaBootstrapDepth,
+        min: 1,
+        max: 10,
+      });
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--figma-node-batch-size") {
+      figmaNodeBatchSize = parseIntInRange({
+        raw: args[index + 1],
+        fallback: figmaNodeBatchSize,
+        min: 1,
+        max: 20,
+      });
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--figma-node-fetch-concurrency") {
+      figmaNodeFetchConcurrency = parseIntInRange({
+        raw: args[index + 1],
+        fallback: figmaNodeFetchConcurrency,
+        min: 1,
+        max: 10,
+      });
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--figma-adaptive-batching") {
+      figmaAdaptiveBatchingEnabled = parseBooleanLike(
+        args[index + 1],
+        figmaAdaptiveBatchingEnabled,
+      );
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--figma-max-screen-candidates") {
+      figmaMaxScreenCandidates = parseIntInRange({
+        raw: args[index + 1],
+        fallback: figmaMaxScreenCandidates,
+        min: 1,
+        max: 200,
+      });
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--figma-screen-name-pattern") {
+      const nextValue = args[index + 1]?.trim();
+      figmaScreenNamePattern =
+        nextValue && nextValue.length > 0 ? nextValue : undefined;
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--no-cache") {
+      figmaCacheEnabled = false;
+      continue;
+    }
+
+    if (arg === "--figma-cache-ttl-ms") {
+      figmaCacheTtlMs = parseIntInRange({
+        raw: args[index + 1],
+        fallback: figmaCacheTtlMs,
+        min: 1_000,
+        max: 24 * 60 * 60_000,
+      });
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--figma-paste-temp-ttl-ms") {
+      figmaPasteTempTtlMs = parseIntInRange({
+        raw: args[index + 1],
+        fallback: figmaPasteTempTtlMs,
+        min: 0,
+        max: 30 * 24 * 60 * 60_000,
+      });
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--icon-map-file") {
+      const nextValue = args[index + 1]?.trim();
+      iconMapFilePath =
+        nextValue && nextValue.length > 0 ? nextValue : undefined;
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--design-system-file") {
+      const nextValue = args[index + 1]?.trim();
+      designSystemFilePath =
+        nextValue && nextValue.length > 0 ? nextValue : undefined;
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--export-images") {
+      exportImages = parseBooleanLike(args[index + 1], exportImages);
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--figma-screen-element-budget") {
+      figmaScreenElementBudget = parseIntInRange({
+        raw: args[index + 1],
+        fallback: figmaScreenElementBudget,
+        min: 100,
+        max: 10_000,
+      });
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--figma-screen-element-max-depth") {
+      figmaScreenElementMaxDepth = parseIntInRange({
+        raw: args[index + 1],
+        fallback: figmaScreenElementMaxDepth,
+        min: 1,
+        max: 64,
+      });
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--brand") {
+      brandTheme = parseBrandTheme({
+        value: args[index + 1],
+        fallback: brandTheme,
+      });
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--generation-locale") {
+      generationLocale = resolveGenerationLocale({
+        requestedLocale: args[index + 1],
+        fallbackLocale: generationLocale,
+      }).locale;
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--router") {
+      routerMode = parseRouterMode({
+        value: args[index + 1],
+        fallback: routerMode,
+      });
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--command-timeout-ms") {
+      commandTimeoutMs = parseIntInRange({
+        raw: args[index + 1],
+        fallback: commandTimeoutMs,
+        min: 5_000,
+        max: 60 * 60_000,
+      });
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--command-stdout-max-bytes") {
+      commandStdoutMaxBytes = parseIntInRange({
+        raw: args[index + 1],
+        fallback: commandStdoutMaxBytes,
+        min: 4_096,
+        max: 16_777_216,
+      });
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--command-stderr-max-bytes") {
+      commandStderrMaxBytes = parseIntInRange({
+        raw: args[index + 1],
+        fallback: commandStderrMaxBytes,
+        min: 4_096,
+        max: 16_777_216,
+      });
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--pipeline-diagnostic-max-count") {
+      pipelineDiagnosticMaxCount = parseIntInRange({
+        raw: args[index + 1],
+        fallback: pipelineDiagnosticMaxCount,
+        min: 1,
+        max: 500,
+      });
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--pipeline-diagnostic-text-max-length") {
+      pipelineDiagnosticTextMaxLength = parseIntInRange({
+        raw: args[index + 1],
+        fallback: pipelineDiagnosticTextMaxLength,
+        min: 16,
+        max: 4_000,
+      });
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--pipeline-diagnostic-details-max-keys") {
+      pipelineDiagnosticDetailsMaxKeys = parseIntInRange({
+        raw: args[index + 1],
+        fallback: pipelineDiagnosticDetailsMaxKeys,
+        min: 1,
+        max: 200,
+      });
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--pipeline-diagnostic-details-max-items") {
+      pipelineDiagnosticDetailsMaxItems = parseIntInRange({
+        raw: args[index + 1],
+        fallback: pipelineDiagnosticDetailsMaxItems,
+        min: 1,
+        max: 200,
+      });
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--pipeline-diagnostic-details-max-depth") {
+      pipelineDiagnosticDetailsMaxDepth = parseIntInRange({
+        raw: args[index + 1],
+        fallback: pipelineDiagnosticDetailsMaxDepth,
+        min: 1,
+        max: 10,
+      });
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--ui-validation") {
+      enableUiValidation =
+        parseBooleanFlag(args[index + 1]) ?? enableUiValidation;
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--visual-quality-validation") {
+      enableVisualQualityValidation = parseBooleanLike(
+        args[index + 1],
+        enableVisualQualityValidation,
+      );
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--visual-quality-reference-mode") {
+      visualQualityReferenceMode = parseVisualQualityReferenceMode({
+        value: args[index + 1],
+        fallback: visualQualityReferenceMode,
+      });
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--visual-quality-viewport-width") {
+      visualQualityViewportWidth = parseIntInRange({
+        raw: args[index + 1],
+        fallback: visualQualityViewportWidth,
+        min: 320,
+        max: 4096,
+      });
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--visual-quality-browsers") {
+      const raw = args[index + 1];
+      if (!raw) {
+        throw new Error(
+          "--visual-quality-browsers requires a comma-separated list.",
+        );
+      }
+      visualQualityBrowsers = parseVisualBrowserList(
+        raw,
+        "--visual-quality-browsers",
+      );
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--unit-test-validation") {
+      enableUnitTestValidation =
+        parseBooleanFlag(args[index + 1]) ?? enableUnitTestValidation;
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--install-prefer-offline") {
+      installPreferOffline = parseBooleanLike(
+        args[index + 1],
+        installPreferOffline,
+      );
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--skip-install") {
+      const nextValue = args[index + 1];
+      if (nextValue && !nextValue.startsWith("--")) {
+        skipInstall = parseBooleanLike(nextValue, true);
+        index += 1;
+      } else {
+        skipInstall = true;
+      }
+      continue;
+    }
+
+    if (arg === "--max-concurrent-jobs") {
+      maxConcurrentJobs = parseIntInRange({
+        raw: args[index + 1],
+        fallback: maxConcurrentJobs,
+        min: 1,
+        max: 16,
+      });
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--max-queued-jobs") {
+      maxQueuedJobs = parseIntInRange({
+        raw: args[index + 1],
+        fallback: maxQueuedJobs,
+        min: 0,
+        max: 1000,
+      });
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--rate-limit") {
+      rateLimitPerMinute = parseIntInRange({
+        raw: args[index + 1],
+        fallback: rateLimitPerMinute,
+        min: 0,
+        max: 1000,
+      });
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--shutdown-timeout") {
+      shutdownTimeoutMs = parseIntInRange({
+        raw: args[index + 1],
+        fallback: shutdownTimeoutMs,
+        min: 0,
+        max: 60 * 60_000,
+      });
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--log-format") {
+      logFormat = resolveWorkspaceLogFormat({
+        value: args[index + 1],
+        fallback: logFormat,
+      });
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--lint-autofix") {
+      enableLintAutofix = parseBooleanLike(args[index + 1], enableLintAutofix);
       index += 1;
       continue;
     }
@@ -151,8 +1061,57 @@ const parseArgs = (argv: string[]): CliOptions => {
     }
 
     if (arg === "--perf-validation") {
-      enablePerfValidation = parseBooleanLike(args[index + 1], enablePerfValidation);
+      enablePerfValidation =
+        parseBooleanFlag(args[index + 1]) ?? enablePerfValidation;
       index += 1;
+      continue;
+    }
+
+    if (arg === "--enable-test-intelligence") {
+      // Boolean flag with optional value (`--enable-test-intelligence`,
+      // `--enable-test-intelligence true`, or `--enable-test-intelligence false`).
+      // When the next arg is missing or another flag, treat as `true`.
+      const nextArg = args[index + 1];
+      const looksLikeValue =
+        typeof nextArg === "string" && !nextArg.startsWith("--");
+      if (looksLikeValue) {
+        enableTestIntelligence = parseBooleanLike(
+          nextArg,
+          enableTestIntelligence,
+        );
+        index += 1;
+      } else {
+        enableTestIntelligence = true;
+      }
+      continue;
+    }
+
+    if (arg === "--project-root") {
+      const nextValue = args[index + 1]?.trim();
+      if (nextValue && nextValue.length > 0) {
+        scanProjectRoot = nextValue;
+      }
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--output") {
+      const nextValue = args[index + 1]?.trim();
+      scanOutputPath =
+        nextValue && nextValue.length > 0 ? nextValue : undefined;
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--library") {
+      const nextValue = args[index + 1]?.trim();
+      scanLibrary = nextValue && nextValue.length > 0 ? nextValue : undefined;
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--force") {
+      scanForce = true;
       continue;
     }
   }
@@ -164,28 +1123,175 @@ const parseArgs = (argv: string[]): CliOptions => {
     outputRoot,
     figmaTimeoutMs,
     figmaRetries,
+    figmaCircuitBreakerFailureThreshold,
+    figmaCircuitBreakerResetTimeoutMs,
+    figmaBootstrapDepth,
+    figmaNodeBatchSize,
+    figmaNodeFetchConcurrency,
+    figmaAdaptiveBatchingEnabled,
+    figmaMaxScreenCandidates,
+    figmaScreenNamePattern,
+    figmaCacheEnabled,
+    figmaCacheTtlMs,
+    figmaPasteTempTtlMs,
+    iconMapFilePath,
+    designSystemFilePath,
+    exportImages,
+    figmaScreenElementBudget,
+    figmaScreenElementMaxDepth,
+    brandTheme,
+    sparkasseTokensFilePath,
+    generationLocale,
+    routerMode,
+    commandTimeoutMs,
+    commandStdoutMaxBytes,
+    commandStderrMaxBytes,
+    pipelineDiagnosticMaxCount,
+    pipelineDiagnosticTextMaxLength,
+    pipelineDiagnosticDetailsMaxKeys,
+    pipelineDiagnosticDetailsMaxItems,
+    pipelineDiagnosticDetailsMaxDepth,
+    enableUiValidation,
+    enableVisualQualityValidation,
+    ...(compositeQualityWeights !== undefined
+      ? { compositeQualityWeights }
+      : {}),
+    visualQualityReferenceMode,
+    visualQualityViewportWidth,
+    visualQualityBrowsers,
+    enableUnitTestValidation,
+    installPreferOffline,
+    skipInstall,
+    maxConcurrentJobs,
+    maxQueuedJobs,
+    rateLimitPerMinute,
+    shutdownTimeoutMs,
+    importSessionEventBearerToken,
+    logFormat,
+    enableLintAutofix,
     enablePreview,
-    enablePerfValidation
+    enablePerfValidation,
+    scanProjectRoot,
+    scanOutputPath,
+    scanLibrary,
+    scanForce,
+    enableTestIntelligence,
   };
 };
 
 const printHelp = (): void => {
-  console.log(`
+  process.stdout.write(`
 workspace-dev - autonomous local workspace generator
 
 Usage:
   workspace-dev start [options]
+  workspace-dev scan-design-system [options]
+  workspace-dev test-intelligence run [options]
+  workspace-dev test-intelligence doctor [options]
+  workspace-dev test-intelligence audit-dossier --run-dir <path> --output <dir>
+  workspace-dev test-intelligence audit-verify <bundle-prefix-or-json>
+  workspace-dev test-intelligence verify-provenance <run-dir>
+  workspace-dev test-intelligence verify-seal --bundle <path> [--key <path>]
+  workspace-dev test-intelligence review <list|get|decide> [options]
+  workspace-dev test-intelligence calibration-refit [options]
+  workspace-dev test-intelligence tms-push --run-dir <path> --tms <id> --project <id>
+  workspace-dev test-intelligence onboard --tenant-id <id> --legal-name <name> --policy-profile <id> --output-root <dir>
+  workspace-dev test-intelligence onboard --doctor --tenant-id <id> --output-root <dir>
+  workspace-dev test-intelligence execution-pull --tms <id> --project <id> --since <iso> --tenant <id> --output-root <dir>
+  workspace-dev test-intelligence figma-export --figma-url <url> --output <path>
   workspace-dev --help
 
+Run "workspace-dev test-intelligence --help" for the test-intelligence subcommands.
+
 Options:
+  Start command:
   --port <port>              Port to listen on (default: ${DEFAULT_PORT})
   --host <host>              Host to bind to (default: ${DEFAULT_HOST})
   --output-root <path>       Output root for jobs/repros (default: ${DEFAULT_OUTPUT_ROOT})
   --figma-timeout-ms <ms>    Figma request timeout (default: ${DEFAULT_FIGMA_TIMEOUT_MS})
   --figma-retries <count>    Figma max retries (default: ${DEFAULT_FIGMA_RETRIES})
+  --figma-circuit-breaker-failure-threshold <n>
+                             Consecutive transient Figma failures before the circuit opens (default: ${DEFAULT_FIGMA_CIRCUIT_BREAKER_FAILURE_THRESHOLD})
+  --figma-circuit-breaker-reset-timeout-ms <ms>
+                             Time before the Figma circuit breaker allows a probe request (default: ${DEFAULT_FIGMA_CIRCUIT_BREAKER_RESET_TIMEOUT_MS})
+  --figma-bootstrap-depth <n>
+                             Bootstrap depth for staged large-board fetch (default: ${DEFAULT_FIGMA_BOOTSTRAP_DEPTH})
+  --figma-node-batch-size <n>
+                             Candidate batch size for /nodes fetch (default: ${DEFAULT_FIGMA_NODE_BATCH_SIZE})
+  --figma-node-fetch-concurrency <n>
+                             Concurrent staged /nodes fetches (default: ${DEFAULT_FIGMA_NODE_FETCH_CONCURRENCY})
+  --figma-adaptive-batching <true|false>
+                             Auto-split oversized staged /nodes batches (default: ${DEFAULT_FIGMA_ADAPTIVE_BATCHING})
+  --figma-max-screen-candidates <n>
+                             Max screen candidates fetched in staged mode (default: ${DEFAULT_FIGMA_MAX_SCREEN_CANDIDATES})
+  --figma-screen-name-pattern <regex>
+                             Case-insensitive regex include-filter for staged screen names
+  --no-cache                 Disable figma.source file-system cache
+  --figma-cache-ttl-ms <ms>  Cache TTL for figma.source entries (default: ${DEFAULT_FIGMA_CACHE_TTL_MS})
+  --figma-paste-temp-ttl-ms <ms>
+                             Startup cleanup TTL for stale tmp-figma-paste JSON files (default: ${DEFAULT_FIGMA_PASTE_TEMP_TTL_MS})
+  --icon-map-file <path>     Override icon fallback mapping file path
+  --design-system-file <path>
+                             Override design-system mapping file path
+  --export-images <true|false>
+                             Export image assets from Figma into generated-app/public/images (default: ${DEFAULT_EXPORT_IMAGES})
+  --figma-screen-element-budget <n>
+                             Max IR elements per screen before truncation (default: ${DEFAULT_FIGMA_SCREEN_ELEMENT_BUDGET})
+  --figma-screen-element-max-depth <n>
+                             Baseline depth cap for dynamic IR traversal (default: ${DEFAULT_FIGMA_SCREEN_ELEMENT_MAX_DEPTH})
+  --brand <derived|sparkasse>
+                             Token brand policy for ir.derive (default: ${DEFAULT_BRAND_THEME})
+  --generation-locale <locale>
+                             Locale for deterministic select-option number derivation (default: ${DEFAULT_GENERATION_LOCALE})
+  --router <browser|hash>    Router mode for generated App.tsx shell (default: ${DEFAULT_ROUTER_MODE})
+  --command-timeout-ms <ms>  Timeout for pnpm/git commands (default: ${DEFAULT_COMMAND_TIMEOUT_MS})
+  --command-stdout-max-bytes <n>
+                             Max retained stdout bytes per pnpm/git command (default: ${DEFAULT_COMMAND_STDOUT_MAX_BYTES})
+  --command-stderr-max-bytes <n>
+                             Max retained stderr bytes per pnpm/git command (default: ${DEFAULT_COMMAND_STDERR_MAX_BYTES})
+  --pipeline-diagnostic-max-count <n>
+                             Max structured diagnostics retained per pipeline error (default: ${DEFAULT_PIPELINE_DIAGNOSTIC_MAX_COUNT})
+  --pipeline-diagnostic-text-max-length <n>
+                             Max message/suggestion characters retained per structured diagnostic (default: ${DEFAULT_PIPELINE_DIAGNOSTIC_TEXT_MAX_LENGTH})
+  --pipeline-diagnostic-details-max-keys <n>
+                             Max detail object keys retained per structured diagnostic (default: ${DEFAULT_PIPELINE_DIAGNOSTIC_DETAILS_MAX_KEYS})
+  --pipeline-diagnostic-details-max-items <n>
+                             Max detail array items retained per structured diagnostic (default: ${DEFAULT_PIPELINE_DIAGNOSTIC_DETAILS_MAX_ITEMS})
+  --pipeline-diagnostic-details-max-depth <n>
+                             Max detail nesting depth retained per structured diagnostic (default: ${DEFAULT_PIPELINE_DIAGNOSTIC_DETAILS_MAX_DEPTH})
+  --ui-validation <true|false>
+                             Run validate:ui in validate.project (default: pipeline-defined; default pipeline enables, rocket disables)
+  --visual-quality-validation <true|false>
+                             Run visual quality validation in validate.project (default: ${DEFAULT_ENABLE_VISUAL_QUALITY_VALIDATION})
+  --visual-quality-reference-mode <figma_api|frozen_fixture>
+                             Reference source for visual quality validation (default: ${DEFAULT_VISUAL_QUALITY_REFERENCE_MODE})
+  --visual-quality-viewport-width <px>
+                             Capture width for visual quality validation (default: ${DEFAULT_VISUAL_QUALITY_VIEWPORT_WIDTH})
+  --visual-quality-browsers <chromium,firefox,webkit>
+                             Browser engines used for visual quality validation (default: chromium)
+  --unit-test-validation <true|false>
+                             Run generated-project unit tests in validate.project (default: pipeline-defined; default pipeline enables, rocket disables)
+  --install-prefer-offline <true|false>
+                             Prefer offline install for generated project (default: ${DEFAULT_INSTALL_PREFER_OFFLINE})
+  --skip-install <true|false>
+                             Skip dependency installation in validate.project and require existing node_modules (default: ${DEFAULT_SKIP_INSTALL})
+  --max-concurrent-jobs <n>  Max running jobs at once (default: ${DEFAULT_MAX_CONCURRENT_JOBS})
+  --max-queued-jobs <n>      Max queued jobs before submit backpressure reject (default: ${DEFAULT_MAX_QUEUED_JOBS})
+  --rate-limit <n>           Max job submissions and import-session event writes per minute per client IP; 0 disables, with separate budgets per route family (default: ${DEFAULT_RATE_LIMIT_PER_MINUTE})
+  --shutdown-timeout <ms>    Max graceful drain time before remaining connections are terminated (default: ${DEFAULT_SHUTDOWN_TIMEOUT_MS})
+  --log-format <text|json>   Operational runtime log format (default: ${DEFAULT_WORKSPACE_LOG_FORMAT})
+  --lint-autofix <true|false>
+                             Run eslint auto-fix before final lint validation (default: ${DEFAULT_ENABLE_LINT_AUTOFIX})
   --preview <true|false>     Enable preview export/serving (default: true)
   --perf-validation <true|false>
-                             Run perf:assert during validate.project (default: false)
+                             Run perf:assert during validate.project (default: pipeline-defined; default pipeline enables, rocket disables)
+  --enable-test-intelligence [true|false]
+                             Opt in to the Figma-to-QC test-intelligence Inspector surface (default: env FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE)
+  Scan command:
+  --project-root <path>      Project root to scan for imports (default: cwd)
+  --output <path>            Output file path (default: <project-root>/${DEFAULT_OUTPUT_ROOT}/design-system.json)
+  --library <pkg>            Override inferred UI package/library
+  --force                    Overwrite existing output file
   --help                     Show this help message
 
 Environment variables:
@@ -194,7 +1300,49 @@ Environment variables:
   FIGMAPIPE_WORKSPACE_OUTPUT_ROOT
   FIGMAPIPE_WORKSPACE_FIGMA_TIMEOUT_MS
   FIGMAPIPE_WORKSPACE_FIGMA_RETRIES
+  FIGMAPIPE_WORKSPACE_FIGMA_CIRCUIT_BREAKER_FAILURE_THRESHOLD
+  FIGMAPIPE_WORKSPACE_FIGMA_CIRCUIT_BREAKER_RESET_TIMEOUT_MS
+  FIGMAPIPE_WORKSPACE_FIGMA_BOOTSTRAP_DEPTH
+  FIGMAPIPE_WORKSPACE_FIGMA_NODE_BATCH_SIZE
+  FIGMAPIPE_WORKSPACE_FIGMA_NODE_FETCH_CONCURRENCY
+  FIGMAPIPE_WORKSPACE_FIGMA_ADAPTIVE_BATCHING
+  FIGMAPIPE_WORKSPACE_FIGMA_MAX_SCREEN_CANDIDATES
+  FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_NAME_PATTERN
+  FIGMAPIPE_WORKSPACE_NO_CACHE
+  FIGMAPIPE_WORKSPACE_FIGMA_CACHE_TTL_MS
+  FIGMAPIPE_WORKSPACE_FIGMA_PASTE_TEMP_TTL_MS
+  FIGMAPIPE_WORKSPACE_ICON_MAP_FILE
+  FIGMAPIPE_WORKSPACE_DESIGN_SYSTEM_FILE
+  FIGMAPIPE_WORKSPACE_EXPORT_IMAGES
+  FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_ELEMENT_BUDGET
+  FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_ELEMENT_MAX_DEPTH
+  FIGMAPIPE_WORKSPACE_BRAND
+  FIGMAPIPE_WORKSPACE_GENERATION_LOCALE
+  FIGMAPIPE_WORKSPACE_ROUTER
+  FIGMAPIPE_WORKSPACE_COMMAND_TIMEOUT_MS
+  FIGMAPIPE_WORKSPACE_COMMAND_STDOUT_MAX_BYTES
+  FIGMAPIPE_WORKSPACE_COMMAND_STDERR_MAX_BYTES
+  FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_MAX_COUNT
+  FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_TEXT_MAX_LENGTH
+  FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_DETAILS_MAX_KEYS
+  FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_DETAILS_MAX_ITEMS
+  FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_DETAILS_MAX_DEPTH
+  FIGMAPIPE_WORKSPACE_ENABLE_UI_VALIDATION
+  FIGMAPIPE_WORKSPACE_ENABLE_VISUAL_QUALITY_VALIDATION
+  FIGMAPIPE_WORKSPACE_VISUAL_QUALITY_REFERENCE_MODE
+  FIGMAPIPE_WORKSPACE_VISUAL_QUALITY_VIEWPORT_WIDTH
+  FIGMAPIPE_WORKSPACE_VISUAL_QUALITY_BROWSERS
+  FIGMAPIPE_WORKSPACE_ENABLE_UNIT_TEST_VALIDATION
+  FIGMAPIPE_WORKSPACE_INSTALL_PREFER_OFFLINE
+  FIGMAPIPE_WORKSPACE_SKIP_INSTALL
+  FIGMAPIPE_WORKSPACE_MAX_CONCURRENT_JOBS
+  FIGMAPIPE_WORKSPACE_MAX_QUEUED_JOBS
+  FIGMAPIPE_WORKSPACE_RATE_LIMIT_PER_MINUTE
+  FIGMAPIPE_WORKSPACE_IMPORT_SESSION_EVENT_BEARER_TOKEN
+  FIGMAPIPE_WORKSPACE_LOG_FORMAT
+  FIGMAPIPE_WORKSPACE_ENABLE_LINT_AUTOFIX
   FIGMAPIPE_WORKSPACE_ENABLE_PREVIEW
+  FIGMAPIPE_WORKSPACE_ENABLE_HSTS
   FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION
   FIGMAPIPE_ENABLE_PERF_VALIDATION (legacy alias)
 
@@ -205,33 +1353,478 @@ Capabilities:
   - POST /workspace/submit         Start autonomous generation job
   - GET /workspace/jobs/:id        Poll job status and stages
   - GET /workspace/jobs/:id/result Fetch compact result payload
+  - POST /workspace/jobs/:id/cancel Request cancellation of queued/running job
   - GET /workspace/repros/:id/     Open generated local preview
 
 Mode lock is always enforced:
-  figmaSourceMode=rest
+  figmaSourceMode=rest|hybrid|local_json|figma_paste|figma_plugin
   llmCodegenMode=deterministic
 `);
 };
 
+/**
+ * Dispatch the `test-intelligence run` sub-command. Owns flag parsing,
+ * env-var validation, runner orchestration, and exit-code mapping. Lives
+ * inline here (not behind a logger) so stdout/stderr framing matches the
+ * spec exactly: human-readable summary on success, sanitized error on
+ * stderr on failure, never echoes secrets.
+ */
+const runTestIntelligenceSubCommand = async (
+  args: ReadonlyArray<string>,
+): Promise<never> => {
+  const subCommand = args[0];
+  if (subCommand === "--help" || subCommand === "help") {
+    process.stdout.write(`${TEST_INTELLIGENCE_HELP}\n`);
+    process.exit(0);
+  }
+  if (subCommand === "doctor") {
+    if (args[1] === "--help" || args[1] === "help") {
+      process.stdout.write(`${TEST_INTELLIGENCE_DOCTOR_HELP}\n`);
+      process.exit(0);
+    }
+    let parsed;
+    try {
+      parsed = parseTestIntelligenceDoctorArgs(args.slice(1));
+    } catch (err) {
+      if (err instanceof TestIntelligenceRunOperatorError) {
+        process.stderr.write(`error: ${err.message}\n`);
+        process.exit(1);
+      }
+      throw err;
+    }
+
+    const exitCode = await runTestIntelligenceDoctorCommand(parsed, {
+      stdout: (message) => process.stdout.write(message),
+      stderr: (message) => process.stderr.write(message),
+    });
+    process.exit(exitCode);
+  }
+  if (subCommand === "audit-dossier") {
+    if (args[1] === "--help" || args[1] === "help") {
+      process.stdout.write(`${TEST_INTELLIGENCE_AUDIT_DOSSIER_HELP}\n`);
+      process.exit(0);
+    }
+    let parsed;
+    try {
+      parsed = parseTestIntelligenceAuditDossierArgs(args.slice(1));
+    } catch (err) {
+      if (err instanceof TestIntelligenceRunOperatorError) {
+        process.stderr.write(`error: ${err.message}\n`);
+        process.exit(1);
+      }
+      throw err;
+    }
+    const exitCode = await runTestIntelligenceAuditDossierCommand(parsed, {
+      stdout: (message) => process.stdout.write(message),
+      stderr: (message) => process.stderr.write(message),
+    });
+    process.exit(exitCode);
+  }
+  if (subCommand === "audit-verify") {
+    if (args[1] === "--help" || args[1] === "help") {
+      process.stdout.write(`${TEST_INTELLIGENCE_AUDIT_VERIFY_HELP}\n`);
+      process.exit(0);
+    }
+    let parsed;
+    try {
+      parsed = parseTestIntelligenceAuditVerifyArgs(args.slice(1));
+    } catch (err) {
+      if (err instanceof TestIntelligenceRunOperatorError) {
+        process.stderr.write(`error: ${err.message}\n`);
+        process.exit(1);
+      }
+      throw err;
+    }
+    const exitCode = await runTestIntelligenceAuditVerifyCommand(parsed, {
+      stdout: (message) => process.stdout.write(message),
+      stderr: (message) => process.stderr.write(message),
+    });
+    process.exit(exitCode);
+  }
+  if (subCommand === "verify-seal") {
+    if (args[1] === "--help" || args[1] === "help") {
+      process.stdout.write(`${TEST_INTELLIGENCE_VERIFY_SEAL_HELP}\n`);
+      process.exit(0);
+    }
+    let parsed;
+    try {
+      parsed = parseTestIntelligenceVerifySealArgs(args.slice(1));
+    } catch (err) {
+      if (err instanceof TestIntelligenceRunOperatorError) {
+        process.stderr.write(`error: ${err.message}\n`);
+        process.exit(1);
+      }
+      throw err;
+    }
+    const exitCode = await runTestIntelligenceVerifySealCommand(parsed, {
+      stdout: (message) => process.stdout.write(message),
+      stderr: (message) => process.stderr.write(message),
+    });
+    process.exit(exitCode);
+  }
+  if (subCommand === "review") {
+    const reviewSub = args[1];
+    if (reviewSub === undefined || reviewSub === "--help" || reviewSub === "help") {
+      process.stdout.write(`${TEST_INTELLIGENCE_REVIEW_HELP}\n`);
+      process.exit(reviewSub === undefined ? 1 : 0);
+    }
+    const reviewArgs = args.slice(2);
+    const sink = {
+      stdout: (message: string) => process.stdout.write(message),
+      stderr: (message: string) => process.stderr.write(message),
+    };
+    if (reviewSub === "list") {
+      let parsed;
+      try {
+        parsed = parseTestIntelligenceReviewListArgs(reviewArgs);
+      } catch (err) {
+        if (err instanceof TestIntelligenceReviewOperatorError) {
+          process.stderr.write(`error: ${err.message}\n`);
+          process.exit(1);
+        }
+        throw err;
+      }
+      const code = await runTestIntelligenceReviewListCommand(parsed, sink);
+      process.exit(code);
+    }
+    if (reviewSub === "get") {
+      let parsed;
+      try {
+        parsed = parseTestIntelligenceReviewGetArgs(reviewArgs);
+      } catch (err) {
+        if (err instanceof TestIntelligenceReviewOperatorError) {
+          process.stderr.write(`error: ${err.message}\n`);
+          process.exit(1);
+        }
+        throw err;
+      }
+      const code = await runTestIntelligenceReviewGetCommand(parsed, sink);
+      process.exit(code);
+    }
+    if (reviewSub === "decide") {
+      let parsed;
+      try {
+        parsed = parseTestIntelligenceReviewDecideArgs(reviewArgs);
+      } catch (err) {
+        if (err instanceof TestIntelligenceReviewOperatorError) {
+          process.stderr.write(`error: ${err.message}\n`);
+          process.exit(1);
+        }
+        throw err;
+      }
+      const code = await runTestIntelligenceReviewDecideCommand(parsed, sink);
+      process.exit(code);
+    }
+    process.stderr.write(
+      `error: unknown sub-command for "test-intelligence review": ${reviewSub}\n`,
+    );
+    process.stderr.write(
+      'usage: workspace-dev test-intelligence review <list|get|decide> [options]\n',
+    );
+    process.exit(1);
+  }
+  if (subCommand === "calibration-refit") {
+    if (args[1] === "--help" || args[1] === "help") {
+      process.stdout.write(`${TEST_INTELLIGENCE_CALIBRATION_REFIT_HELP}\n`);
+      process.exit(0);
+    }
+    let parsed;
+    try {
+      parsed = parseTestIntelligenceCalibrationRefitArgs(args.slice(1));
+    } catch (err) {
+      if (err instanceof CalibrationRefitOperatorError) {
+        process.stderr.write(`error: ${err.message}\n`);
+        process.exit(1);
+      }
+      throw err;
+    }
+    const exitCode = await runTestIntelligenceCalibrationRefitCommand(parsed, {
+      stdout: (message) => process.stdout.write(message),
+      stderr: (message) => process.stderr.write(message),
+    });
+    process.exit(exitCode);
+  }
+  if (subCommand === "tms-push") {
+    if (args[1] === "--help" || args[1] === "help") {
+      process.stdout.write(`${TEST_INTELLIGENCE_TMS_PUSH_HELP}\n`);
+      process.exit(0);
+    }
+    let parsed;
+    try {
+      parsed = parseTestIntelligenceTmsPushArgs(args.slice(1));
+    } catch (err) {
+      if (err instanceof TestIntelligenceTmsPushOperatorError) {
+        process.stderr.write(`error: ${err.message}\n`);
+        process.exit(1);
+      }
+      throw err;
+    }
+    const exitCode = await runTestIntelligenceTmsPushCommand({
+      options: parsed,
+      sink: {
+        stdout: (message) => process.stdout.write(message),
+        stderr: (message) => process.stderr.write(message),
+      },
+    });
+    process.exit(exitCode);
+  }
+  if (subCommand === "onboard") {
+    if (args[1] === "--help" || args[1] === "help") {
+      process.stdout.write(`${TEST_INTELLIGENCE_ONBOARD_HELP}\n`);
+      process.exit(0);
+    }
+    let parsed;
+    try {
+      parsed = parseTestIntelligenceOnboardArgs(args.slice(1));
+    } catch (err) {
+      if (err instanceof TestIntelligenceOnboardOperatorError) {
+        process.stderr.write(`error: ${err.message}\n`);
+        process.exit(1);
+      }
+      throw err;
+    }
+    const exitCode = await runTestIntelligenceOnboardCommand(parsed, {
+      stdout: (message) => process.stdout.write(message),
+      stderr: (message) => process.stderr.write(message),
+    });
+    process.exit(exitCode);
+  }
+  if (subCommand === "execution-pull") {
+    if (args[1] === "--help" || args[1] === "help") {
+      process.stdout.write(`${TEST_INTELLIGENCE_EXECUTION_PULL_HELP}\n`);
+      process.exit(0);
+    }
+    let parsed;
+    try {
+      parsed = parseTestIntelligenceExecutionPullArgs(args.slice(1));
+    } catch (err) {
+      if (err instanceof TestIntelligenceExecutionPullOperatorError) {
+        process.stderr.write(`error: ${err.message}\n`);
+        process.exit(1);
+      }
+      throw err;
+    }
+    const exitCode = await runTestIntelligenceExecutionPullCommand({
+      options: parsed,
+      sink: {
+        stdout: (message) => process.stdout.write(message),
+        stderr: (message) => process.stderr.write(message),
+      },
+    });
+    process.exit(exitCode);
+  }
+  if (subCommand === "verify-provenance" || subCommand === "--verify-provenance") {
+    if (args[1] === "--help" || args[1] === "help") {
+      process.stdout.write(`${TEST_INTELLIGENCE_VERIFY_PROVENANCE_HELP}\n`);
+      process.exit(0);
+    }
+    let parsed;
+    try {
+      parsed =
+        subCommand === "--verify-provenance"
+          ? parseTestIntelligenceVerifyProvenanceArgs(args)
+          : parseTestIntelligenceVerifyProvenanceArgs(args.slice(1));
+    } catch (err) {
+      if (err instanceof TestIntelligenceRunOperatorError) {
+        process.stderr.write(`error: ${err.message}\n`);
+        process.exit(1);
+      }
+      throw err;
+    }
+
+    const exitCode = await runTestIntelligenceVerifyProvenanceCommand(parsed, {
+      stdout: (message) => process.stdout.write(message),
+      stderr: (message) => process.stderr.write(message),
+    });
+    process.exit(exitCode);
+  }
+  if (subCommand === "figma-export") {
+    const exitCode = await runFigmaExportCli(args.slice(1), {
+      stdout: (message) => process.stdout.write(message),
+      stderr: (message) => process.stderr.write(message),
+    });
+    process.exit(exitCode);
+  }
+  if (subCommand !== "run") {
+    process.stderr.write(
+      `error: unknown sub-command for "test-intelligence": ${subCommand ?? "(none)"}\n`,
+    );
+    process.stderr.write(
+      "usage: workspace-dev test-intelligence <run|doctor|audit-dossier|audit-verify|verify-provenance|verify-seal|review|calibration-refit|tms-push|onboard|execution-pull|figma-export> [options]\n",
+    );
+    process.exit(1);
+  }
+  if (args[1] === "--help" || args[1] === "help") {
+    process.stdout.write(`${TEST_INTELLIGENCE_RUN_HELP}\n`);
+    process.exit(0);
+  }
+
+  let parsed;
+  try {
+    parsed = parseTestIntelligenceRunArgs(args.slice(1));
+  } catch (err) {
+    if (err instanceof TestIntelligenceRunOperatorError) {
+      process.stderr.write(`error: ${err.message}\n`);
+      process.exit(1);
+    }
+    throw err;
+  }
+
+  const exitCode = await runTestIntelligenceCommand(parsed, {
+    stdout: (message) => process.stdout.write(message),
+    stderr: (message) => process.stderr.write(message),
+  });
+  process.exit(exitCode);
+};
+
 const main = async (): Promise<void> => {
+  // The `test-intelligence run` sub-command has its own flag parser (it
+  // accepts flags like `--figma-url` that the start/scan parsers do not
+  // understand and would happily swallow). Dispatch it before `parseArgs`
+  // is invoked so the start-command parser never sees flags it cannot
+  // interpret.
+  const rawArgs = process.argv.slice(2);
+  if (rawArgs[0] === "test-intelligence") {
+    await runTestIntelligenceSubCommand(rawArgs.slice(1));
+    return;
+  }
+
   const options = parseArgs(process.argv);
+  const logger = createWorkspaceLogger({
+    format: options.logFormat,
+  });
 
   if (options.command === "--help" || options.command === "help") {
     printHelp();
     process.exit(0);
   }
 
+  if (options.command === "scan-design-system") {
+    const projectRoot = path.resolve(options.scanProjectRoot);
+    const defaultOutputPath = getDefaultDesignSystemConfigPath({
+      outputRoot: path.resolve(projectRoot, DEFAULT_OUTPUT_ROOT),
+    });
+    const outputPath = path.resolve(
+      options.scanOutputPath ?? defaultOutputPath,
+    );
+
+    try {
+      const scanResult = await inferDesignSystemConfigFromProject({
+        projectRoot,
+        ...(options.scanLibrary
+          ? { libraryOverride: options.scanLibrary }
+          : {}),
+      });
+      await writeDesignSystemConfigFile({
+        outputFilePath: outputPath,
+        config: scanResult.config,
+        force: options.scanForce,
+      });
+      logger.log({ level: "info", message: "Design system scan completed." });
+      logger.log({ level: "info", message: `Project root: ${projectRoot}` });
+      logger.log({
+        level: "info",
+        message: `Scanned files: ${scanResult.scannedFiles}`,
+      });
+      logger.log({
+        level: "info",
+        message: `Selected library: ${scanResult.selectedLibrary}`,
+      });
+      logger.log({ level: "info", message: `Wrote config: ${outputPath}` });
+      process.exit(0);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.log({
+        level: "error",
+        message: `Design system scan failed: ${message}`,
+      });
+      process.exit(1);
+    }
+  }
+
   if (options.command !== "start") {
-    console.error(`Unknown command: ${options.command}`);
-    console.error('Use "workspace-dev start" to start the server.');
-    console.error('Use "workspace-dev --help" for usage information.');
+    logger.log({
+      level: "error",
+      message: `Unknown command: ${options.command}`,
+    });
+    logger.log({
+      level: "error",
+      message: 'Use "workspace-dev start" to start the server.',
+    });
+    logger.log({
+      level: "error",
+      message:
+        'Use "workspace-dev scan-design-system" to generate a design-system config.',
+    });
+    logger.log({
+      level: "error",
+      message:
+        'Use "workspace-dev test-intelligence run" to drive the figma_to_qc_test_cases pipeline from the CLI.',
+    });
+    logger.log({
+      level: "error",
+      message:
+        'Use "workspace-dev test-intelligence doctor" to inspect the local Test Intelligence deployment topology.',
+    });
+    logger.log({
+      level: "error",
+      message:
+        'Use "workspace-dev test-intelligence audit-dossier" to build a signed regulator-ready bundle from one run directory.',
+    });
+    logger.log({
+      level: "error",
+      message:
+        'Use "workspace-dev test-intelligence audit-verify" to verify a generated audit-dossier bundle.',
+    });
+    logger.log({
+      level: "error",
+      message:
+        'Use "workspace-dev test-intelligence verify-provenance" to verify a persisted provenance graph.',
+    });
+    logger.log({
+      level: "error",
+      message: 'Use "workspace-dev --help" for usage information.',
+    });
     process.exit(1);
   }
 
-  console.log(`[workspace-dev] Starting on http://${options.host}:${options.port}/workspace`);
-  console.log("[workspace-dev] Mode lock: figmaSourceMode=rest, llmCodegenMode=deterministic");
-  process.env.FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION = options.enablePerfValidation ? "true" : "false";
-  process.env.FIGMAPIPE_ENABLE_PERF_VALIDATION = options.enablePerfValidation ? "true" : "false";
+  logger.log({
+    level: "info",
+    message: `Starting on http://${options.host}:${options.port}/workspace`,
+  });
+  logger.log({
+    level: "info",
+    message:
+      "Mode lock: figmaSourceMode=rest|hybrid|local_json|figma_paste|figma_plugin, llmCodegenMode=deterministic",
+  });
+  process.env.FIGMAPIPE_WORKSPACE_ENABLE_VISUAL_QUALITY_VALIDATION =
+    options.enableVisualQualityValidation ? "true" : "false";
+  if (options.compositeQualityWeights?.visual !== undefined) {
+    process.env.FIGMAPIPE_WORKSPACE_COMPOSITE_QUALITY_VISUAL_WEIGHT = String(
+      options.compositeQualityWeights.visual,
+    );
+  } else {
+    delete process.env.FIGMAPIPE_WORKSPACE_COMPOSITE_QUALITY_VISUAL_WEIGHT;
+  }
+  if (options.compositeQualityWeights?.performance !== undefined) {
+    process.env.FIGMAPIPE_WORKSPACE_COMPOSITE_QUALITY_PERFORMANCE_WEIGHT =
+      String(options.compositeQualityWeights.performance);
+  } else {
+    delete process.env.FIGMAPIPE_WORKSPACE_COMPOSITE_QUALITY_PERFORMANCE_WEIGHT;
+  }
+  process.env.FIGMAPIPE_WORKSPACE_VISUAL_QUALITY_REFERENCE_MODE =
+    options.visualQualityReferenceMode;
+  process.env.FIGMAPIPE_WORKSPACE_VISUAL_QUALITY_VIEWPORT_WIDTH = String(
+    options.visualQualityViewportWidth,
+  );
+  process.env.FIGMAPIPE_WORKSPACE_VISUAL_QUALITY_BROWSERS =
+    options.visualQualityBrowsers.join(",");
+  if (options.enableUnitTestValidation === undefined) {
+    delete process.env.FIGMAPIPE_WORKSPACE_ENABLE_UNIT_TEST_VALIDATION;
+  } else {
+    process.env.FIGMAPIPE_WORKSPACE_ENABLE_UNIT_TEST_VALIDATION =
+      options.enableUnitTestValidation ? "true" : "false";
+  }
 
   try {
     const server = await createWorkspaceServer({
@@ -240,11 +1833,88 @@ const main = async (): Promise<void> => {
       outputRoot: options.outputRoot,
       figmaRequestTimeoutMs: options.figmaTimeoutMs,
       figmaMaxRetries: options.figmaRetries,
-      enablePreview: options.enablePreview
+      figmaCircuitBreakerFailureThreshold:
+        options.figmaCircuitBreakerFailureThreshold,
+      figmaCircuitBreakerResetTimeoutMs:
+        options.figmaCircuitBreakerResetTimeoutMs,
+      figmaBootstrapDepth: options.figmaBootstrapDepth,
+      figmaNodeBatchSize: options.figmaNodeBatchSize,
+      figmaNodeFetchConcurrency: options.figmaNodeFetchConcurrency,
+      figmaAdaptiveBatchingEnabled: options.figmaAdaptiveBatchingEnabled,
+      figmaMaxScreenCandidates: options.figmaMaxScreenCandidates,
+      ...(options.figmaScreenNamePattern !== undefined
+        ? { figmaScreenNamePattern: options.figmaScreenNamePattern }
+        : {}),
+      figmaCacheEnabled: options.figmaCacheEnabled,
+      figmaCacheTtlMs: options.figmaCacheTtlMs,
+      figmaPasteTempTtlMs: options.figmaPasteTempTtlMs,
+      ...(options.iconMapFilePath !== undefined
+        ? { iconMapFilePath: options.iconMapFilePath }
+        : {}),
+      ...(options.designSystemFilePath !== undefined
+        ? { designSystemFilePath: options.designSystemFilePath }
+        : {}),
+      exportImages: options.exportImages,
+      figmaScreenElementBudget: options.figmaScreenElementBudget,
+      figmaScreenElementMaxDepth: options.figmaScreenElementMaxDepth,
+      brandTheme: options.brandTheme,
+      ...(options.sparkasseTokensFilePath !== undefined
+        ? { sparkasseTokensFilePath: options.sparkasseTokensFilePath }
+        : {}),
+      generationLocale: options.generationLocale,
+      routerMode: options.routerMode,
+      commandTimeoutMs: options.commandTimeoutMs,
+      commandStdoutMaxBytes: options.commandStdoutMaxBytes,
+      commandStderrMaxBytes: options.commandStderrMaxBytes,
+      pipelineDiagnosticMaxCount: options.pipelineDiagnosticMaxCount,
+      pipelineDiagnosticTextMaxLength: options.pipelineDiagnosticTextMaxLength,
+      pipelineDiagnosticDetailsMaxKeys:
+        options.pipelineDiagnosticDetailsMaxKeys,
+      pipelineDiagnosticDetailsMaxItems:
+        options.pipelineDiagnosticDetailsMaxItems,
+      pipelineDiagnosticDetailsMaxDepth:
+        options.pipelineDiagnosticDetailsMaxDepth,
+      enableLintAutofix: options.enableLintAutofix,
+      ...(options.enablePerfValidation !== undefined
+        ? { enablePerfValidation: options.enablePerfValidation }
+        : {}),
+      ...(options.enableUiValidation !== undefined
+        ? { enableUiValidation: options.enableUiValidation }
+        : {}),
+      enableVisualQualityValidation: options.enableVisualQualityValidation,
+      ...(options.compositeQualityWeights !== undefined
+        ? { compositeQualityWeights: options.compositeQualityWeights }
+        : {}),
+      visualQualityReferenceMode: options.visualQualityReferenceMode,
+      visualQualityViewportWidth: options.visualQualityViewportWidth,
+      visualQualityBrowsers: options.visualQualityBrowsers,
+      ...(options.enableUnitTestValidation !== undefined
+        ? { enableUnitTestValidation: options.enableUnitTestValidation }
+        : {}),
+      installPreferOffline: options.installPreferOffline,
+      skipInstall: options.skipInstall,
+      maxConcurrentJobs: options.maxConcurrentJobs,
+      maxQueuedJobs: options.maxQueuedJobs,
+      logFormat: options.logFormat,
+      rateLimitPerMinute: options.rateLimitPerMinute,
+      shutdownTimeoutMs: options.shutdownTimeoutMs,
+      ...(options.importSessionEventBearerToken !== undefined
+        ? {
+            importSessionEventBearerToken:
+              options.importSessionEventBearerToken,
+          }
+        : {}),
+      enablePreview: options.enablePreview,
+      ...(options.enableTestIntelligence
+        ? { testIntelligence: { enabled: true } }
+        : {}),
     });
 
     const shutdown = async (signal: string): Promise<void> => {
-      console.log(`\n[workspace-dev] Received ${signal}, shutting down...`);
+      logger.log({
+        level: "info",
+        message: `Received ${signal}, shutting down...`,
+      });
       await server.app.close();
       process.exit(0);
     };
@@ -256,13 +1926,146 @@ const main = async (): Promise<void> => {
       void shutdown("SIGTERM");
     });
 
-    console.log(`[workspace-dev] Server ready at ${server.url}/workspace`);
-    console.log(`[workspace-dev] Output root: ${options.outputRoot}`);
-    console.log(`[workspace-dev] Preview enabled: ${options.enablePreview}`);
-    console.log(`[workspace-dev] Perf validation enabled: ${options.enablePerfValidation}`);
+    logger.log({
+      level: "info",
+      message: `Server ready at ${server.url}/workspace`,
+    });
+    logger.log({
+      level: "info",
+      message: `Output root: ${options.outputRoot}`,
+    });
+    logger.log({
+      level: "info",
+      message: `Preview enabled: ${options.enablePreview}`,
+    });
+    logger.log({
+      level: "info",
+      message: `Perf validation enabled: ${options.enablePerfValidation ?? "auto (per pipeline)"}`,
+    });
+    logger.log({
+      level: "info",
+      message: `UI validation enabled: ${options.enableUiValidation ?? "auto (per pipeline)"}`,
+    });
+    logger.log({
+      level: "info",
+      message: `Visual quality validation enabled: ${options.enableVisualQualityValidation}`,
+    });
+    logger.log({
+      level: "info",
+      message:
+        "Composite quality weights: " +
+        `${options.compositeQualityWeights?.visual ?? 0.6} visual, ` +
+        `${options.compositeQualityWeights?.performance ?? 0.4} performance`,
+    });
+    logger.log({
+      level: "info",
+      message: `Visual quality reference mode: ${options.visualQualityReferenceMode}`,
+    });
+    logger.log({
+      level: "info",
+      message: `Visual quality viewport width: ${options.visualQualityViewportWidth}`,
+    });
+    logger.log({
+      level: "info",
+      message: `Visual quality browsers: ${options.visualQualityBrowsers.join(", ")}`,
+    });
+    logger.log({
+      level: "info",
+      message: `Unit test validation enabled: ${options.enableUnitTestValidation ?? "auto (per pipeline)"}`,
+    });
+    logger.log({
+      level: "info",
+      message: `Install prefer-offline: ${options.installPreferOffline}`,
+    });
+    logger.log({
+      level: "info",
+      message: `Skip install: ${options.skipInstall}`,
+    });
+    logger.log({
+      level: "info",
+      message: `Queue limits: concurrent=${options.maxConcurrentJobs}, queued=${options.maxQueuedJobs}`,
+    });
+    logger.log({
+      level: "info",
+      message: `Shutdown timeout: ${options.shutdownTimeoutMs}ms`,
+    });
+    logger.log({
+      level: "info",
+      message: `Rate limit per minute: ${options.rateLimitPerMinute}`,
+    });
+    logger.log({
+      level: "info",
+      message: `Import session event write auth enabled: ${options.importSessionEventBearerToken !== undefined}`,
+    });
+    logger.log({ level: "info", message: `Log format: ${options.logFormat}` });
+    logger.log({
+      level: "info",
+      message: `Lint auto-fix enabled: ${options.enableLintAutofix}`,
+    });
+    logger.log({
+      level: "info",
+      message: `Figma cache enabled: ${options.figmaCacheEnabled}, ttlMs=${options.figmaCacheTtlMs}`,
+    });
+    logger.log({
+      level: "info",
+      message: `Figma paste temp cleanup ttlMs=${options.figmaPasteTempTtlMs}`,
+    });
+    logger.log({
+      level: "info",
+      message:
+        `Figma circuit breaker: threshold=${options.figmaCircuitBreakerFailureThreshold}, ` +
+        `resetTimeoutMs=${options.figmaCircuitBreakerResetTimeoutMs}`,
+    });
+    logger.log({
+      level: "info",
+      message: `Icon fallback map file: ${options.iconMapFilePath ?? "(default: <output-root>/icon-fallback-map.json)"}`,
+    });
+    logger.log({
+      level: "info",
+      message: `Design system file: ${options.designSystemFilePath ?? "(default: <output-root>/design-system.json)"}`,
+    });
+    logger.log({
+      level: "info",
+      message: `Export images: ${options.exportImages}`,
+    });
+    logger.log({
+      level: "info",
+      message: `Figma screen depth max: ${options.figmaScreenElementMaxDepth}`,
+    });
+    logger.log({
+      level: "info",
+      message: `Brand theme default: ${options.brandTheme}`,
+    });
+    logger.log({
+      level: "info",
+      message: `Generation locale default: ${options.generationLocale}`,
+    });
+    logger.log({
+      level: "info",
+      message: `Router mode default: ${options.routerMode}`,
+    });
+    logger.log({
+      level: "info",
+      message:
+        `Command output caps: stdout=${options.commandStdoutMaxBytes}, ` +
+        `stderr=${options.commandStderrMaxBytes}`,
+    });
+    logger.log({
+      level: "info",
+      message:
+        `Pipeline diagnostic limits: count=${options.pipelineDiagnosticMaxCount}, ` +
+        `text=${options.pipelineDiagnosticTextMaxLength}, ` +
+        `detailKeys=${options.pipelineDiagnosticDetailsMaxKeys}, ` +
+        `detailItems=${options.pipelineDiagnosticDetailsMaxItems}, ` +
+        `detailDepth=${options.pipelineDiagnosticDetailsMaxDepth}`,
+    });
+    logger.log({
+      level: "info",
+      message: `Figma screen name pattern: ${options.figmaScreenNamePattern ?? "(unset)"}`,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.error(`[workspace-dev] Failed to start: ${message}`);
+    logger.log({ level: "error", message: `Failed to start: ${message}` });
     process.exit(1);
   }
 };

@@ -1,0 +1,317 @@
+{
+  "schemaVersion": "1.0.0",
+  "pipelineId": "default",
+  "summary": {
+    "status": "warn",
+    "message": "Generated accessibility report flagged 16 warning(s) across 1 screen(s).",
+    "screenCount": 1,
+    "warningCount": 16,
+    "semanticOutputWarningCount": 7,
+    "formLabelWarningCount": 0,
+    "buttonSemanticsWarningCount": 0,
+    "ariaLabelFallbackWarningCount": 0,
+    "altFallbackWarningCount": 0,
+    "focusOrderWarningCount": 7,
+    "lowContrastWarningCount": 2,
+    "clickDivFallbackWarningCount": 0
+  },
+  "screens": [
+    {
+      "screenId": "screen-profile",
+      "screenName": "Profile",
+      "warningCount": 16,
+      "warnings": [
+        {
+          "screenId": "screen-profile",
+          "screenName": "Profile",
+          "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+          "severity": "warning",
+          "nodeId": "chip-1-label",
+          "nodeName": "Label",
+          "message": "Absolute layout fallback for 'Label' can make keyboard focus order depend on implementation details."
+        },
+        {
+          "screenId": "screen-profile",
+          "screenName": "Profile",
+          "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+          "severity": "warning",
+          "nodeId": "chip-2-label",
+          "nodeName": "Label",
+          "message": "Absolute layout fallback for 'Label' can make keyboard focus order depend on implementation details."
+        },
+        {
+          "screenId": "screen-profile",
+          "screenName": "Profile",
+          "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+          "severity": "warning",
+          "nodeId": "chip-3-label",
+          "nodeName": "Label",
+          "message": "Absolute layout fallback for 'Label' can make keyboard focus order depend on implementation details."
+        },
+        {
+          "screenId": "screen-profile",
+          "screenName": "Profile",
+          "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+          "severity": "warning",
+          "nodeId": "chip-4-label",
+          "nodeName": "Label",
+          "message": "Absolute layout fallback for 'Label' can make keyboard focus order depend on implementation details."
+        },
+        {
+          "screenId": "screen-profile",
+          "screenName": "Profile",
+          "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+          "severity": "warning",
+          "nodeId": "badge-icon",
+          "nodeName": "Icon",
+          "message": "Absolute layout fallback for 'Icon' can make keyboard focus order depend on implementation details."
+        },
+        {
+          "screenId": "screen-profile",
+          "screenName": "Profile",
+          "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+          "severity": "warning",
+          "nodeId": "badge-count",
+          "nodeName": "Badge",
+          "message": "Absolute layout fallback for 'Badge' can make keyboard focus order depend on implementation details."
+        },
+        {
+          "screenId": "screen-profile",
+          "screenName": "Profile",
+          "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+          "severity": "warning",
+          "nodeId": "badge-text",
+          "nodeName": "Count",
+          "message": "Absolute layout fallback for 'Count' can make keyboard focus order depend on implementation details."
+        },
+        {
+          "screenId": "screen-profile",
+          "screenName": "Profile",
+          "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+          "severity": "warning",
+          "nodeId": "avatar-section",
+          "nodeName": "Avatar Section",
+          "message": "Default semantic synthesis rendered 'Avatar Section' with structural HTML because 'avatar' does not have a dedicated default Tailwind primitive yet."
+        },
+        {
+          "screenId": "screen-profile",
+          "screenName": "Profile",
+          "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+          "severity": "warning",
+          "nodeId": "avatar",
+          "nodeName": "Avatar",
+          "message": "Default semantic synthesis rendered 'Avatar' with structural HTML because 'avatar' does not have a dedicated default Tailwind primitive yet."
+        },
+        {
+          "screenId": "screen-profile",
+          "screenName": "Profile",
+          "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+          "severity": "warning",
+          "nodeId": "stats-card-1",
+          "nodeName": "Stats Card",
+          "message": "Default semantic synthesis kept 'Stats Card' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "screenId": "screen-profile",
+          "screenName": "Profile",
+          "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+          "severity": "warning",
+          "nodeId": "stats-card-2",
+          "nodeName": "Stats Card",
+          "message": "Default semantic synthesis kept 'Stats Card' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "screenId": "screen-profile",
+          "screenName": "Profile",
+          "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+          "severity": "warning",
+          "nodeId": "stats-card-3",
+          "nodeName": "Stats Card",
+          "message": "Default semantic synthesis kept 'Stats Card' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "screenId": "screen-profile",
+          "screenName": "Profile",
+          "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+          "severity": "warning",
+          "nodeId": "badge-item",
+          "nodeName": "Notification Badge",
+          "message": "Default semantic synthesis kept 'Notification Badge' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "screenId": "screen-profile",
+          "screenName": "Profile",
+          "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+          "severity": "warning",
+          "nodeId": "badge-count",
+          "nodeName": "Badge",
+          "message": "Default semantic synthesis kept 'Badge' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "screenId": "screen-profile",
+          "screenName": "Profile",
+          "code": "W_DEFAULT_A11Y_LOW_CONTRAST",
+          "severity": "warning",
+          "nodeId": "user-role",
+          "nodeName": "Role",
+          "message": "Low contrast text 'Role' uses 4.31:1 against its background."
+        },
+        {
+          "screenId": "screen-profile",
+          "screenName": "Profile",
+          "code": "W_DEFAULT_A11Y_LOW_CONTRAST",
+          "severity": "warning",
+          "nodeId": "badge-text",
+          "nodeName": "Count",
+          "message": "Low contrast text 'Count' uses 3.67:1 against its background."
+        }
+      ]
+    }
+  ],
+  "warnings": [
+    {
+      "screenId": "screen-profile",
+      "screenName": "Profile",
+      "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+      "severity": "warning",
+      "nodeId": "chip-1-label",
+      "nodeName": "Label",
+      "message": "Absolute layout fallback for 'Label' can make keyboard focus order depend on implementation details."
+    },
+    {
+      "screenId": "screen-profile",
+      "screenName": "Profile",
+      "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+      "severity": "warning",
+      "nodeId": "chip-2-label",
+      "nodeName": "Label",
+      "message": "Absolute layout fallback for 'Label' can make keyboard focus order depend on implementation details."
+    },
+    {
+      "screenId": "screen-profile",
+      "screenName": "Profile",
+      "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+      "severity": "warning",
+      "nodeId": "chip-3-label",
+      "nodeName": "Label",
+      "message": "Absolute layout fallback for 'Label' can make keyboard focus order depend on implementation details."
+    },
+    {
+      "screenId": "screen-profile",
+      "screenName": "Profile",
+      "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+      "severity": "warning",
+      "nodeId": "chip-4-label",
+      "nodeName": "Label",
+      "message": "Absolute layout fallback for 'Label' can make keyboard focus order depend on implementation details."
+    },
+    {
+      "screenId": "screen-profile",
+      "screenName": "Profile",
+      "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+      "severity": "warning",
+      "nodeId": "badge-icon",
+      "nodeName": "Icon",
+      "message": "Absolute layout fallback for 'Icon' can make keyboard focus order depend on implementation details."
+    },
+    {
+      "screenId": "screen-profile",
+      "screenName": "Profile",
+      "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+      "severity": "warning",
+      "nodeId": "badge-count",
+      "nodeName": "Badge",
+      "message": "Absolute layout fallback for 'Badge' can make keyboard focus order depend on implementation details."
+    },
+    {
+      "screenId": "screen-profile",
+      "screenName": "Profile",
+      "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+      "severity": "warning",
+      "nodeId": "badge-text",
+      "nodeName": "Count",
+      "message": "Absolute layout fallback for 'Count' can make keyboard focus order depend on implementation details."
+    },
+    {
+      "screenId": "screen-profile",
+      "screenName": "Profile",
+      "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+      "severity": "warning",
+      "nodeId": "avatar-section",
+      "nodeName": "Avatar Section",
+      "message": "Default semantic synthesis rendered 'Avatar Section' with structural HTML because 'avatar' does not have a dedicated default Tailwind primitive yet."
+    },
+    {
+      "screenId": "screen-profile",
+      "screenName": "Profile",
+      "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+      "severity": "warning",
+      "nodeId": "avatar",
+      "nodeName": "Avatar",
+      "message": "Default semantic synthesis rendered 'Avatar' with structural HTML because 'avatar' does not have a dedicated default Tailwind primitive yet."
+    },
+    {
+      "screenId": "screen-profile",
+      "screenName": "Profile",
+      "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+      "severity": "warning",
+      "nodeId": "stats-card-1",
+      "nodeName": "Stats Card",
+      "message": "Default semantic synthesis kept 'Stats Card' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-profile",
+      "screenName": "Profile",
+      "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+      "severity": "warning",
+      "nodeId": "stats-card-2",
+      "nodeName": "Stats Card",
+      "message": "Default semantic synthesis kept 'Stats Card' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-profile",
+      "screenName": "Profile",
+      "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+      "severity": "warning",
+      "nodeId": "stats-card-3",
+      "nodeName": "Stats Card",
+      "message": "Default semantic synthesis kept 'Stats Card' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-profile",
+      "screenName": "Profile",
+      "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+      "severity": "warning",
+      "nodeId": "badge-item",
+      "nodeName": "Notification Badge",
+      "message": "Default semantic synthesis kept 'Notification Badge' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-profile",
+      "screenName": "Profile",
+      "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+      "severity": "warning",
+      "nodeId": "badge-count",
+      "nodeName": "Badge",
+      "message": "Default semantic synthesis kept 'Badge' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-profile",
+      "screenName": "Profile",
+      "code": "W_DEFAULT_A11Y_LOW_CONTRAST",
+      "severity": "warning",
+      "nodeId": "user-role",
+      "nodeName": "Role",
+      "message": "Low contrast text 'Role' uses 4.31:1 against its background."
+    },
+    {
+      "screenId": "screen-profile",
+      "screenName": "Profile",
+      "code": "W_DEFAULT_A11Y_LOW_CONTRAST",
+      "severity": "warning",
+      "nodeId": "badge-text",
+      "nodeName": "Count",
+      "message": "Low contrast text 'Count' uses 3.67:1 against its background."
+    }
+  ]
+}

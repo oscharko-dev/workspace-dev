@@ -1,0 +1,77 @@
+[
+  {
+    "screenId": "s-payment-3ds",
+    "sidecarDeployment": "llama-4-maverick-vision",
+    "screenName": "Strong Customer Authentication",
+    "regions": [
+      {
+        "regionId": "n-otp",
+        "confidence": 0.95,
+        "label": "Authentication code",
+        "controlType": "text_input",
+        "validationHints": ["6 digits", "Time-bound 90s"]
+      },
+      {
+        "regionId": "n-cancel",
+        "confidence": 0.96,
+        "label": "Cancel",
+        "controlType": "button"
+      },
+      {
+        "regionId": "n-authorize",
+        "confidence": 0.97,
+        "label": "Authorize",
+        "controlType": "button"
+      }
+    ],
+    "confidenceSummary": {
+      "min": 0.95,
+      "max": 0.97,
+      "mean": 0.96
+    }
+  },
+  {
+    "screenId": "s-payment-amount",
+    "sidecarDeployment": "llama-4-maverick-vision",
+    "screenName": "Authorize Payment",
+    "regions": [
+      {
+        "regionId": "n-iban",
+        "confidence": 0.94,
+        "label": "Beneficiary IBAN",
+        "controlType": "text_input",
+        "validationHints": ["IBAN checksum"]
+      },
+      {
+        "regionId": "n-bic",
+        "confidence": 0.93,
+        "label": "Beneficiary BIC",
+        "controlType": "text_input"
+      },
+      {
+        "regionId": "n-amount",
+        "confidence": 0.95,
+        "label": "Amount EUR",
+        "controlType": "text_input",
+        "validationHints": ["Positive amount", "Max 50000"]
+      },
+      {
+        "regionId": "n-reference",
+        "confidence": 0.92,
+        "label": "Reference",
+        "controlType": "text_input"
+      },
+      {
+        "regionId": "n-continue",
+        "confidence": 0.97,
+        "label": "Continue",
+        "controlType": "button"
+      }
+    ],
+    "confidenceSummary": {
+      "min": 0.92,
+      "max": 0.97,
+      "mean": 0.94
+    }
+  }
+]

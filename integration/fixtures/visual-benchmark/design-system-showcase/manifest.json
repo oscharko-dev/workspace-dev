@@ -1,0 +1,8 @@
+{
+  "fixtureId": "design-system-showcase",
+  "version": 1,
+  "visualQuality": {
+    "frozenReferenceImage": "reference.png",
+    "frozenReferenceMetadata": "metadata.json"
+  }
+}

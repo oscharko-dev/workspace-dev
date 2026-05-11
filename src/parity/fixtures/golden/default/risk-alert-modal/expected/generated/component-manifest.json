@@ -1,0 +1,10 @@
+{
+  "screens": [
+    {
+      "screenId": "modal-card",
+      "screenName": "Risk Alert Modal",
+      "file": "src/pages/risk-alert-modal.tsx",
+      "components": []
+    }
+  ]
+}

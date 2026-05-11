@@ -1,0 +1,96 @@
+{
+  "source": {
+    "kind": "figma_local_json"
+  },
+  "screens": [
+    {
+      "screenId": "s-payment-method",
+      "screenName": "Payment Method",
+      "nodes": [
+        {
+          "nodeId": "n-iban",
+          "nodeName": "IBAN",
+          "nodeType": "TEXT_INPUT",
+          "text": "IBAN",
+          "defaultValue": "DE89370400440532013000",
+          "validations": [
+            "Required",
+            "Regex: ^[A-Z]{2}[0-9]{2}[A-Z0-9]{1,30}$",
+            "Async: server-side IBAN validation"
+          ],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-bic",
+          "nodeName": "BIC",
+          "nodeType": "TEXT_INPUT",
+          "text": "BIC",
+          "defaultValue": "COBADEFFXXX",
+          "validations": [
+            "Required",
+            "Regex: ^[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?$"
+          ],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-amount",
+          "nodeName": "Amount",
+          "nodeType": "TEXT_INPUT",
+          "text": "Amount",
+          "defaultValue": "100.00",
+          "validations": [
+            "Required",
+            "Range 0.01..100000.00",
+            "Decimal precision: 2"
+          ],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-confirm-amount",
+          "nodeName": "Confirm Amount",
+          "nodeType": "TEXT_INPUT",
+          "text": "Confirm Amount",
+          "defaultValue": "100.00",
+          "validations": [
+            "Required",
+            "Cross-field: must equal Amount",
+            "Range 0.01..100000.00"
+          ],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-tax-id",
+          "nodeName": "Tax ID",
+          "nodeType": "TEXT_INPUT",
+          "text": "Tax ID",
+          "defaultValue": "65929970489",
+          "validations": [
+            "Required",
+            "Regex: ^[0-9]{11}$",
+            "Async: tax-id checksum service"
+          ],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-reference",
+          "nodeName": "Reference",
+          "nodeType": "TEXT_INPUT",
+          "text": "Reference",
+          "defaultValue": "Invoice 4711",
+          "validations": [
+            "Optional",
+            "Regex: ^[A-Za-z0-9 .,\\-/]{0,140}$"
+          ],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-pay",
+          "nodeName": "Pay",
+          "nodeType": "BUTTON",
+          "text": "Pay",
+          "childNodeIds": []
+        }
+      ]
+    }
+  ]
+}

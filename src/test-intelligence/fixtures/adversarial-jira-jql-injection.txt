@@ -1,0 +1,6 @@
+project = PAY; DROP TABLE issues
+project = PAY OR 1=1
+project = PAY -- comment
+project = PAY /* comment */
+project = PAY
+status = Open\u0000

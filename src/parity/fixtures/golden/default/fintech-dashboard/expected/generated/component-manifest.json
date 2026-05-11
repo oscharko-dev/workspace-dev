@@ -1,0 +1,10 @@
+{
+  "screens": [
+    {
+      "screenId": "screen-dashboard",
+      "screenName": "Dashboard",
+      "file": "src/pages/dashboard.tsx",
+      "components": []
+    }
+  ]
+}

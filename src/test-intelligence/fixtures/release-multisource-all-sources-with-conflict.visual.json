@@ -1,0 +1,33 @@
+[
+  {
+    "screenId": "s-beneficiary-add",
+    "sidecarDeployment": "llama-4-maverick-vision",
+    "screenName": "Add Beneficiary",
+    "regions": [
+      {
+        "regionId": "n-beneficiary-name",
+        "confidence": 0.94,
+        "label": "Beneficiary Name",
+        "controlType": "text_input"
+      },
+      {
+        "regionId": "n-bic",
+        "confidence": 0.93,
+        "label": "BIC",
+        "controlType": "text_input",
+        "validationHints": ["BIC format"]
+      },
+      {
+        "regionId": "n-add-beneficiary",
+        "confidence": 0.96,
+        "label": "Add Beneficiary",
+        "controlType": "button"
+      }
+    ],
+    "confidenceSummary": {
+      "min": 0.93,
+      "max": 0.96,
+      "mean": 0.943
+    }
+  }
+]

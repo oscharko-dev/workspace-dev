@@ -1,0 +1,1509 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "iconName": "Home"
+    },
+    {
+      "iconName": "HomeOutlined"
+    },
+    {
+      "iconName": "Menu"
+    },
+    {
+      "iconName": "Close"
+    },
+    {
+      "iconName": "Search"
+    },
+    {
+      "iconName": "ManageSearch"
+    },
+    {
+      "iconName": "Settings"
+    },
+    {
+      "iconName": "Tune"
+    },
+    {
+      "iconName": "Apps"
+    },
+    {
+      "iconName": "Dashboard"
+    },
+    {
+      "iconName": "Widgets"
+    },
+    {
+      "iconName": "MenuOpen"
+    },
+    {
+      "iconName": "MoreVert"
+    },
+    {
+      "iconName": "MoreHoriz"
+    },
+    {
+      "iconName": "ArrowBack"
+    },
+    {
+      "iconName": "ArrowForward"
+    },
+    {
+      "iconName": "ArrowBackIos"
+    },
+    {
+      "iconName": "ArrowForwardIos"
+    },
+    {
+      "iconName": "ArrowUpward"
+    },
+    {
+      "iconName": "ArrowDownward"
+    },
+    {
+      "iconName": "ArrowLeft"
+    },
+    {
+      "iconName": "ArrowRight"
+    },
+    {
+      "iconName": "West"
+    },
+    {
+      "iconName": "East"
+    },
+    {
+      "iconName": "North"
+    },
+    {
+      "iconName": "South"
+    },
+    {
+      "iconName": "ChevronLeft"
+    },
+    {
+      "iconName": "ChevronRight"
+    },
+    {
+      "iconName": "ExpandMore"
+    },
+    {
+      "iconName": "ExpandLess"
+    },
+    {
+      "iconName": "UnfoldMore"
+    },
+    {
+      "iconName": "FirstPage"
+    },
+    {
+      "iconName": "LastPage"
+    },
+    {
+      "iconName": "KeyboardArrowLeft"
+    },
+    {
+      "iconName": "KeyboardArrowRight"
+    },
+    {
+      "iconName": "KeyboardArrowUp"
+    },
+    {
+      "iconName": "KeyboardArrowDown"
+    },
+    {
+      "iconName": "SubdirectoryArrowLeft"
+    },
+    {
+      "iconName": "SubdirectoryArrowRight"
+    },
+    {
+      "iconName": "OpenWith"
+    },
+    {
+      "iconName": "SwapHoriz"
+    },
+    {
+      "iconName": "SwapVert"
+    },
+    {
+      "iconName": "CompareArrows"
+    },
+    {
+      "iconName": "SyncAlt"
+    },
+    {
+      "iconName": "Sync"
+    },
+    {
+      "iconName": "Replay"
+    },
+    {
+      "iconName": "Refresh"
+    },
+    {
+      "iconName": "Undo"
+    },
+    {
+      "iconName": "Redo"
+    },
+    {
+      "iconName": "Login"
+    },
+    {
+      "iconName": "Logout"
+    },
+    {
+      "iconName": "Launch"
+    },
+    {
+      "iconName": "OpenInNew"
+    },
+    {
+      "iconName": "Link"
+    },
+    {
+      "iconName": "ContentCopy"
+    },
+    {
+      "iconName": "ContentPaste"
+    },
+    {
+      "iconName": "ContentCut"
+    },
+    {
+      "iconName": "FilterList"
+    },
+    {
+      "iconName": "Sort"
+    },
+    {
+      "iconName": "Flag"
+    },
+    {
+      "iconName": "Bookmark"
+    },
+    {
+      "iconName": "BookmarkBorder"
+    },
+    {
+      "iconName": "Favorite"
+    },
+    {
+      "iconName": "FavoriteBorder"
+    },
+    {
+      "iconName": "Star"
+    },
+    {
+      "iconName": "StarBorder"
+    },
+    {
+      "iconName": "Grade"
+    },
+    {
+      "iconName": "ThumbUp"
+    },
+    {
+      "iconName": "ThumbDown"
+    },
+    {
+      "iconName": "Check"
+    },
+    {
+      "iconName": "CheckCircle"
+    },
+    {
+      "iconName": "CheckCircleOutline"
+    },
+    {
+      "iconName": "Done"
+    },
+    {
+      "iconName": "DoneAll"
+    },
+    {
+      "iconName": "Cancel"
+    },
+    {
+      "iconName": "Error"
+    },
+    {
+      "iconName": "ErrorOutline"
+    },
+    {
+      "iconName": "Warning"
+    },
+    {
+      "iconName": "Info"
+    },
+    {
+      "iconName": "InfoOutlined"
+    },
+    {
+      "iconName": "Help"
+    },
+    {
+      "iconName": "HelpOutline"
+    },
+    {
+      "iconName": "Report"
+    },
+    {
+      "iconName": "ReportProblem"
+    },
+    {
+      "iconName": "BugReport"
+    },
+    {
+      "iconName": "Build"
+    },
+    {
+      "iconName": "BuildCircle"
+    },
+    {
+      "iconName": "Construction"
+    },
+    {
+      "iconName": "Engineering"
+    },
+    {
+      "iconName": "Handyman"
+    },
+    {
+      "iconName": "Verified"
+    },
+    {
+      "iconName": "VerifiedUser"
+    },
+    {
+      "iconName": "Security"
+    },
+    {
+      "iconName": "Policy"
+    },
+    {
+      "iconName": "Gavel"
+    },
+    {
+      "iconName": "PrivacyTip"
+    },
+    {
+      "iconName": "HealthAndSafety"
+    },
+    {
+      "iconName": "Lock"
+    },
+    {
+      "iconName": "LockOpen"
+    },
+    {
+      "iconName": "LockReset"
+    },
+    {
+      "iconName": "VpnKey"
+    },
+    {
+      "iconName": "Key"
+    },
+    {
+      "iconName": "Shield"
+    },
+    {
+      "iconName": "ShieldOutlined"
+    },
+    {
+      "iconName": "Visibility"
+    },
+    {
+      "iconName": "VisibilityOff"
+    },
+    {
+      "iconName": "Person"
+    },
+    {
+      "iconName": "PersonOutline"
+    },
+    {
+      "iconName": "PersonAdd"
+    },
+    {
+      "iconName": "PersonRemove"
+    },
+    {
+      "iconName": "PersonSearch"
+    },
+    {
+      "iconName": "People"
+    },
+    {
+      "iconName": "Group"
+    },
+    {
+      "iconName": "Groups"
+    },
+    {
+      "iconName": "AccountCircle"
+    },
+    {
+      "iconName": "Badge"
+    },
+    {
+      "iconName": "SupervisorAccount"
+    },
+    {
+      "iconName": "Face"
+    },
+    {
+      "iconName": "EmojiPeople"
+    },
+    {
+      "iconName": "Diversity3"
+    },
+    {
+      "iconName": "HowToReg"
+    },
+    {
+      "iconName": "HowToVote"
+    },
+    {
+      "iconName": "Contacts"
+    },
+    {
+      "iconName": "ContactMail"
+    },
+    {
+      "iconName": "ContactPhone"
+    },
+    {
+      "iconName": "AlternateEmail"
+    },
+    {
+      "iconName": "Mail"
+    },
+    {
+      "iconName": "MailOutline"
+    },
+    {
+      "iconName": "Email"
+    },
+    {
+      "iconName": "Send"
+    },
+    {
+      "iconName": "MarkEmailRead"
+    },
+    {
+      "iconName": "Drafts"
+    },
+    {
+      "iconName": "Chat"
+    },
+    {
+      "iconName": "ChatBubble"
+    },
+    {
+      "iconName": "ChatBubbleOutline"
+    },
+    {
+      "iconName": "Forum"
+    },
+    {
+      "iconName": "Message"
+    },
+    {
+      "iconName": "Sms"
+    },
+    {
+      "iconName": "Textsms"
+    },
+    {
+      "iconName": "Comment"
+    },
+    {
+      "iconName": "QuestionAnswer"
+    },
+    {
+      "iconName": "Phone"
+    },
+    {
+      "iconName": "PhoneIphone"
+    },
+    {
+      "iconName": "PhoneAndroid"
+    },
+    {
+      "iconName": "Call"
+    },
+    {
+      "iconName": "CallEnd"
+    },
+    {
+      "iconName": "CallMade"
+    },
+    {
+      "iconName": "CallReceived"
+    },
+    {
+      "iconName": "Videocam"
+    },
+    {
+      "iconName": "VideocamOff"
+    },
+    {
+      "iconName": "Mic"
+    },
+    {
+      "iconName": "MicOff"
+    },
+    {
+      "iconName": "VolumeUp"
+    },
+    {
+      "iconName": "VolumeDown"
+    },
+    {
+      "iconName": "VolumeOff"
+    },
+    {
+      "iconName": "Notifications"
+    },
+    {
+      "iconName": "NotificationsNone"
+    },
+    {
+      "iconName": "NotificationsActive"
+    },
+    {
+      "iconName": "NotificationImportant"
+    },
+    {
+      "iconName": "RssFeed"
+    },
+    {
+      "iconName": "Campaign"
+    },
+    {
+      "iconName": "Announcement"
+    },
+    {
+      "iconName": "Public"
+    },
+    {
+      "iconName": "Language"
+    },
+    {
+      "iconName": "Translate"
+    },
+    {
+      "iconName": "GTranslate"
+    },
+    {
+      "iconName": "TravelExplore"
+    },
+    {
+      "iconName": "Explore"
+    },
+    {
+      "iconName": "NearMe"
+    },
+    {
+      "iconName": "Place"
+    },
+    {
+      "iconName": "LocationOn"
+    },
+    {
+      "iconName": "LocationOff"
+    },
+    {
+      "iconName": "PinDrop"
+    },
+    {
+      "iconName": "Map"
+    },
+    {
+      "iconName": "Navigation"
+    },
+    {
+      "iconName": "MyLocation"
+    },
+    {
+      "iconName": "LocationSearching"
+    },
+    {
+      "iconName": "Directions"
+    },
+    {
+      "iconName": "DirectionsCar"
+    },
+    {
+      "iconName": "DirectionsBus"
+    },
+    {
+      "iconName": "DirectionsWalk"
+    },
+    {
+      "iconName": "DirectionsBike"
+    },
+    {
+      "iconName": "Flight"
+    },
+    {
+      "iconName": "Train"
+    },
+    {
+      "iconName": "Subway"
+    },
+    {
+      "iconName": "TwoWheeler"
+    },
+    {
+      "iconName": "LocalTaxi"
+    },
+    {
+      "iconName": "Add"
+    },
+    {
+      "iconName": "AddCircle"
+    },
+    {
+      "iconName": "AddCircleOutline"
+    },
+    {
+      "iconName": "AddBox"
+    },
+    {
+      "iconName": "Remove"
+    },
+    {
+      "iconName": "RemoveCircle"
+    },
+    {
+      "iconName": "RemoveCircleOutline"
+    },
+    {
+      "iconName": "Delete"
+    },
+    {
+      "iconName": "DeleteOutline"
+    },
+    {
+      "iconName": "DeleteForever"
+    },
+    {
+      "iconName": "Edit"
+    },
+    {
+      "iconName": "EditOutlined"
+    },
+    {
+      "iconName": "EditNote"
+    },
+    {
+      "iconName": "ModeEdit"
+    },
+    {
+      "iconName": "Save"
+    },
+    {
+      "iconName": "SaveAs"
+    },
+    {
+      "iconName": "Create"
+    },
+    {
+      "iconName": "CreateNewFolder"
+    },
+    {
+      "iconName": "FileOpen"
+    },
+    {
+      "iconName": "Folder"
+    },
+    {
+      "iconName": "FolderOpen"
+    },
+    {
+      "iconName": "FolderShared"
+    },
+    {
+      "iconName": "DriveFileMove"
+    },
+    {
+      "iconName": "InsertDriveFile"
+    },
+    {
+      "iconName": "AttachFile"
+    },
+    {
+      "iconName": "Cloud"
+    },
+    {
+      "iconName": "CloudUpload"
+    },
+    {
+      "iconName": "CloudDownload"
+    },
+    {
+      "iconName": "CloudDone"
+    },
+    {
+      "iconName": "CloudOff"
+    },
+    {
+      "iconName": "CloudQueue"
+    },
+    {
+      "iconName": "Backup"
+    },
+    {
+      "iconName": "BackupTable"
+    },
+    {
+      "iconName": "Download"
+    },
+    {
+      "iconName": "DownloadForOffline"
+    },
+    {
+      "iconName": "Upload"
+    },
+    {
+      "iconName": "UploadFile"
+    },
+    {
+      "iconName": "FileUpload"
+    },
+    {
+      "iconName": "FileDownload"
+    },
+    {
+      "iconName": "Print"
+    },
+    {
+      "iconName": "IosShare"
+    },
+    {
+      "iconName": "Share"
+    },
+    {
+      "iconName": "ShareLocation"
+    },
+    {
+      "iconName": "ScreenShare"
+    },
+    {
+      "iconName": "Reply"
+    },
+    {
+      "iconName": "ReplyAll"
+    },
+    {
+      "iconName": "Forward"
+    },
+    {
+      "iconName": "Archive"
+    },
+    {
+      "iconName": "Unarchive"
+    },
+    {
+      "iconName": "MoveToInbox"
+    },
+    {
+      "iconName": "Inventory"
+    },
+    {
+      "iconName": "Inventory2"
+    },
+    {
+      "iconName": "LocalShipping"
+    },
+    {
+      "iconName": "LocalMall"
+    },
+    {
+      "iconName": "ShoppingCart"
+    },
+    {
+      "iconName": "ShoppingBasket"
+    },
+    {
+      "iconName": "ShoppingBag"
+    },
+    {
+      "iconName": "Store"
+    },
+    {
+      "iconName": "Storefront"
+    },
+    {
+      "iconName": "Receipt"
+    },
+    {
+      "iconName": "ReceiptLong"
+    },
+    {
+      "iconName": "Payment"
+    },
+    {
+      "iconName": "Payments"
+    },
+    {
+      "iconName": "CreditCard"
+    },
+    {
+      "iconName": "AccountBalance"
+    },
+    {
+      "iconName": "AccountBalanceWallet"
+    },
+    {
+      "iconName": "Savings"
+    },
+    {
+      "iconName": "AttachMoney"
+    },
+    {
+      "iconName": "CurrencyExchange"
+    },
+    {
+      "iconName": "PriceCheck"
+    },
+    {
+      "iconName": "Sell"
+    },
+    {
+      "iconName": "SellOutlined"
+    },
+    {
+      "iconName": "Loyalty"
+    },
+    {
+      "iconName": "LocalOffer"
+    },
+    {
+      "iconName": "Redeem"
+    },
+    {
+      "iconName": "RequestQuote"
+    },
+    {
+      "iconName": "Paid"
+    },
+    {
+      "iconName": "MonetizationOn"
+    },
+    {
+      "iconName": "AccountTree"
+    },
+    {
+      "iconName": "CallSplit"
+    },
+    {
+      "iconName": "DeviceHub"
+    },
+    {
+      "iconName": "Hub"
+    },
+    {
+      "iconName": "Insights"
+    },
+    {
+      "iconName": "AutoGraph"
+    },
+    {
+      "iconName": "BarChart"
+    },
+    {
+      "iconName": "PieChart"
+    },
+    {
+      "iconName": "ShowChart"
+    },
+    {
+      "iconName": "Timeline"
+    },
+    {
+      "iconName": "StackedLineChart"
+    },
+    {
+      "iconName": "QueryStats"
+    },
+    {
+      "iconName": "Analytics"
+    },
+    {
+      "iconName": "Assessment"
+    },
+    {
+      "iconName": "Poll"
+    },
+    {
+      "iconName": "Leaderboard"
+    },
+    {
+      "iconName": "Score"
+    },
+    {
+      "iconName": "TrendingUp"
+    },
+    {
+      "iconName": "TrendingDown"
+    },
+    {
+      "iconName": "Equalizer"
+    },
+    {
+      "iconName": "DataUsage"
+    },
+    {
+      "iconName": "InsertChart"
+    },
+    {
+      "iconName": "TableChart"
+    },
+    {
+      "iconName": "ViewList"
+    },
+    {
+      "iconName": "ViewModule"
+    },
+    {
+      "iconName": "ViewQuilt"
+    },
+    {
+      "iconName": "GridView"
+    },
+    {
+      "iconName": "TableRows"
+    },
+    {
+      "iconName": "TableRowsOutlined"
+    },
+    {
+      "iconName": "List"
+    },
+    {
+      "iconName": "ListAlt"
+    },
+    {
+      "iconName": "FormatListBulleted"
+    },
+    {
+      "iconName": "Checklist"
+    },
+    {
+      "iconName": "Reorder"
+    },
+    {
+      "iconName": "DragIndicator"
+    },
+    {
+      "iconName": "ViewAgenda"
+    },
+    {
+      "iconName": "ViewWeek"
+    },
+    {
+      "iconName": "ViewDay"
+    },
+    {
+      "iconName": "Subject"
+    },
+    {
+      "iconName": "TextFields"
+    },
+    {
+      "iconName": "Title"
+    },
+    {
+      "iconName": "Notes"
+    },
+    {
+      "iconName": "Description"
+    },
+    {
+      "iconName": "Article"
+    },
+    {
+      "iconName": "Feed"
+    },
+    {
+      "iconName": "Newspaper"
+    },
+    {
+      "iconName": "Topic"
+    },
+    {
+      "iconName": "History"
+    },
+    {
+      "iconName": "HistoryToggleOff"
+    },
+    {
+      "iconName": "Event"
+    },
+    {
+      "iconName": "EventAvailable"
+    },
+    {
+      "iconName": "EventBusy"
+    },
+    {
+      "iconName": "EventNote"
+    },
+    {
+      "iconName": "CalendarMonth"
+    },
+    {
+      "iconName": "Today"
+    },
+    {
+      "iconName": "DateRange"
+    },
+    {
+      "iconName": "Schedule"
+    },
+    {
+      "iconName": "AccessTime"
+    },
+    {
+      "iconName": "AccessTimeFilled"
+    },
+    {
+      "iconName": "Alarm"
+    },
+    {
+      "iconName": "AlarmOn"
+    },
+    {
+      "iconName": "AlarmOff"
+    },
+    {
+      "iconName": "Timer"
+    },
+    {
+      "iconName": "AvTimer"
+    },
+    {
+      "iconName": "Update"
+    },
+    {
+      "iconName": "WatchLater"
+    },
+    {
+      "iconName": "Pending"
+    },
+    {
+      "iconName": "PlayArrow"
+    },
+    {
+      "iconName": "Pause"
+    },
+    {
+      "iconName": "Stop"
+    },
+    {
+      "iconName": "PlayCircle"
+    },
+    {
+      "iconName": "PauseCircle"
+    },
+    {
+      "iconName": "StopCircle"
+    },
+    {
+      "iconName": "SkipNext"
+    },
+    {
+      "iconName": "SkipPrevious"
+    },
+    {
+      "iconName": "FastForward"
+    },
+    {
+      "iconName": "FastRewind"
+    },
+    {
+      "iconName": "Repeat"
+    },
+    {
+      "iconName": "Shuffle"
+    },
+    {
+      "iconName": "MusicNote"
+    },
+    {
+      "iconName": "QueueMusic"
+    },
+    {
+      "iconName": "Album"
+    },
+    {
+      "iconName": "LibraryMusic"
+    },
+    {
+      "iconName": "Movie"
+    },
+    {
+      "iconName": "LocalMovies"
+    },
+    {
+      "iconName": "OndemandVideo"
+    },
+    {
+      "iconName": "LiveTv"
+    },
+    {
+      "iconName": "Image"
+    },
+    {
+      "iconName": "ImageOutlined"
+    },
+    {
+      "iconName": "ImageSearch"
+    },
+    {
+      "iconName": "Photo"
+    },
+    {
+      "iconName": "PhotoCamera"
+    },
+    {
+      "iconName": "Camera"
+    },
+    {
+      "iconName": "CameraAlt"
+    },
+    {
+      "iconName": "Collections"
+    },
+    {
+      "iconName": "CollectionsBookmark"
+    },
+    {
+      "iconName": "Wallpaper"
+    },
+    {
+      "iconName": "Brush"
+    },
+    {
+      "iconName": "ColorLens"
+    },
+    {
+      "iconName": "FormatPaint"
+    },
+    {
+      "iconName": "Palette"
+    },
+    {
+      "iconName": "Draw"
+    },
+    {
+      "iconName": "Gesture"
+    },
+    {
+      "iconName": "AutoFixHigh"
+    },
+    {
+      "iconName": "Style"
+    },
+    {
+      "iconName": "WbSunny"
+    },
+    {
+      "iconName": "Nightlight"
+    },
+    {
+      "iconName": "NightsStay"
+    },
+    {
+      "iconName": "DarkMode"
+    },
+    {
+      "iconName": "LightMode"
+    },
+    {
+      "iconName": "Brightness4"
+    },
+    {
+      "iconName": "Brightness7"
+    },
+    {
+      "iconName": "Bolt"
+    },
+    {
+      "iconName": "Power"
+    },
+    {
+      "iconName": "PowerOff"
+    },
+    {
+      "iconName": "BatteryFull"
+    },
+    {
+      "iconName": "BatteryAlert"
+    },
+    {
+      "iconName": "BatteryChargingFull"
+    },
+    {
+      "iconName": "ElectricalServices"
+    },
+    {
+      "iconName": "FlashOn"
+    },
+    {
+      "iconName": "FlashOff"
+    },
+    {
+      "iconName": "Wifi"
+    },
+    {
+      "iconName": "WifiOff"
+    },
+    {
+      "iconName": "Bluetooth"
+    },
+    {
+      "iconName": "BluetoothConnected"
+    },
+    {
+      "iconName": "SignalWifi4Bar"
+    },
+    {
+      "iconName": "Router"
+    },
+    {
+      "iconName": "Lan"
+    },
+    {
+      "iconName": "Devices"
+    },
+    {
+      "iconName": "DevicesOther"
+    },
+    {
+      "iconName": "DesktopWindows"
+    },
+    {
+      "iconName": "Laptop"
+    },
+    {
+      "iconName": "TabletMac"
+    },
+    {
+      "iconName": "Smartphone"
+    },
+    {
+      "iconName": "Watch"
+    },
+    {
+      "iconName": "Memory"
+    },
+    {
+      "iconName": "Storage"
+    },
+    {
+      "iconName": "SdStorage"
+    },
+    {
+      "iconName": "CloudCircle"
+    },
+    {
+      "iconName": "Dns"
+    },
+    {
+      "iconName": "DataObject"
+    },
+    {
+      "iconName": "Terminal"
+    },
+    {
+      "iconName": "Code"
+    },
+    {
+      "iconName": "DeveloperMode"
+    },
+    {
+      "iconName": "Api"
+    },
+    {
+      "iconName": "IntegrationInstructions"
+    },
+    {
+      "iconName": "Science"
+    },
+    {
+      "iconName": "Biotech"
+    },
+    {
+      "iconName": "School"
+    },
+    {
+      "iconName": "MenuBook"
+    },
+    {
+      "iconName": "ImportContacts"
+    },
+    {
+      "iconName": "AutoStories"
+    },
+    {
+      "iconName": "WorkspacePremium"
+    },
+    {
+      "iconName": "Work"
+    },
+    {
+      "iconName": "Business"
+    },
+    {
+      "iconName": "Apartment"
+    },
+    {
+      "iconName": "CorporateFare"
+    },
+    {
+      "iconName": "Domain"
+    },
+    {
+      "iconName": "Factory"
+    },
+    {
+      "iconName": "CardMembership"
+    },
+    {
+      "iconName": "MilitaryTech"
+    },
+    {
+      "iconName": "LocalHospital"
+    },
+    {
+      "iconName": "MedicalServices"
+    },
+    {
+      "iconName": "Medication"
+    },
+    {
+      "iconName": "LocalPharmacy"
+    },
+    {
+      "iconName": "Vaccines"
+    },
+    {
+      "iconName": "Healing"
+    },
+    {
+      "iconName": "MonitorHeart"
+    },
+    {
+      "iconName": "BabyChangingStation"
+    },
+    {
+      "iconName": "Pets"
+    },
+    {
+      "iconName": "Park"
+    },
+    {
+      "iconName": "SportsSoccer"
+    },
+    {
+      "iconName": "SportsBasketball"
+    },
+    {
+      "iconName": "SportsEsports"
+    },
+    {
+      "iconName": "FitnessCenter"
+    },
+    {
+      "iconName": "SelfImprovement"
+    },
+    {
+      "iconName": "Spa"
+    },
+    {
+      "iconName": "Restaurant"
+    },
+    {
+      "iconName": "LocalCafe"
+    },
+    {
+      "iconName": "LocalBar"
+    },
+    {
+      "iconName": "Hotel"
+    },
+    {
+      "iconName": "Bed"
+    },
+    {
+      "iconName": "KingBed"
+    },
+    {
+      "iconName": "Bathtub"
+    },
+    {
+      "iconName": "Weekend"
+    },
+    {
+      "iconName": "Chair"
+    },
+    {
+      "iconName": "CheckBox"
+    },
+    {
+      "iconName": "CheckBoxOutlineBlank"
+    },
+    {
+      "iconName": "IndeterminateCheckBox"
+    },
+    {
+      "iconName": "RadioButtonChecked"
+    },
+    {
+      "iconName": "RadioButtonUnchecked"
+    },
+    {
+      "iconName": "ToggleOn"
+    },
+    {
+      "iconName": "ToggleOff"
+    },
+    {
+      "iconName": "Circle"
+    },
+    {
+      "iconName": "Lens"
+    },
+    {
+      "iconName": "PanoramaFishEye"
+    },
+    {
+      "iconName": "DoNotDisturb"
+    },
+    {
+      "iconName": "DoNotDisturbOn"
+    },
+    {
+      "iconName": "Block"
+    },
+    {
+      "iconName": "HighlightOff"
+    },
+    {
+      "iconName": "CloseFullscreen"
+    },
+    {
+      "iconName": "OpenInFull"
+    },
+    {
+      "iconName": "Fullscreen"
+    },
+    {
+      "iconName": "FullscreenExit"
+    }
+  ],
+  "synonyms": {
+    "user": "Person",
+    "users": "People",
+    "trash": "Delete",
+    "trashcan": "Delete",
+    "bin": "Delete",
+    "garbage": "Delete",
+    "remove": "Remove",
+    "plus": "Add",
+    "minus": "Remove",
+    "mail": "Mail",
+    "email": "Email",
+    "phone": "Phone",
+    "chat": "Chat",
+    "message": "Message",
+    "notify": "Notifications",
+    "notification": "Notifications",
+    "avatar": "Person",
+    "profile": "Person",
+    "account": "AccountCircle",
+    "settings": "Settings",
+    "config": "Settings",
+    "gear": "Settings",
+    "cog": "Settings",
+    "download": "Download",
+    "upload": "Upload",
+    "print": "Print",
+    "refresh": "Refresh",
+    "reload": "Refresh",
+    "share": "Share",
+    "favorite": "Favorite",
+    "favourite": "Favorite",
+    "like": "ThumbUp",
+    "dislike": "ThumbDown",
+    "star": "Star",
+    "bookmark": "Bookmark",
+    "copy": "ContentCopy",
+    "paste": "ContentPaste",
+    "filter": "FilterList",
+    "sort": "Sort",
+    "folder": "Folder",
+    "file": "InsertDriveFile",
+    "attachment": "AttachFile",
+    "home": "Home",
+    "house": "Home",
+    "help": "Help",
+    "info": "Info",
+    "warning": "Warning",
+    "error": "Error",
+    "arrow left": "ArrowBack",
+    "arrow right": "ArrowForward",
+    "left arrow": "ArrowBack",
+    "right arrow": "ArrowForward",
+    "chevron left": "ChevronLeft",
+    "chevron right": "ChevronRight",
+    "down arrow": "ArrowDownward",
+    "up arrow": "ArrowUpward",
+    "calendar": "CalendarMonth",
+    "time": "AccessTime",
+    "clock": "AccessTime",
+    "location": "LocationOn",
+    "map": "Map",
+    "link": "Link",
+    "external": "OpenInNew",
+    "cart": "ShoppingCart",
+    "shop": "Store",
+    "payment": "Payment",
+    "credit card": "CreditCard",
+    "money": "AttachMoney",
+    "chart": "BarChart",
+    "graph": "AutoGraph",
+    "analytics": "Analytics",
+    "camera": "CameraAlt",
+    "photo": "Photo",
+    "image": "Image",
+    "video": "Videocam",
+    "play": "PlayArrow",
+    "pause": "Pause",
+    "stop": "Stop",
+    "mic": "Mic",
+    "wifi": "Wifi",
+    "bluetooth": "Bluetooth",
+    "code": "Code",
+    "terminal": "Terminal",
+    "cloud": "Cloud",
+    "search person": "PersonSearch",
+    "person search": "PersonSearch",
+    "personensuche": "PersonSearch",
+    "hilfe": "HelpOutline",
+    "startseite": "HomeOutlined",
+    "merken": "BookmarkBorder",
+    "questionmark": "HelpOutline",
+    "speechbubble": "Forum",
+    "speech bubble": "Forum",
+    "messenger": "Forum",
+    "homepage": "HomeOutlined"
+  }
+}

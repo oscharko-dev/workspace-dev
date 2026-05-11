@@ -1,0 +1,70 @@
+{
+  "screens": [
+    {
+      "screenId": "screen-splash",
+      "screenName": "Splash",
+      "file": "src/pages/splash.tsx",
+      "components": []
+    },
+    {
+      "screenId": "screen-onboarding",
+      "screenName": "Onboarding",
+      "file": "src/pages/onboarding.tsx",
+      "components": []
+    },
+    {
+      "screenId": "screen-login",
+      "screenName": "Login",
+      "file": "src/pages/login.tsx",
+      "components": []
+    },
+    {
+      "screenId": "screen-register",
+      "screenName": "Register",
+      "file": "src/pages/register.tsx",
+      "components": []
+    },
+    {
+      "screenId": "screen-home",
+      "screenName": "Home",
+      "file": "src/pages/home.tsx",
+      "components": []
+    },
+    {
+      "screenId": "screen-feed",
+      "screenName": "Feed",
+      "file": "src/pages/feed.tsx",
+      "components": []
+    },
+    {
+      "screenId": "screen-search",
+      "screenName": "Search",
+      "file": "src/pages/search.tsx",
+      "components": []
+    },
+    {
+      "screenId": "screen-profile",
+      "screenName": "Profile",
+      "file": "src/pages/profile.tsx",
+      "components": []
+    },
+    {
+      "screenId": "screen-settings",
+      "screenName": "Settings",
+      "file": "src/pages/settings.tsx",
+      "components": []
+    },
+    {
+      "screenId": "screen-notifications",
+      "screenName": "Notifications",
+      "file": "src/pages/notifications.tsx",
+      "components": []
+    },
+    {
+      "screenId": "screen-about",
+      "screenName": "About",
+      "file": "src/pages/about.tsx",
+      "components": []
+    }
+  ]
+}

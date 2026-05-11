@@ -1,0 +1,60 @@
+{
+  "citations": [
+    {
+      "euTarget": "PSD2 (Directive (EU) 2015/2366) art. 97",
+      "local": "Ustawa o usługach płatniczych art. 32a",
+      "localTopic": "Strong customer authentication"
+    },
+    {
+      "euTarget": "PSD2 art. 66",
+      "local": "Ustawa o usługach płatniczych art. 59l",
+      "localTopic": "Open banking / TPP access"
+    },
+    {
+      "euTarget": "AMLD5 (Directive (EU) 2018/843) art. 13",
+      "local": "Ustawa o przeciwdziałaniu praniu pieniędzy art. 35",
+      "localTopic": "Customer due diligence"
+    },
+    {
+      "euTarget": "EBA Guidelines on ICT and security risk management (EBA/GL/2019/04)",
+      "local": "Rekomendacja KNF M",
+      "localTopic": "Operational risk management"
+    },
+    {
+      "euTarget": "DORA (Regulation (EU) 2022/2554) art. 5–7",
+      "local": "Rekomendacja KNF H",
+      "localTopic": "ICT systems governance"
+    },
+    {
+      "euTarget": "EBA Guidelines on outsourcing (EBA/GL/2019/02)",
+      "local": "Rekomendacja KNF Z",
+      "localTopic": "Outsourcing of banking activities"
+    },
+    {
+      "euTarget": "DORA art. 28",
+      "local": "Ustawa Prawo bankowe art. 6a",
+      "localTopic": "Outsourcing"
+    },
+    {
+      "euTarget": "Consumer Credit Directive (Directive 2008/48/EC) art. 5",
+      "local": "Ustawa o kredycie konsumenckim art. 5",
+      "localTopic": "Consumer credit information disclosure"
+    },
+    {
+      "euTarget": "EU AI Act (Regulation (EU) 2024/1689) art. 6, art. 9–15",
+      "local": "Stanowisko KNF w sprawie sztucznej inteligencji (2024)",
+      "localTopic": "AI in financial services"
+    },
+    {
+      "euTarget": "DORA art. 8–16",
+      "local": "Rekomendacja KNF D",
+      "localTopic": "IT and IT-security risk management"
+    }
+  ],
+  "locale": "PL-PL",
+  "nationalRegulator": {
+    "code": "KNF",
+    "country": "Poland",
+    "name": "Komisja Nadzoru Finansowego"
+  }
+}

@@ -1,0 +1,100 @@
+{
+  "source": {
+    "kind": "figma_local_json"
+  },
+  "screens": [
+    {
+      "screenId": "s-tagesgeld",
+      "screenName": "Tagesgeld einrichten",
+      "screenPath": "/banking/retail/tagesgeld/setup",
+      "nodes": [
+        {
+          "nodeId": "n-iban-source",
+          "nodeName": "Quell-IBAN",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "tagesgeld/source-iban",
+          "text": "Quell-IBAN",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "IBAN format",
+            "IBAN is owned by applicant"
+          ]
+        },
+        {
+          "nodeId": "n-betrag",
+          "nodeName": "Erstanlage in EUR",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "tagesgeld/initial-amount",
+          "text": "Erstanlage in EUR",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Numeric",
+            "Min 100",
+            "Max 1000000"
+          ]
+        },
+        {
+          "nodeId": "n-zinsmodell",
+          "nodeName": "Zinsmodell",
+          "nodeType": "SELECT_FIELD",
+          "nodePath": "tagesgeld/interest-tier",
+          "text": "Zinsmodell",
+          "childNodeIds": [],
+          "defaultValue": "Variabel",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-zins-anzeige",
+          "nodeName": "Zins p.a.",
+          "nodeType": "RESULT_DISPLAY",
+          "nodePath": "tagesgeld/interest-rate",
+          "text": "Aktueller Zins p.a.",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Reflects active product table",
+            "Updates when Zinsmodell changes"
+          ]
+        },
+        {
+          "nodeId": "n-zinsen-quartal",
+          "nodeName": "Quartalsweise Zinszahlung",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "tagesgeld/interest-frequency",
+          "text": "Quartalsweise Zinszahlung",
+          "childNodeIds": [],
+          "defaultValue": "Yes",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-confirm-zins",
+          "nodeName": "Zinsdisclosure bestaetigt",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "compliance/zins-disclosure",
+          "text": "Zinsdisclosure bestaetigt",
+          "childNodeIds": [],
+          "defaultValue": "No",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-submit",
+          "nodeName": "Tagesgeld eroeffnen",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/submit",
+          "text": "Tagesgeld eroeffnen",
+          "childNodeIds": []
+        }
+      ]
+    }
+  ]
+}

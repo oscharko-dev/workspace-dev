@@ -1,0 +1,6 @@
+Key: PAY-2001
+Summary: Payment Amount validation must reject overdraft
+Type: Story
+Status: Open
+Priority: High
+Description: Customers initiate a SEPA payment from the payments form. The Payment Amount field must reject values exceeding the available balance. Data classification: PCI-DSS-3. Acceptance: 1) Reject negative values. 2) Reject more than 2 decimal places. 3) Reject when amount exceeds balance.

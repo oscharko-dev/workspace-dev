@@ -1,0 +1,70 @@
+{
+  "source": {
+    "kind": "hybrid"
+  },
+  "screens": [
+    {
+      "screenId": "s-account-open",
+      "screenName": "Open Account",
+      "nodes": [
+        {
+          "nodeId": "n-given-name",
+          "nodeName": "Given Name",
+          "nodeType": "TEXT_INPUT",
+          "text": "Given Name",
+          "defaultValue": "Anna",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-family-name",
+          "nodeName": "Family Name",
+          "nodeType": "TEXT_INPUT",
+          "text": "Family Name",
+          "defaultValue": "Beispiel",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-tax-id",
+          "nodeName": "Tax ID",
+          "nodeType": "TEXT_INPUT",
+          "text": "Tax ID",
+          "defaultValue": "65929970489",
+          "validations": ["Required", "Tax ID checksum"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-postcode",
+          "nodeName": "Postcode",
+          "nodeType": "TEXT_INPUT",
+          "text": "Postcode",
+          "defaultValue": "10115",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-continue",
+          "nodeName": "Continue",
+          "nodeType": "BUTTON",
+          "text": "Continue",
+          "navigationTarget": "s-account-review",
+          "childNodeIds": []
+        }
+      ]
+    },
+    {
+      "screenId": "s-account-review",
+      "screenName": "Review",
+      "nodes": [
+        {
+          "nodeId": "n-confirm",
+          "nodeName": "Confirm",
+          "nodeType": "BUTTON",
+          "text": "Confirm",
+          "childNodeIds": []
+        }
+      ]
+    }
+  ]
+}

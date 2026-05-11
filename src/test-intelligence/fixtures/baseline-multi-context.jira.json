@@ -1,0 +1,19 @@
+{
+  "expand": "names,schema",
+  "issues": [
+    {
+      "key": "ACCT-2001",
+      "fields": {
+        "summary": "Open Account — KYC fields and reviewer flow",
+        "status": { "name": "In Progress" },
+        "priority": { "name": "High" },
+        "issuetype": { "name": "Story" },
+        "labels": ["account-opening", "kyc", "regulatory"],
+        "description": "Customer must enter Given Name, Family Name, Tax ID and Postcode on the Open Account screen, then proceed to Review where a second confirmation step is required before submission. Tax ID must pass a checksum check."
+      }
+    }
+  ],
+  "startAt": 0,
+  "maxResults": 50,
+  "total": 1
+}

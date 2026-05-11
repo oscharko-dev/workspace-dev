@@ -1,0 +1,29 @@
+{
+  "kind": "workspace-dev/figma-selection@1",
+  "pluginVersion": "0.1.0",
+  "copiedAt": "2026-04-12T18:20:00.000Z",
+  "selections": [
+    {
+      "document": {
+        "id": "20:1",
+        "type": "FRAME",
+        "name": "Checkout Overview",
+        "children": [
+          {
+            "id": "20:2",
+            "type": "TEXT",
+            "name": "Headline",
+            "characters": "Checkout"
+          }
+        ]
+      },
+      "components": {},
+      "componentSets": {},
+      "styles": {
+        "style:checkout": {
+          "name": "Checkout Header"
+        }
+      }
+    }
+  ]
+}

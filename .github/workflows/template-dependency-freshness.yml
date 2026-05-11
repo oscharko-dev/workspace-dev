@@ -1,0 +1,118 @@
+name: workspace-dev template dependency freshness
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/dev' }}
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check-template-dependencies:
+    name: Check template dependency freshness (${{ matrix.templateName }})
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - templateName: react-mui-app
+            packageJsonPath: template/react-mui-app/package.json
+            lockfilePath: template/react-mui-app/pnpm-lock.yaml
+          - templateName: react-tailwind-app
+            packageJsonPath: template/react-tailwind-app/package.json
+            lockfilePath: template/react-tailwind-app/pnpm-lock.yaml
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6
+        with:
+          node-version: 22
+
+      - name: Check template dependency freshness
+        run: >-
+          node scripts/check-template-dependency-freshness.mjs
+          --package-json ${{ matrix.packageJsonPath }}
+          --lockfile ${{ matrix.lockfilePath }}
+          --json-output artifacts/template-dependency-freshness/${{ matrix.templateName }}/report.json
+          --markdown-output artifacts/template-dependency-freshness/${{ matrix.templateName }}/issue.md
+
+      - name: Open or update freshness issue
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9
+        env:
+          REPORT_PATH: artifacts/template-dependency-freshness/${{ matrix.templateName }}/report.json
+          ISSUE_BODY_PATH: artifacts/template-dependency-freshness/${{ matrix.templateName }}/issue.md
+          TEMPLATE_NAME: ${{ matrix.templateName }}
+        with:
+          script: |
+            const fs = require("node:fs");
+            const marker = "<!-- workspace-dev:template-dependency-freshness -->";
+            const title = `Template dependencies need minor or patch updates: ${process.env.TEMPLATE_NAME}`;
+            const legacyTitle = process.env.TEMPLATE_NAME === "react-mui-app"
+              ? "Template dependencies need minor or patch updates"
+              : null;
+            const report = JSON.parse(fs.readFileSync(process.env.REPORT_PATH, "utf8"));
+            const { owner, repo } = context.repo;
+            const openIssues = await github.paginate(github.rest.issues.listForRepo, {
+              owner,
+              repo,
+              state: "open",
+              per_page: 100,
+            });
+            const existingIssue = openIssues.find((issue) => {
+              const isMatchingTitle = issue.title === title || issue.title === legacyTitle;
+              return !issue.pull_request &&
+                isMatchingTitle &&
+                typeof issue.body === "string" &&
+                issue.body.startsWith(marker);
+            });
+
+            if (!Array.isArray(report.staleDependencies) || report.staleDependencies.length === 0) {
+              if (existingIssue) {
+                await github.rest.issues.createComment({
+                  owner,
+                  repo,
+                  issue_number: existingIssue.number,
+                  body: `${marker}\n\nTemplate dependency freshness for ${process.env.TEMPLATE_NAME} is back within policy as of ${report.checkedAt}. Closing this automation-created issue.`,
+                });
+                await github.rest.issues.update({
+                  owner,
+                  repo,
+                  issue_number: existingIssue.number,
+                  state: "closed",
+                  state_reason: "completed",
+                });
+                core.notice(`Closed resolved template dependency freshness issue #${existingIssue.number} for ${process.env.TEMPLATE_NAME}.`);
+                return;
+              }
+              core.notice(`No template dependencies are more than 30 days behind latest same-major minor/patch releases for ${process.env.TEMPLATE_NAME}.`);
+              return;
+            }
+
+            const body = fs.readFileSync(process.env.ISSUE_BODY_PATH, "utf8");
+            if (existingIssue) {
+              await github.rest.issues.update({
+                owner,
+                repo,
+                issue_number: existingIssue.number,
+                title,
+                body,
+              });
+              core.notice(`Updated template dependency freshness issue #${existingIssue.number} for ${process.env.TEMPLATE_NAME}.`);
+              return;
+            }
+
+            const created = await github.rest.issues.create({
+              owner,
+              repo,
+              title,
+              body,
+            });
+            core.notice(`Created template dependency freshness issue #${created.data.number} for ${process.env.TEMPLATE_NAME}.`);

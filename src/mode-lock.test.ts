@@ -1,11 +1,51 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { validateModeLock, enforceModeLock, getWorkspaceDefaults } from "./mode-lock.js";
+import {
+  validateModeLock,
+  enforceModeLock,
+  getWorkspaceDefaults,
+} from "./mode-lock.js";
 
 test("mode-lock allows rest + deterministic", () => {
   const result = validateModeLock({
     figmaSourceMode: "rest",
-    llmCodegenMode: "deterministic"
+    llmCodegenMode: "deterministic",
+  });
+  assert.equal(result.valid, true);
+  assert.equal(result.errors.length, 0);
+});
+
+test("mode-lock allows local_json + deterministic", () => {
+  const result = validateModeLock({
+    figmaSourceMode: "local_json",
+    llmCodegenMode: "deterministic",
+  });
+  assert.equal(result.valid, true);
+  assert.equal(result.errors.length, 0);
+});
+
+test("mode-lock allows hybrid + deterministic", () => {
+  const result = validateModeLock({
+    figmaSourceMode: "hybrid",
+    llmCodegenMode: "deterministic",
+  });
+  assert.equal(result.valid, true);
+  assert.equal(result.errors.length, 0);
+});
+
+test("mode-lock allows figma_plugin + deterministic", () => {
+  const result = validateModeLock({
+    figmaSourceMode: "figma_plugin",
+    llmCodegenMode: "deterministic",
+  });
+  assert.equal(result.valid, true);
+  assert.equal(result.errors.length, 0);
+});
+
+test("mode-lock allows figma_paste + deterministic", () => {
+  const result = validateModeLock({
+    figmaSourceMode: "figma_paste",
+    llmCodegenMode: "deterministic",
   });
   assert.equal(result.valid, true);
   assert.equal(result.errors.length, 0);
@@ -24,12 +64,6 @@ test("mode-lock blocks mcp mode", () => {
   assert.match(result.errors[0]!, /mcp.*not available/i);
 });
 
-test("mode-lock blocks hybrid figma source mode", () => {
-  const result = validateModeLock({ figmaSourceMode: "hybrid" });
-  assert.equal(result.valid, false);
-  assert.match(result.errors[0]!, /hybrid.*not available/i);
-});
-
 test("mode-lock blocks hybrid codegen mode", () => {
   const result = validateModeLock({ llmCodegenMode: "hybrid" });
   assert.equal(result.valid, false);
@@ -45,7 +79,7 @@ test("mode-lock blocks llm_strict codegen mode", () => {
 test("mode-lock reports both violations simultaneously", () => {
   const result = validateModeLock({
     figmaSourceMode: "mcp",
-    llmCodegenMode: "llm_strict"
+    llmCodegenMode: "llm_strict",
   });
   assert.equal(result.valid, false);
   assert.equal(result.errors.length, 2);
@@ -66,13 +100,51 @@ test("mode-lock blocks unknown codegen mode", () => {
 test("enforceModeLock throws for blocked modes", () => {
   assert.throws(
     () => enforceModeLock({ figmaSourceMode: "mcp" }),
-    /mode-lock violation/i
+    /mode-lock violation/i,
+  );
+});
+
+test("enforceModeLock includes full support guidance and bullet formatting", () => {
+  assert.throws(
+    () => enforceModeLock({ figmaSourceMode: "mcp", llmCodegenMode: "hybrid" }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /Mode-lock violation in workspace-dev:/);
+      assert.match(
+        error.message,
+        /Only 'rest', 'hybrid', 'local_json', 'figma_paste', and 'figma_plugin' are supported/,
+      );
+      assert.match(error.message, /Only 'deterministic' is supported/);
+      assert.match(error.message, /\n  • /);
+      return true;
+    },
   );
 });
 
 test("enforceModeLock does not throw for valid modes", () => {
   assert.doesNotThrow(() =>
-    enforceModeLock({ figmaSourceMode: "rest", llmCodegenMode: "deterministic" })
+    enforceModeLock({
+      figmaSourceMode: "rest",
+      llmCodegenMode: "deterministic",
+    }),
+  );
+  assert.doesNotThrow(() =>
+    enforceModeLock({
+      figmaSourceMode: "local_json",
+      llmCodegenMode: "deterministic",
+    }),
+  );
+  assert.doesNotThrow(() =>
+    enforceModeLock({
+      figmaSourceMode: "hybrid",
+      llmCodegenMode: "deterministic",
+    }),
+  );
+  assert.doesNotThrow(() =>
+    enforceModeLock({
+      figmaSourceMode: "figma_plugin",
+      llmCodegenMode: "deterministic",
+    }),
   );
 });
 
@@ -85,7 +157,7 @@ test("getWorkspaceDefaults returns enforced values", () => {
 test("mode-lock is case-insensitive", () => {
   const result = validateModeLock({
     figmaSourceMode: "REST",
-    llmCodegenMode: "DETERMINISTIC"
+    llmCodegenMode: "DETERMINISTIC",
   });
   assert.equal(result.valid, true);
 });

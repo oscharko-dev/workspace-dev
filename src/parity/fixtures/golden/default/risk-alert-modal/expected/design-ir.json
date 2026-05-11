@@ -1,0 +1,451 @@
+{
+  "sourceName": "Risk Alert Modal Board",
+  "screens": [
+    {
+      "id": "modal-card",
+      "name": "Risk Alert Modal",
+      "layoutMode": "NONE",
+      "gap": 0,
+      "padding": {
+        "top": 0,
+        "right": 0,
+        "bottom": 0,
+        "left": 0
+      },
+      "children": [
+        {
+          "id": "risk-severity-badge",
+          "name": "Severity Badge",
+          "nodeType": "FRAME",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "badge",
+          "x": 104,
+          "y": 104,
+          "width": 128,
+          "height": 32,
+          "fillColor": "#ffe8d1",
+          "cornerRadius": 16,
+          "children": [
+            {
+              "id": "risk-severity-label",
+              "name": "Label",
+              "nodeType": "TEXT",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "text",
+              "text": "High Risk",
+              "x": 124,
+              "y": 111,
+              "width": 88,
+              "height": 18,
+              "fillColor": "#ad4a05",
+              "fontSize": 13,
+              "fontWeight": 700,
+              "fontFamily": "Inter",
+              "lineHeight": 18,
+              "textAlign": "CENTER"
+            }
+          ]
+        },
+        {
+          "id": "risk-title",
+          "name": "Modal Title",
+          "nodeType": "TEXT",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "text",
+          "text": "Review payment anomaly",
+          "x": 104,
+          "y": 156,
+          "width": 360,
+          "height": 36,
+          "fillColor": "#1c1f24",
+          "fontSize": 28,
+          "fontWeight": 700,
+          "fontFamily": "Inter",
+          "lineHeight": 36,
+          "textAlign": "LEFT"
+        },
+        {
+          "id": "risk-body",
+          "name": "Modal Body",
+          "nodeType": "TEXT",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "text",
+          "text": "Synthetic rule hit: payment velocity exceeds the configured demo threshold for this segment.",
+          "x": 104,
+          "y": 208,
+          "width": 448,
+          "height": 56,
+          "fillColor": "#575c66",
+          "fontSize": 16,
+          "fontWeight": 400,
+          "fontFamily": "Inter",
+          "lineHeight": 28,
+          "textAlign": "LEFT"
+        },
+        {
+          "id": "risk-summary-panel",
+          "name": "Risk Summary Panel",
+          "nodeType": "FRAME",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "paper",
+          "x": 104,
+          "y": 288,
+          "width": 448,
+          "height": 72,
+          "fillColor": "#f7faff",
+          "cornerRadius": 12,
+          "children": [
+            {
+              "id": "risk-summary-label",
+              "name": "Label",
+              "nodeType": "TEXT",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "text",
+              "text": "Exposure under review",
+              "x": 124,
+              "y": 302,
+              "width": 180,
+              "height": 20,
+              "fillColor": "#666b75",
+              "fontSize": 14,
+              "fontWeight": 500,
+              "fontFamily": "Inter",
+              "lineHeight": 20,
+              "textAlign": "LEFT"
+            },
+            {
+              "id": "risk-summary-value",
+              "name": "Value",
+              "nodeType": "TEXT",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "text",
+              "text": "EUR 2.4M synthetic portfolio",
+              "x": 124,
+              "y": 326,
+              "width": 280,
+              "height": 28,
+              "fillColor": "#1c1f24",
+              "fontSize": 20,
+              "fontWeight": 700,
+              "fontFamily": "Inter",
+              "lineHeight": 28,
+              "textAlign": "LEFT"
+            }
+          ]
+        },
+        {
+          "id": "risk-actions",
+          "name": "Action Row",
+          "nodeType": "FRAME",
+          "layoutMode": "HORIZONTAL",
+          "gap": 12,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "primaryAxisAlignItems": "MIN",
+          "counterAxisAlignItems": "CENTER",
+          "type": "stack",
+          "x": 288,
+          "y": 392,
+          "width": 264,
+          "height": 48,
+          "children": [
+            {
+              "id": "risk-secondary-button",
+              "name": "Secondary Button",
+              "nodeType": "FRAME",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "button",
+              "x": 288,
+              "y": 392,
+              "width": 120,
+              "height": 48,
+              "strokeColor": "#bdc4d1",
+              "strokeWidth": 1,
+              "cornerRadius": 8,
+              "children": [
+                {
+                  "id": "risk-secondary-label",
+                  "name": "Label",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "Dismiss",
+                  "x": 320,
+                  "y": 405,
+                  "width": 56,
+                  "height": 22,
+                  "fillColor": "#1c1f24",
+                  "fontSize": 16,
+                  "fontWeight": 600,
+                  "fontFamily": "Inter",
+                  "lineHeight": 22,
+                  "textAlign": "CENTER"
+                }
+              ]
+            },
+            {
+              "id": "risk-primary-button",
+              "name": "Primary Button",
+              "nodeType": "FRAME",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "paper",
+              "x": 420,
+              "y": 392,
+              "width": 132,
+              "height": 48,
+              "fillColor": "#ed001f",
+              "cornerRadius": 8,
+              "children": [
+                {
+                  "id": "risk-primary-label",
+                  "name": "Label",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "Open Case",
+                  "x": 444,
+                  "y": 405,
+                  "width": 84,
+                  "height": 22,
+                  "fillColor": "#ffffff",
+                  "fontSize": 16,
+                  "fontWeight": 600,
+                  "fontFamily": "Inter",
+                  "lineHeight": 22,
+                  "textAlign": "CENTER"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "width": 576,
+      "height": 416,
+      "fillColor": "#ffffff"
+    }
+  ],
+  "tokens": {
+    "palette": {
+      "primary": "#ed001f",
+      "secondary": "#1c1f24",
+      "background": "#f8f9fc",
+      "text": "#1c1f24",
+      "success": "#16A34A",
+      "warning": "#ad4a05",
+      "error": "#ed001f",
+      "info": "#bdc4d1",
+      "divider": "#1c1f241f",
+      "action": {
+        "active": "#1c1f248a",
+        "hover": "#ed001f0a",
+        "selected": "#ed001f14",
+        "disabled": "#1c1f2442",
+        "disabledBackground": "#1c1f241f",
+        "focus": "#ed001f1f"
+      }
+    },
+    "borderRadius": 12,
+    "spacingBase": 12,
+    "fontFamily": "Inter, Roboto, Arial, sans-serif",
+    "headingSize": 28,
+    "bodySize": 13,
+    "typography": {
+      "h1": {
+        "fontSizePx": 28,
+        "fontWeight": 700,
+        "lineHeightPx": 36,
+        "fontFamily": "Inter"
+      },
+      "h2": {
+        "fontSizePx": 20,
+        "fontWeight": 700,
+        "lineHeightPx": 28,
+        "fontFamily": "Inter"
+      },
+      "h3": {
+        "fontSizePx": 13,
+        "fontWeight": 700,
+        "lineHeightPx": 18,
+        "fontFamily": "Inter"
+      },
+      "h4": {
+        "fontSizePx": 13,
+        "fontWeight": 700,
+        "lineHeightPx": 18,
+        "fontFamily": "Inter"
+      },
+      "h5": {
+        "fontSizePx": 13,
+        "fontWeight": 700,
+        "lineHeightPx": 18,
+        "fontFamily": "Inter"
+      },
+      "h6": {
+        "fontSizePx": 13,
+        "fontWeight": 700,
+        "lineHeightPx": 18,
+        "fontFamily": "Inter"
+      },
+      "subtitle1": {
+        "fontSizePx": 13,
+        "fontWeight": 700,
+        "lineHeightPx": 36,
+        "fontFamily": "Inter"
+      },
+      "subtitle2": {
+        "fontSizePx": 13,
+        "fontWeight": 700,
+        "lineHeightPx": 28,
+        "fontFamily": "Inter"
+      },
+      "body1": {
+        "fontSizePx": 13,
+        "fontWeight": 400,
+        "lineHeightPx": 28,
+        "fontFamily": "Inter"
+      },
+      "body2": {
+        "fontSizePx": 13,
+        "fontWeight": 500,
+        "lineHeightPx": 20,
+        "fontFamily": "Inter"
+      },
+      "button": {
+        "fontSizePx": 13,
+        "fontWeight": 400,
+        "lineHeightPx": 28,
+        "fontFamily": "Inter",
+        "textTransform": "none"
+      },
+      "caption": {
+        "fontSizePx": 13,
+        "fontWeight": 700,
+        "lineHeightPx": 18,
+        "fontFamily": "Inter"
+      },
+      "overline": {
+        "fontSizePx": 13,
+        "fontWeight": 700,
+        "lineHeightPx": 18,
+        "fontFamily": "Inter",
+        "letterSpacingEm": 0.08
+      }
+    },
+    "tokenSource": {
+      "palette": "clustering",
+      "typography": "clustering",
+      "spacing": "clustering",
+      "borderRadius": "clustering",
+      "fontFamily": "clustering"
+    }
+  },
+  "metrics": {
+    "fetchedNodes": 0,
+    "skippedHidden": 0,
+    "skippedPlaceholders": 0,
+    "prototypeNavigationDetected": 0,
+    "prototypeNavigationResolved": 0,
+    "prototypeNavigationUnresolved": 0,
+    "screenElementCounts": [
+      {
+        "screenId": "modal-card",
+        "screenName": "Risk Alert Modal",
+        "elements": 12
+      }
+    ],
+    "truncatedScreens": [],
+    "depthTruncatedScreens": [],
+    "classificationFallbacks": [],
+    "degradedGeometryNodes": [],
+    "nodeDiagnostics": []
+  },
+  "themeAnalysis": {
+    "darkModeDetected": false,
+    "signals": {
+      "luminance": false,
+      "naming": false,
+      "lightDarkPair": false
+    }
+  }
+}

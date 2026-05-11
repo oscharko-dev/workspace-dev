@@ -1,0 +1,10 @@
+{
+  "screens": [
+    {
+      "screenId": "screen-home-desktop",
+      "screenName": "Home Desktop",
+      "file": "src/pages/home-desktop.tsx",
+      "components": []
+    }
+  ]
+}

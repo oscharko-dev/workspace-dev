@@ -1,0 +1,13 @@
+{
+  "issues": [
+    {
+      "key": "ACCT-1001",
+      "fields": {
+        "issuetype": { "name": "Story" },
+        "summary": "Account Opening - KYC Verification",
+        "description": "As a new customer, I open a current account and upload a KYC document so that the bank can verify my identity. Acceptance criteria: 1) Required given name, family name, email. 2) Document type must be one of passport or national_id. 3) Upload must succeed within 5 seconds for a 2 MiB document.",
+        "status": { "name": "Open" }
+      }
+    }
+  ]
+}

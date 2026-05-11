@@ -1,0 +1,37 @@
+{
+  "fixtureId": "faithfulness-edge-low-contrast",
+  "judge": "faithfulness",
+  "scenarioKind": "edge",
+  "humanVerdict": "repair",
+  "humanFindingCodes": [
+    "mismatch_visual_contrast"
+  ],
+  "rationale": "Button text is visually low-contrast against its background \u2014 the case needs to add a contrast assertion; reviewer marked it as repairable.",
+  "goldVerdicts": [
+    {
+      "reviewer": "reviewer:banking-sme:beta",
+      "verdict": "repair",
+      "findingCodes": [
+        "mismatch_visual_contrast"
+      ],
+      "rationale": "Banking-domain SME first-pass review: Button text is visually low-contrast against its background \u2014 the case needs to add a contrast assertion; reviewer marked it as repairable.",
+      "timestamp": "2026-04-29T10:00:00.000Z"
+    },
+    {
+      "reviewer": "reviewer:insurance-sme:gamma",
+      "verdict": "repair",
+      "findingCodes": [
+        "mismatch_visual_contrast"
+      ],
+      "rationale": "Independent second-reviewer pass: confirmed the first-pass verdict \u2014 Button text is visually low-contrast against its background \u2014 the case needs to add a contrast assertion; reviewer marked it as repairable.",
+      "timestamp": "2026-04-30T14:00:00.000Z"
+    }
+  ],
+  "adjudicated": false,
+  "mockJudgeResponse": {
+    "predictedVerdict": "repair",
+    "predictedFindingCodes": [
+      "mismatch_visual_contrast"
+    ]
+  }
+}

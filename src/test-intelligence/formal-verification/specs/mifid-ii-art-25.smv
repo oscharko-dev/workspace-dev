@@ -1,0 +1,81 @@
+-- =====================================================================
+-- MiFID II suitability (Art. 25(2)) — formal-verification spec
+-- =====================================================================
+--
+-- Pilot for Issue #2181.
+--
+-- Source obligations:
+--   * Directive 2014/65/EU Article 25(2)
+--       "When providing investment advice or portfolio management the
+--        investment firm shall obtain the necessary information
+--        regarding the client's or potential client's knowledge and
+--        experience [...] so as to enable the firm to recommend to the
+--        client [...] the investment services and financial instruments
+--        that are suitable for him."
+--   * Commission Delegated Regulation 2017/565 Article 54
+--       "Where an investment firm providing investment advice does not
+--        obtain the information required [...] the firm shall not
+--        recommend investment services or financial instruments to the
+--        client or potential client."
+--
+-- Operational state-machine model:
+--
+--   advice_state takes values in {entry, gathering, assessing,
+--                                 recommended, refused}
+--   info_complete is a boolean (TRUE iff suitability questionnaire
+--                               returned a complete profile)
+--
+-- Transitions (mirror the runtime rule pack's expected order):
+--
+--   entry         --(advisor starts session)-->    gathering
+--   gathering     --(questionnaire complete)-->    assessing  (info_complete := TRUE)
+--   gathering     --(client refuses to answer)-->  refused    (info_complete stays FALSE)
+--   assessing     --(profile matches product)-->   recommended
+--   assessing     --(profile mismatch)-->          refused
+--   recommended/refused                            (absorbing)
+--
+-- Verified properties:
+--
+--   (P1) Liveness: every advisory session terminates in either a
+--        recommendation or a refusal — the assessment cannot loop.
+--
+--   (P2) Safety (CDR Art. 54 enforcement): a recommendation is never
+--        issued without complete client information.
+--        => excludes the "advise-without-suitability" attacker path.
+--
+--   (P3) Safety: the entry state always reaches the gathering state
+--        before any recommendation is possible.
+
+MODULE main
+
+VAR
+  advice_state  : { entry, gathering, assessing, recommended, refused };
+  info_complete : boolean;
+
+ASSIGN
+  init(advice_state)  := entry;
+  init(info_complete) := FALSE;
+
+  next(advice_state) := case
+    advice_state = entry                                    : gathering;
+    advice_state = gathering                                : { assessing, refused };
+    advice_state = assessing & info_complete = TRUE         : { recommended, refused };
+    advice_state = assessing & info_complete = FALSE        : refused;
+    advice_state = recommended                              : recommended;
+    advice_state = refused                                  : refused;
+    TRUE                                                    : advice_state;
+  esac;
+
+  next(info_complete) := case
+    advice_state = gathering                                : { TRUE, FALSE };
+    TRUE                                                    : info_complete;
+  esac;
+
+-- (P1) Liveness: every session terminates.
+LTLSPEC G ( advice_state = entry -> F ( advice_state = recommended | advice_state = refused ) )
+
+-- (P2) CDR Art. 54: cannot recommend without complete information.
+LTLSPEC G ( advice_state = recommended -> info_complete = TRUE )
+
+-- (P3) Gathering must precede recommendation.
+LTLSPEC G ( advice_state = entry -> X ( advice_state != recommended ) )

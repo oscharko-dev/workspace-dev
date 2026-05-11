@@ -1,0 +1,72 @@
+{
+  "schemaVersion": "1.0.0",
+  "pipelineId": "default",
+  "summary": {
+    "status": "warn",
+    "message": "Generated accessibility report flagged 2 warning(s) across 2 screen(s).",
+    "screenCount": 2,
+    "warningCount": 2,
+    "semanticOutputWarningCount": 2,
+    "formLabelWarningCount": 0,
+    "buttonSemanticsWarningCount": 0,
+    "ariaLabelFallbackWarningCount": 0,
+    "altFallbackWarningCount": 0,
+    "focusOrderWarningCount": 0,
+    "lowContrastWarningCount": 0,
+    "clickDivFallbackWarningCount": 0
+  },
+  "screens": [
+    {
+      "screenId": "screen-dashboard-light",
+      "screenName": "Dashboard Light",
+      "warningCount": 1,
+      "warnings": [
+        {
+          "screenId": "screen-dashboard-light",
+          "screenName": "Dashboard Light",
+          "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+          "severity": "warning",
+          "nodeId": "light-summary-card",
+          "nodeName": "Summary Card",
+          "message": "Default semantic synthesis kept 'Summary Card' inline because no matching reusable semantic structure was found."
+        }
+      ]
+    },
+    {
+      "screenId": "screen-dashboard-dark",
+      "screenName": "Dashboard Dark",
+      "warningCount": 1,
+      "warnings": [
+        {
+          "screenId": "screen-dashboard-dark",
+          "screenName": "Dashboard Dark",
+          "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+          "severity": "warning",
+          "nodeId": "dark-summary-card",
+          "nodeName": "Summary Card",
+          "message": "Default semantic synthesis kept 'Summary Card' inline because no matching reusable semantic structure was found."
+        }
+      ]
+    }
+  ],
+  "warnings": [
+    {
+      "screenId": "screen-dashboard-light",
+      "screenName": "Dashboard Light",
+      "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+      "severity": "warning",
+      "nodeId": "light-summary-card",
+      "nodeName": "Summary Card",
+      "message": "Default semantic synthesis kept 'Summary Card' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-dashboard-dark",
+      "screenName": "Dashboard Dark",
+      "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+      "severity": "warning",
+      "nodeId": "dark-summary-card",
+      "nodeName": "Summary Card",
+      "message": "Default semantic synthesis kept 'Summary Card' inline because no matching reusable semantic structure was found."
+    }
+  ]
+}

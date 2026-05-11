@@ -1,0 +1,6 @@
+Key: AIR-5001
+Summary: Fraud detection workflow for card-not-present transactions
+Type: Story
+Status: Open
+Priority: High
+Description: When a card-not-present transaction matches the high-risk velocity rule, the fraud workflow must place the transaction on hold and notify the card holder over the secure channel. Acceptance: 1) Hold occurs within 200ms. 2) Notification is sent only over the secure channel. 3) The decision and rationale are recorded for audit.

@@ -1,0 +1,508 @@
+{
+  "artifact": "storybook.component-visual-catalog",
+  "entries": [
+    {
+      "comparisonStatus": "skipped",
+      "componentId": "component:1:49959::unmatched",
+      "familyId": "family:d21d8444f976b00e",
+      "figmaFamilyKey": "component:1:49959",
+      "figmaFamilyName": "_<CharacterCount>",
+      "matchStatus": "unmatched",
+      "skipReason": "unmatched",
+      "warnings": []
+    },
+    {
+      "comparisonStatus": "skipped",
+      "componentId": "component:1:45022::unmatched",
+      "familyId": "family:d21d8444f976b00e",
+      "figmaFamilyKey": "component:1:45022",
+      "figmaFamilyName": "_<InputAdornment>",
+      "matchStatus": "unmatched",
+      "skipReason": "unmatched",
+      "warnings": []
+    },
+    {
+      "comparisonStatus": "skipped",
+      "componentId": "component:1:54808::components-feedback-alert--default",
+      "familyId": "family:a69b3fb0341c2384",
+      "figmaFamilyKey": "component:1:54808",
+      "figmaFamilyName": "<Alert>",
+      "matchStatus": "matched",
+      "skipReason": "missing_reference_node",
+      "warnings": []
+    },
+    {
+      "baselineCanvas": {
+        "padding": 16
+      },
+      "captureStrategy": "storybook_root_union",
+      "comparisonStatus": "ready",
+      "componentId": "component:1:41120::components-display-avatar-avatar--circular-mit-icon",
+      "familyId": "family:f067e5a58c566f6d",
+      "figmaFamilyKey": "component:1:41120",
+      "figmaFamilyName": "<Avatar>",
+      "iframeId": "components-display-avatar-avatar--circular-mit-icon",
+      "matchStatus": "matched",
+      "referenceFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
+      "referenceNodeId": "1302:97713",
+      "storyEntryId": "components-display-avatar-avatar--circular-mit-icon",
+      "storyTitle": "Components/Display/Avatar/Avatar/Circular mit Icon",
+      "warnings": []
+    },
+    {
+      "comparisonStatus": "skipped",
+      "componentId": "component:1:62629::components-inputs-button-button--primary",
+      "familyId": "family:7368118c318b285c",
+      "figmaFamilyKey": "component:1:62629",
+      "figmaFamilyName": "<Button>",
+      "matchStatus": "matched",
+      "skipReason": "missing_reference_node",
+      "warnings": []
+    },
+    {
+      "baselineCanvas": {
+        "padding": 16
+      },
+      "captureStrategy": "storybook_root_union",
+      "comparisonStatus": "ready",
+      "componentId": "component:1:62821::components-inputs-button-button--secondary",
+      "familyId": "family:7368118c318b285c",
+      "figmaFamilyKey": "component:1:62821",
+      "figmaFamilyName": "<Button>",
+      "iframeId": "components-inputs-button-button--secondary",
+      "matchStatus": "matched",
+      "referenceFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
+      "referenceNodeId": "9403:23050",
+      "storyEntryId": "components-inputs-button-button--secondary",
+      "storyTitle": "Components/Inputs/Button/Button/Secondary",
+      "warnings": []
+    },
+    {
+      "comparisonStatus": "skipped",
+      "componentId": "component:1:48552::components-display-chip--default",
+      "familyId": "family:b31e3f5e703497e5",
+      "figmaFamilyKey": "component:1:48552",
+      "figmaFamilyName": "<Chip>",
+      "matchStatus": "matched",
+      "skipReason": "missing_reference_node",
+      "warnings": []
+    },
+    {
+      "baselineCanvas": {
+        "padding": 16
+      },
+      "captureStrategy": "storybook_root_union",
+      "comparisonStatus": "ready",
+      "componentId": "component:1:38908::components-display-divider--default",
+      "familyId": "family:456ad848bd366d33",
+      "figmaFamilyKey": "component:1:38908",
+      "figmaFamilyName": "<Divider>",
+      "iframeId": "components-display-divider--default",
+      "matchStatus": "matched",
+      "referenceFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
+      "referenceNodeId": "6641:130",
+      "storyEntryId": "components-display-divider--default",
+      "storyTitle": "Components/Display/Divider/Default",
+      "warnings": []
+    },
+    {
+      "comparisonStatus": "skipped",
+      "componentId": "component:1:39153::reactlib-dynamictypography--default",
+      "familyId": "family:b5aee49ef09bcb1a",
+      "figmaFamilyKey": "component:1:39153",
+      "figmaFamilyName": "<Dynamic Typography> (headlines)",
+      "matchStatus": "matched",
+      "skipReason": "missing_reference_node",
+      "warnings": []
+    },
+    {
+      "comparisonStatus": "skipped",
+      "componentId": "component:1:39169::reactlib-dynamictypography--default",
+      "familyId": "family:b5aee49ef09bcb1a",
+      "figmaFamilyKey": "component:1:39169",
+      "figmaFamilyName": "<Dynamic Typography> (headlines)",
+      "matchStatus": "matched",
+      "skipReason": "missing_reference_node",
+      "warnings": []
+    },
+    {
+      "comparisonStatus": "skipped",
+      "componentId": "component:1:38938::components-display-icon--default",
+      "familyId": "family:dc489f432d373f73",
+      "figmaFamilyKey": "component:1:38938",
+      "figmaFamilyName": "<Icon>",
+      "matchStatus": "matched",
+      "skipReason": "missing_reference_node",
+      "warnings": []
+    },
+    {
+      "comparisonStatus": "skipped",
+      "componentId": "component:1:39046::components-display-icon--default",
+      "familyId": "family:dc489f432d373f73",
+      "figmaFamilyKey": "component:1:39046",
+      "figmaFamilyName": "<Icon>",
+      "matchStatus": "matched",
+      "skipReason": "missing_reference_node",
+      "warnings": []
+    },
+    {
+      "comparisonStatus": "skipped",
+      "componentId": "component:1:43449::components-display-iconbutton--default",
+      "familyId": "family:79b93d8ab4a3b4b6",
+      "figmaFamilyKey": "component:1:43449",
+      "figmaFamilyName": "<IconButton>",
+      "matchStatus": "matched",
+      "skipReason": "missing_reference_node",
+      "warnings": []
+    },
+    {
+      "comparisonStatus": "skipped",
+      "componentId": "component:1:54308::components-inputs-radio--docs",
+      "familyId": "family:efcf07191e83d7f3",
+      "figmaFamilyKey": "component:1:54308",
+      "figmaFamilyName": "<Radio>",
+      "matchStatus": "matched",
+      "skipReason": "missing_story",
+      "warnings": []
+    },
+    {
+      "comparisonStatus": "skipped",
+      "componentId": "component:1:54316::components-inputs-radio--docs",
+      "familyId": "family:efcf07191e83d7f3",
+      "figmaFamilyKey": "component:1:54316",
+      "figmaFamilyName": "<Radio>",
+      "matchStatus": "matched",
+      "skipReason": "missing_story",
+      "warnings": []
+    },
+    {
+      "comparisonStatus": "skipped",
+      "componentId": "component:1:45038::components-inputs-select--filled",
+      "familyId": "family:707df9156603cf5e",
+      "figmaFamilyKey": "component:1:45038",
+      "figmaFamilyName": "<Select>",
+      "matchStatus": "matched",
+      "skipReason": "missing_reference_node",
+      "warnings": []
+    },
+    {
+      "comparisonStatus": "skipped",
+      "componentId": "component:1:45150::components-inputs-select--filled",
+      "familyId": "family:707df9156603cf5e",
+      "figmaFamilyKey": "component:1:45150",
+      "figmaFamilyName": "<Select>",
+      "matchStatus": "matched",
+      "skipReason": "missing_reference_node",
+      "warnings": []
+    },
+    {
+      "baselineCanvas": {
+        "padding": 16
+      },
+      "captureStrategy": "storybook_root_union",
+      "comparisonStatus": "ready",
+      "componentId": "component:1:42583::components-layout-stack--default",
+      "familyId": "family:460bc794dff8d6d2",
+      "figmaFamilyKey": "component:1:42583",
+      "figmaFamilyName": "<Stack>",
+      "iframeId": "components-layout-stack--default",
+      "matchStatus": "matched",
+      "referenceFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
+      "referenceNodeId": "4917:180959",
+      "storyEntryId": "components-layout-stack--default",
+      "storyTitle": "Components/Layout/Stack/Default",
+      "warnings": []
+    },
+    {
+      "comparisonStatus": "skipped",
+      "componentId": "component:1:42805::components-layout-stack--default",
+      "familyId": "family:460bc794dff8d6d2",
+      "figmaFamilyKey": "component:1:42805",
+      "figmaFamilyName": "<Stack>",
+      "matchStatus": "matched",
+      "skipReason": "missing_reference_node",
+      "warnings": []
+    },
+    {
+      "baselineCanvas": {
+        "padding": 16
+      },
+      "captureStrategy": "storybook_root_union",
+      "comparisonStatus": "ready",
+      "componentId": "component:1:62521::components-layout-stack--default",
+      "familyId": "family:460bc794dff8d6d2",
+      "figmaFamilyKey": "component:1:62521",
+      "figmaFamilyName": "<Stack>",
+      "iframeId": "components-layout-stack--default",
+      "matchStatus": "matched",
+      "referenceFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
+      "referenceNodeId": "23570:19636",
+      "storyEntryId": "components-layout-stack--default",
+      "storyTitle": "Components/Layout/Stack/Default",
+      "warnings": []
+    },
+    {
+      "comparisonStatus": "skipped",
+      "componentId": "name:stack::ambiguous",
+      "familyId": "family:460bc794dff8d6d2",
+      "figmaFamilyKey": "name:stack",
+      "figmaFamilyName": "<Stack>",
+      "matchStatus": "ambiguous",
+      "skipReason": "ambiguous",
+      "warnings": []
+    },
+    {
+      "comparisonStatus": "skipped",
+      "componentId": "component:1:63214::if-components-button-combination--docs",
+      "familyId": "family:05c1c881393ba770",
+      "figmaFamilyKey": "component:1:63214",
+      "figmaFamilyName": "<Stack> ButtonCombination",
+      "matchStatus": "matched",
+      "skipReason": "missing_story",
+      "warnings": []
+    },
+    {
+      "comparisonStatus": "skipped",
+      "componentId": "component:1:54341::components-formcontrol--default",
+      "familyId": "family:23ff1904f32f8986",
+      "figmaFamilyKey": "component:1:54341",
+      "figmaFamilyName": "<Stack> FormControlLabel Radio",
+      "matchStatus": "matched",
+      "skipReason": "missing_reference_node",
+      "warnings": []
+    },
+    {
+      "comparisonStatus": "skipped",
+      "componentId": "component:1:41763::ambiguous",
+      "familyId": "family:456ad848bd366d33",
+      "figmaFamilyKey": "component:1:41763",
+      "figmaFamilyName": "<Stack2>(Nested)",
+      "matchStatus": "ambiguous",
+      "skipReason": "ambiguous",
+      "warnings": []
+    },
+    {
+      "comparisonStatus": "skipped",
+      "componentId": "component:1:42114::unmatched",
+      "familyId": "family:09856bac732f00a2",
+      "figmaFamilyKey": "component:1:42114",
+      "figmaFamilyName": "<Stack3>(Nested)",
+      "matchStatus": "unmatched",
+      "skipReason": "unmatched",
+      "warnings": []
+    },
+    {
+      "comparisonStatus": "skipped",
+      "componentId": "component:1:42234::unmatched",
+      "familyId": "family:09856bac732f00a2",
+      "figmaFamilyKey": "component:1:42234",
+      "figmaFamilyName": "<Stack3>(Nested)",
+      "matchStatus": "unmatched",
+      "skipReason": "unmatched",
+      "warnings": []
+    },
+    {
+      "comparisonStatus": "skipped",
+      "componentId": "component:1:40054::unmatched",
+      "familyId": "family:09856bac732f00a2",
+      "figmaFamilyKey": "component:1:40054",
+      "figmaFamilyName": "<Stack4>(Nested)",
+      "matchStatus": "unmatched",
+      "skipReason": "unmatched",
+      "warnings": []
+    },
+    {
+      "comparisonStatus": "skipped",
+      "componentId": "component:1:43658::ambiguous",
+      "familyId": "family:456ad848bd366d33",
+      "figmaFamilyKey": "component:1:43658",
+      "figmaFamilyName": "<Stack6>(Nested)",
+      "matchStatus": "ambiguous",
+      "skipReason": "ambiguous",
+      "warnings": []
+    },
+    {
+      "baselineCanvas": {
+        "padding": 16
+      },
+      "captureStrategy": "storybook_root_union",
+      "comparisonStatus": "ready",
+      "componentId": "component:1:51269::components-inputs-textfield--medium",
+      "familyId": "family:54ebf974864973f0",
+      "figmaFamilyKey": "component:1:51269",
+      "figmaFamilyName": "<TextField>",
+      "iframeId": "components-inputs-textfield--medium",
+      "matchStatus": "matched",
+      "referenceFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
+      "referenceNodeId": "2736:207711",
+      "storyEntryId": "components-inputs-textfield--medium",
+      "storyTitle": "Components/Inputs/TextField/Medium",
+      "warnings": []
+    },
+    {
+      "baselineCanvas": {
+        "padding": 16
+      },
+      "captureStrategy": "storybook_root_union",
+      "comparisonStatus": "ready",
+      "componentId": "component:1:53140::components-inputs-textfield--medium",
+      "familyId": "family:54ebf974864973f0",
+      "figmaFamilyKey": "component:1:53140",
+      "figmaFamilyName": "<TextField>",
+      "iframeId": "components-inputs-textfield--medium",
+      "matchStatus": "matched",
+      "referenceFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
+      "referenceNodeId": "10796:42262",
+      "storyEntryId": "components-inputs-textfield--medium",
+      "storyTitle": "Components/Inputs/TextField/Medium",
+      "warnings": []
+    },
+    {
+      "comparisonStatus": "skipped",
+      "componentId": "component:1:38311::components-display-typography--label-03",
+      "familyId": "family:551261f1f5319081",
+      "figmaFamilyKey": "component:1:38311",
+      "figmaFamilyName": "<Typography>",
+      "matchStatus": "matched",
+      "skipReason": "missing_reference_node",
+      "warnings": []
+    },
+    {
+      "comparisonStatus": "skipped",
+      "componentId": "component:1:38313::components-display-typography--label-04",
+      "familyId": "family:551261f1f5319081",
+      "figmaFamilyKey": "component:1:38313",
+      "figmaFamilyName": "<Typography>",
+      "matchStatus": "matched",
+      "skipReason": "missing_reference_node",
+      "warnings": []
+    },
+    {
+      "baselineCanvas": {
+        "padding": 16
+      },
+      "captureStrategy": "storybook_root_union",
+      "comparisonStatus": "ready",
+      "componentId": "component:1:38329::components-display-typography--label-04-light",
+      "familyId": "family:551261f1f5319081",
+      "figmaFamilyKey": "component:1:38329",
+      "figmaFamilyName": "<Typography>",
+      "iframeId": "components-display-typography--label-04-light",
+      "matchStatus": "matched",
+      "referenceFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
+      "referenceNodeId": "13351:55640",
+      "storyEntryId": "components-display-typography--label-04-light",
+      "storyTitle": "Components/Display/Typography/label04Light",
+      "warnings": []
+    },
+    {
+      "comparisonStatus": "skipped",
+      "componentId": "component:1:38926::unmatched",
+      "familyId": "family:00b0fa1ac20ecad6",
+      "figmaFamilyKey": "component:1:38926",
+      "figmaFamilyName": "ic_arrow_subitem_s 🔥",
+      "matchStatus": "unmatched",
+      "skipReason": "unmatched",
+      "warnings": []
+    },
+    {
+      "comparisonStatus": "skipped",
+      "componentId": "component:1:42111::unmatched",
+      "familyId": "family:00b0fa1ac20ecad6",
+      "figmaFamilyKey": "component:1:42111",
+      "figmaFamilyName": "ic_chart_upward_s 1",
+      "matchStatus": "unmatched",
+      "skipReason": "unmatched",
+      "warnings": []
+    },
+    {
+      "comparisonStatus": "skipped",
+      "componentId": "component:1:43496::unmatched",
+      "familyId": "family:00b0fa1ac20ecad6",
+      "figmaFamilyKey": "component:1:43496",
+      "figmaFamilyName": "ic_circle_s 🔥",
+      "matchStatus": "unmatched",
+      "skipReason": "unmatched",
+      "warnings": []
+    },
+    {
+      "comparisonStatus": "skipped",
+      "componentId": "component:1:54357::unmatched",
+      "familyId": "family:00b0fa1ac20ecad6",
+      "figmaFamilyKey": "component:1:54357",
+      "figmaFamilyName": "ic_coin_stack_s",
+      "matchStatus": "unmatched",
+      "skipReason": "unmatched",
+      "warnings": []
+    },
+    {
+      "comparisonStatus": "skipped",
+      "componentId": "component:1:636::unmatched",
+      "familyId": "family:00b0fa1ac20ecad6",
+      "figmaFamilyKey": "component:1:636",
+      "figmaFamilyName": "ic_down_s 🔥",
+      "matchStatus": "unmatched",
+      "skipReason": "unmatched",
+      "warnings": []
+    },
+    {
+      "comparisonStatus": "skipped",
+      "componentId": "component:1:43307::unmatched",
+      "familyId": "family:00b0fa1ac20ecad6",
+      "figmaFamilyKey": "component:1:43307",
+      "figmaFamilyName": "ic_info_circle_s 🔥",
+      "matchStatus": "unmatched",
+      "skipReason": "unmatched",
+      "warnings": []
+    },
+    {
+      "comparisonStatus": "skipped",
+      "componentId": "component:1:43500::unmatched",
+      "familyId": "family:00b0fa1ac20ecad6",
+      "figmaFamilyKey": "component:1:43500",
+      "figmaFamilyName": "ic_radio_selected_s 🔥",
+      "matchStatus": "unmatched",
+      "skipReason": "unmatched",
+      "warnings": []
+    },
+    {
+      "comparisonStatus": "skipped",
+      "componentId": "component:1:54302::unmatched",
+      "familyId": "family:00b0fa1ac20ecad6",
+      "figmaFamilyKey": "component:1:54302",
+      "figmaFamilyName": "ic_shopping_cart_s",
+      "matchStatus": "unmatched",
+      "skipReason": "unmatched",
+      "warnings": []
+    },
+    {
+      "comparisonStatus": "skipped",
+      "componentId": "component:1:40602::unmatched",
+      "familyId": "family:00b0fa1ac20ecad6",
+      "figmaFamilyKey": "component:1:40602",
+      "figmaFamilyName": "ic_user_s 🔥",
+      "matchStatus": "unmatched",
+      "skipReason": "unmatched",
+      "warnings": []
+    }
+  ],
+  "stats": {
+    "byMatchStatus": {
+      "ambiguous": 3,
+      "matched": 25,
+      "unmatched": 14
+    },
+    "bySkipReason": {
+      "ambiguous": 3,
+      "docs_only": 0,
+      "missing_authoritative_story": 0,
+      "missing_reference_node": 14,
+      "missing_story": 3,
+      "unmatched": 14
+    },
+    "readyCount": 8,
+    "skippedCount": 34,
+    "totalCount": 42
+  },
+  "version": 1
+}

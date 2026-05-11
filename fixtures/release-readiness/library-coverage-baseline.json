@@ -1,0 +1,101 @@
+{
+  "releaseId": "baseline-2026-05-04",
+  "primitives": [
+    {
+      "primitiveId": "button.primary",
+      "libraryName": "workspace-dev-design-system",
+      "libraryVersion": "1.0.0",
+      "status": "implemented",
+      "testCaseCount": 12,
+      "notes": "Primary button with default and disabled states."
+    },
+    {
+      "primitiveId": "button.secondary",
+      "libraryName": "workspace-dev-design-system",
+      "libraryVersion": "1.0.0",
+      "status": "implemented",
+      "testCaseCount": 9,
+      "notes": "Secondary button mirrors primary state matrix."
+    },
+    {
+      "primitiveId": "form.input.text",
+      "libraryName": "workspace-dev-design-system",
+      "libraryVersion": "1.0.0",
+      "status": "implemented",
+      "testCaseCount": 14,
+      "notes": "Validation, error, and read-only states."
+    },
+    {
+      "primitiveId": "form.input.password",
+      "libraryName": "workspace-dev-design-system",
+      "libraryVersion": "1.0.0",
+      "status": "implemented",
+      "testCaseCount": 10,
+      "notes": "Reveal toggle, password-strength meter."
+    },
+    {
+      "primitiveId": "form.select.single",
+      "libraryName": "workspace-dev-design-system",
+      "libraryVersion": "1.0.0",
+      "status": "implemented",
+      "testCaseCount": 8,
+      "notes": "Single-select dropdown with keyboard navigation."
+    },
+    {
+      "primitiveId": "form.select.multi",
+      "libraryName": "workspace-dev-design-system",
+      "libraryVersion": "1.0.0",
+      "status": "stub",
+      "testCaseCount": 0,
+      "notes": "Multi-select stubbed pending Wave 5 deliverable."
+    },
+    {
+      "primitiveId": "data.table.basic",
+      "libraryName": "workspace-dev-design-system",
+      "libraryVersion": "1.0.0",
+      "status": "implemented",
+      "testCaseCount": 11,
+      "notes": "Sorting, pagination, empty-state coverage."
+    },
+    {
+      "primitiveId": "data.table.virtualized",
+      "libraryName": "workspace-dev-design-system",
+      "libraryVersion": "1.0.0",
+      "status": "unimplemented",
+      "testCaseCount": 0,
+      "notes": "Virtualized table on the post-MVP roadmap."
+    },
+    {
+      "primitiveId": "navigation.tabs",
+      "libraryName": "workspace-dev-design-system",
+      "libraryVersion": "1.0.0",
+      "status": "implemented",
+      "testCaseCount": 7,
+      "notes": "Roving tab-index keyboard navigation."
+    },
+    {
+      "primitiveId": "feedback.toast",
+      "libraryName": "workspace-dev-design-system",
+      "libraryVersion": "1.0.0",
+      "status": "implemented",
+      "testCaseCount": 6,
+      "notes": "Stacked toasts with focus-restoration."
+    },
+    {
+      "primitiveId": "feedback.banner",
+      "libraryName": "workspace-dev-design-system",
+      "libraryVersion": "1.0.0",
+      "status": "deprecated",
+      "testCaseCount": 0,
+      "notes": "Replaced by feedback.alert in 1.0.0."
+    },
+    {
+      "primitiveId": "feedback.alert",
+      "libraryName": "workspace-dev-design-system",
+      "libraryVersion": "1.0.0",
+      "status": "implemented",
+      "testCaseCount": 8,
+      "notes": "Replaces feedback.banner with WCAG 2.2 AA contrast."
+    }
+  ]
+}

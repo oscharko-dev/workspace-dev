@@ -1,0 +1,7 @@
+Key: PAY-1441
+Summary: Synthetic paste XSS
+Status: Open
+Description: <script>alert(1)</script>
+<svg onload="alert(1)"></svg>
+[click](javascript:alert(1))
+<img src="x" onerror="alert(1)">

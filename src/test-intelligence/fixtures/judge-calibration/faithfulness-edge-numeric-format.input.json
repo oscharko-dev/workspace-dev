@@ -1,0 +1,23 @@
+{
+  "judge": "faithfulness",
+  "input": {
+    "captures": [
+      {
+        "screenId": "20:1",
+        "screenName": "Investment calculator",
+        "imageHashSha256": "0000000000000000000000000000000000000000000000000000000000000020",
+        "visibleLabels": ["Amount", "Calculate", "1.234,56 €"]
+      }
+    ],
+    "generatedTestCases": [
+      {
+        "id": "tc-numeric-1",
+        "title": "Calculate an investment amount in EUR",
+        "steps": [
+          { "stepIndex": 1, "action": "Enter Amount", "expected": "Field accepts a number" },
+          { "stepIndex": 2, "action": "Click Calculate", "expected": "Result shows 1.234,56 €" }
+        ]
+      }
+    ]
+  }
+}

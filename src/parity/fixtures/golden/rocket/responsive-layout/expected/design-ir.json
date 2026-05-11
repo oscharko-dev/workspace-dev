@@ -1,0 +1,619 @@
+{
+  "sourceName": "Responsive Layout Board",
+  "screens": [
+    {
+      "id": "screen-home-desktop",
+      "name": "Home Desktop",
+      "layoutMode": "VERTICAL",
+      "gap": 24,
+      "padding": {
+        "top": 32,
+        "right": 48,
+        "bottom": 32,
+        "left": 48
+      },
+      "children": [
+        {
+          "id": "hero-desktop",
+          "name": "Hero Section",
+          "nodeType": "FRAME",
+          "layoutMode": "HORIZONTAL",
+          "gap": 32,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "table",
+          "x": 48,
+          "y": 32,
+          "width": 1344,
+          "height": 400,
+          "children": [
+            {
+              "id": "hero-text-desktop",
+              "name": "Hero Text",
+              "nodeType": "FRAME",
+              "layoutMode": "VERTICAL",
+              "gap": 16,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "variantMapping": {
+                "properties": {
+                  "variant": "text"
+                },
+                "muiProps": {
+                  "variant": "text"
+                }
+              },
+              "type": "list",
+              "x": 48,
+              "y": 32,
+              "width": 650,
+              "height": 400,
+              "children": [
+                {
+                  "id": "hero-heading-desktop",
+                  "name": "Heading",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "Build Better Products",
+                  "x": 48,
+                  "y": 32,
+                  "width": 650,
+                  "height": 56,
+                  "fillColor": "#121726",
+                  "fontSize": 48,
+                  "fontWeight": 800,
+                  "fontFamily": "Inter",
+                  "lineHeight": 56,
+                  "textAlign": "LEFT"
+                },
+                {
+                  "id": "hero-body-desktop",
+                  "name": "Body",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "Our platform helps teams collaborate and deliver exceptional results.",
+                  "x": 48,
+                  "y": 104,
+                  "width": 500,
+                  "height": 56,
+                  "fillColor": "#666b75",
+                  "fontSize": 18,
+                  "fontWeight": 400,
+                  "fontFamily": "Inter",
+                  "lineHeight": 28,
+                  "textAlign": "LEFT"
+                },
+                {
+                  "id": "hero-cta-desktop",
+                  "name": "CTA Button",
+                  "nodeType": "FRAME",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "paper",
+                  "x": 48,
+                  "y": 176,
+                  "width": 180,
+                  "height": 48,
+                  "fillColor": "#3d78f5",
+                  "cornerRadius": 8,
+                  "children": [
+                    {
+                      "id": "cta-label-desktop",
+                      "name": "Label",
+                      "nodeType": "TEXT",
+                      "layoutMode": "NONE",
+                      "gap": 0,
+                      "padding": {
+                        "top": 0,
+                        "right": 0,
+                        "bottom": 0,
+                        "left": 0
+                      },
+                      "type": "text",
+                      "text": "Get Started",
+                      "x": 96,
+                      "y": 188,
+                      "width": 84,
+                      "height": 24,
+                      "fillColor": "#ffffff",
+                      "fontSize": 16,
+                      "fontWeight": 600,
+                      "fontFamily": "Inter",
+                      "lineHeight": 24,
+                      "textAlign": "CENTER"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "hero-image-desktop",
+              "name": "Hero Image",
+              "nodeType": "RECTANGLE",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "image",
+              "x": 730,
+              "y": 32,
+              "width": 662,
+              "height": 400,
+              "fillColor": "#edf0f5",
+              "cornerRadius": 12
+            }
+          ]
+        },
+        {
+          "id": "features-desktop",
+          "name": "Features Section",
+          "nodeType": "FRAME",
+          "layoutMode": "HORIZONTAL",
+          "gap": 24,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "table",
+          "x": 48,
+          "y": 456,
+          "width": 1344,
+          "height": 300,
+          "children": [
+            {
+              "id": "feature-1",
+              "name": "Feature Card",
+              "nodeType": "FRAME",
+              "layoutMode": "VERTICAL",
+              "gap": 8,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "card",
+              "x": 48,
+              "y": 456,
+              "width": 432,
+              "height": 200,
+              "fillColor": "#f7fafc",
+              "cornerRadius": 8,
+              "children": [
+                {
+                  "id": "f1-title",
+                  "name": "Feature Title",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "Fast Deployment",
+                  "x": 64,
+                  "y": 472,
+                  "width": 400,
+                  "height": 28,
+                  "fillColor": "#121726",
+                  "fontSize": 20,
+                  "fontWeight": 600,
+                  "fontFamily": "Inter",
+                  "lineHeight": 28,
+                  "textAlign": "LEFT"
+                },
+                {
+                  "id": "f1-desc",
+                  "name": "Feature Description",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "Deploy your apps in seconds with our streamlined pipeline.",
+                  "x": 64,
+                  "y": 508,
+                  "width": 400,
+                  "height": 44,
+                  "fillColor": "#666b75",
+                  "fontSize": 14,
+                  "fontWeight": 400,
+                  "fontFamily": "Inter",
+                  "lineHeight": 22,
+                  "textAlign": "LEFT"
+                }
+              ]
+            },
+            {
+              "id": "feature-2",
+              "name": "Feature Card",
+              "nodeType": "FRAME",
+              "layoutMode": "VERTICAL",
+              "gap": 8,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "card",
+              "x": 504,
+              "y": 456,
+              "width": 432,
+              "height": 200,
+              "fillColor": "#f7fafc",
+              "cornerRadius": 8,
+              "children": [
+                {
+                  "id": "f2-title",
+                  "name": "Feature Title",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "Team Collaboration",
+                  "x": 520,
+                  "y": 472,
+                  "width": 400,
+                  "height": 28,
+                  "fillColor": "#121726",
+                  "fontSize": 20,
+                  "fontWeight": 600,
+                  "fontFamily": "Inter",
+                  "lineHeight": 28,
+                  "textAlign": "LEFT"
+                },
+                {
+                  "id": "f2-desc",
+                  "name": "Feature Description",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "Work together in real-time with powerful collaboration tools.",
+                  "x": 520,
+                  "y": 508,
+                  "width": 400,
+                  "height": 44,
+                  "fillColor": "#666b75",
+                  "fontSize": 14,
+                  "fontWeight": 400,
+                  "fontFamily": "Inter",
+                  "lineHeight": 22,
+                  "textAlign": "LEFT"
+                }
+              ]
+            },
+            {
+              "id": "feature-3",
+              "name": "Feature Card",
+              "nodeType": "FRAME",
+              "layoutMode": "VERTICAL",
+              "gap": 8,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "card",
+              "x": 960,
+              "y": 456,
+              "width": 432,
+              "height": 200,
+              "fillColor": "#f7fafc",
+              "cornerRadius": 8,
+              "children": [
+                {
+                  "id": "f3-title",
+                  "name": "Feature Title",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "Analytics Dashboard",
+                  "x": 976,
+                  "y": 472,
+                  "width": 400,
+                  "height": 28,
+                  "fillColor": "#121726",
+                  "fontSize": 20,
+                  "fontWeight": 600,
+                  "fontFamily": "Inter",
+                  "lineHeight": 28,
+                  "textAlign": "LEFT"
+                },
+                {
+                  "id": "f3-desc",
+                  "name": "Feature Description",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "Gain insights with comprehensive analytics and reporting.",
+                  "x": 976,
+                  "y": 508,
+                  "width": 400,
+                  "height": 44,
+                  "fillColor": "#666b75",
+                  "fontSize": 14,
+                  "fontWeight": 400,
+                  "fontFamily": "Inter",
+                  "lineHeight": 22,
+                  "textAlign": "LEFT"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "width": 1440,
+      "height": 900,
+      "fillColor": "#ffffff",
+      "responsive": {
+        "groupKey": "home",
+        "baseBreakpoint": "lg",
+        "variants": [
+          {
+            "breakpoint": "xs",
+            "nodeId": "screen-home-mobile",
+            "name": "Home Mobile",
+            "width": 390,
+            "height": 1200,
+            "layoutMode": "VERTICAL",
+            "gap": 16,
+            "padding": {
+              "top": 16,
+              "right": 16,
+              "bottom": 16,
+              "left": 16
+            },
+            "isBase": false
+          },
+          {
+            "breakpoint": "lg",
+            "nodeId": "screen-home-desktop",
+            "name": "Home Desktop",
+            "width": 1440,
+            "height": 900,
+            "layoutMode": "VERTICAL",
+            "gap": 24,
+            "padding": {
+              "top": 32,
+              "right": 48,
+              "bottom": 32,
+              "left": 48
+            },
+            "isBase": true
+          }
+        ],
+        "rootLayoutOverrides": {
+          "xs": {
+            "gap": 16
+          }
+        },
+        "topLevelLayoutOverrides": {
+          "features-desktop": {
+            "xs": {
+              "layoutMode": "VERTICAL",
+              "gap": 12,
+              "widthRatio": 0.918,
+              "minHeight": 600
+            }
+          }
+        }
+      }
+    }
+  ],
+  "tokens": {
+    "palette": {
+      "primary": "#121726",
+      "secondary": "#3d78f5",
+      "background": "#f9fbfc",
+      "text": "#121726",
+      "success": "#16A34A",
+      "warning": "#D97706",
+      "error": "#DC2626",
+      "info": "#3d78f5",
+      "divider": "#1217261f",
+      "action": {
+        "active": "#1217268a",
+        "hover": "#1217260a",
+        "selected": "#12172614",
+        "disabled": "#12172642",
+        "disabledBackground": "#1217261f",
+        "focus": "#1217261f"
+      }
+    },
+    "borderRadius": 8,
+    "spacingBase": 12,
+    "fontFamily": "Inter, Roboto, Arial, sans-serif",
+    "headingSize": 48,
+    "bodySize": 14,
+    "typography": {
+      "h1": {
+        "fontSizePx": 48,
+        "fontWeight": 800,
+        "lineHeightPx": 56,
+        "fontFamily": "Inter"
+      },
+      "h2": {
+        "fontSizePx": 32,
+        "fontWeight": 800,
+        "lineHeightPx": 40,
+        "fontFamily": "Inter"
+      },
+      "h3": {
+        "fontSizePx": 20,
+        "fontWeight": 600,
+        "lineHeightPx": 28,
+        "fontFamily": "Inter"
+      },
+      "h4": {
+        "fontSizePx": 18,
+        "fontWeight": 600,
+        "lineHeightPx": 24,
+        "fontFamily": "Inter"
+      },
+      "h5": {
+        "fontSizePx": 16,
+        "fontWeight": 400,
+        "lineHeightPx": 24,
+        "fontFamily": "Inter"
+      },
+      "h6": {
+        "fontSizePx": 16,
+        "fontWeight": 400,
+        "lineHeightPx": 24,
+        "fontFamily": "Inter"
+      },
+      "subtitle1": {
+        "fontSizePx": 16,
+        "fontWeight": 600,
+        "lineHeightPx": 24,
+        "fontFamily": "Inter"
+      },
+      "subtitle2": {
+        "fontSizePx": 16,
+        "fontWeight": 400,
+        "lineHeightPx": 24,
+        "fontFamily": "Inter"
+      },
+      "body1": {
+        "fontSizePx": 14,
+        "fontWeight": 400,
+        "lineHeightPx": 22,
+        "fontFamily": "Inter"
+      },
+      "body2": {
+        "fontSizePx": 14,
+        "fontWeight": 400,
+        "lineHeightPx": 22,
+        "fontFamily": "Inter"
+      },
+      "button": {
+        "fontSizePx": 14,
+        "fontWeight": 800,
+        "lineHeightPx": 56,
+        "fontFamily": "Inter",
+        "textTransform": "none"
+      },
+      "caption": {
+        "fontSizePx": 14,
+        "fontWeight": 400,
+        "lineHeightPx": 22,
+        "fontFamily": "Inter"
+      },
+      "overline": {
+        "fontSizePx": 14,
+        "fontWeight": 400,
+        "lineHeightPx": 22,
+        "fontFamily": "Inter",
+        "letterSpacingEm": 0.08
+      }
+    },
+    "tokenSource": {
+      "palette": "clustering",
+      "typography": "clustering",
+      "spacing": "clustering",
+      "borderRadius": "clustering",
+      "fontFamily": "clustering"
+    }
+  },
+  "metrics": {
+    "fetchedNodes": 0,
+    "skippedHidden": 0,
+    "skippedPlaceholders": 0,
+    "prototypeNavigationDetected": 0,
+    "prototypeNavigationResolved": 0,
+    "prototypeNavigationUnresolved": 0,
+    "screenElementCounts": [
+      {
+        "screenId": "screen-home-desktop",
+        "screenName": "Home Desktop",
+        "elements": 17
+      }
+    ],
+    "truncatedScreens": [],
+    "depthTruncatedScreens": [],
+    "classificationFallbacks": [],
+    "degradedGeometryNodes": [],
+    "nodeDiagnostics": []
+  },
+  "themeAnalysis": {
+    "darkModeDetected": false,
+    "signals": {
+      "luminance": false,
+      "naming": false,
+      "lightDarkPair": false
+    }
+  }
+}

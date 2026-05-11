@@ -1,0 +1,413 @@
+import assert from "node:assert/strict";
+import { describe, test } from "node:test";
+
+import {
+  isInspectorTestIntelligenceWriteAction,
+  parseInspectorTestIntelligenceRoute,
+} from "./inspector-route.js";
+
+describe("parseInspectorTestIntelligenceRoute", () => {
+  test("rejects paths outside the inspector test-intelligence prefix", () => {
+    const result = parseInspectorTestIntelligenceRoute("/workspace/jobs/abc");
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.error.reason, "prefix_mismatch");
+    }
+  });
+
+  test("rejects an empty subroute", () => {
+    const result = parseInspectorTestIntelligenceRoute(
+      "/workspace/test-intelligence",
+    );
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.error.reason, "unknown_subroute");
+    }
+  });
+
+  test("rejects unknown top-level segments", () => {
+    const result = parseInspectorTestIntelligenceRoute(
+      "/workspace/test-intelligence/foo/bar",
+    );
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.error.reason, "unknown_subroute");
+    }
+  });
+
+  test("parses /jobs as list_jobs", () => {
+    const result = parseInspectorTestIntelligenceRoute(
+      "/workspace/test-intelligence/jobs",
+    );
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.route.kind, "list_jobs");
+    }
+  });
+
+  test("parses /jobs/<jobId> as read_bundle", () => {
+    const result = parseInspectorTestIntelligenceRoute(
+      "/workspace/test-intelligence/jobs/job-abc-123",
+    );
+    assert.equal(result.ok, true);
+    if (result.ok && result.route.kind === "read_bundle") {
+      assert.equal(result.route.jobId, "job-abc-123");
+    } else {
+      assert.fail("expected read_bundle route");
+    }
+  });
+
+  test("parses /jobs/<jobId>/sources as list_sources", () => {
+    const result = parseInspectorTestIntelligenceRoute(
+      "/workspace/test-intelligence/jobs/job-abc-123/sources",
+    );
+    assert.equal(result.ok, true);
+    if (result.ok && result.route.kind === "list_sources") {
+      assert.equal(result.route.jobId, "job-abc-123");
+    } else {
+      assert.fail("expected list_sources route");
+    }
+  });
+
+  test("parses /jobs/<jobId>/sources/jira-fetch as jira_fetch_source", () => {
+    const result = parseInspectorTestIntelligenceRoute(
+      "/workspace/test-intelligence/jobs/job-abc-123/sources/jira-fetch",
+    );
+    assert.equal(result.ok, true);
+    if (result.ok && result.route.kind === "jira_fetch_source") {
+      assert.equal(result.route.jobId, "job-abc-123");
+    } else {
+      assert.fail("expected jira_fetch_source route");
+    }
+  });
+
+  test("parses /jobs/<jobId>/sources/<sourceId> as remove_source", () => {
+    const result = parseInspectorTestIntelligenceRoute(
+      "/workspace/test-intelligence/jobs/job-abc-123/sources/jira-paste-1",
+    );
+    assert.equal(result.ok, true);
+    if (result.ok && result.route.kind === "remove_source") {
+      assert.equal(result.route.jobId, "job-abc-123");
+      assert.equal(result.route.sourceId, "jira-paste-1");
+    } else {
+      assert.fail("expected remove_source route");
+    }
+  });
+
+  test("parses /jobs/<jobId>/conflicts/<conflictId>/resolve as resolve_conflict", () => {
+    const result = parseInspectorTestIntelligenceRoute(
+      "/workspace/test-intelligence/jobs/job-abc-123/conflicts/conflict-1/resolve",
+    );
+    assert.equal(result.ok, true);
+    if (result.ok && result.route.kind === "resolve_conflict") {
+      assert.equal(result.route.jobId, "job-abc-123");
+      assert.equal(result.route.conflictId, "conflict-1");
+    } else {
+      assert.fail("expected resolve_conflict route");
+    }
+  });
+
+  test("rejects path traversal in jobId", () => {
+    const result = parseInspectorTestIntelligenceRoute(
+      "/workspace/test-intelligence/jobs/..",
+    );
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.error.reason, "unsafe_job_id");
+    }
+  });
+
+  test("rejects slashes inside jobId", () => {
+    const result = parseInspectorTestIntelligenceRoute(
+      "/workspace/test-intelligence/jobs/a/b",
+    );
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.error.reason, "segment_count_invalid");
+    }
+  });
+
+  test("parses /review/<jobId>/state", () => {
+    const result = parseInspectorTestIntelligenceRoute(
+      "/workspace/test-intelligence/review/job-1/state",
+    );
+    assert.equal(result.ok, true);
+    if (result.ok && result.route.kind === "review_state") {
+      assert.equal(result.route.jobId, "job-1");
+    } else {
+      assert.fail("expected review_state");
+    }
+  });
+
+  test("parses /review/<jobId>/<action> as job-level review_action", () => {
+    const result = parseInspectorTestIntelligenceRoute(
+      "/workspace/test-intelligence/review/job-1/note",
+    );
+    assert.equal(result.ok, true);
+    if (result.ok && result.route.kind === "review_action") {
+      assert.equal(result.route.jobId, "job-1");
+      assert.equal(result.route.action, "note");
+      assert.equal(result.route.testCaseId, undefined);
+    } else {
+      assert.fail("expected review_action");
+    }
+  });
+
+  test("parses /review/<jobId>/<action>/<testCaseId> as per-case review_action", () => {
+    const result = parseInspectorTestIntelligenceRoute(
+      "/workspace/test-intelligence/review/job-1/approve/tc-42",
+    );
+    assert.equal(result.ok, true);
+    if (result.ok && result.route.kind === "review_action") {
+      assert.equal(result.route.jobId, "job-1");
+      assert.equal(result.route.action, "approve");
+      assert.equal(result.route.testCaseId, "tc-42");
+    } else {
+      assert.fail("expected review_action with testCaseId");
+    }
+  });
+
+  test("parses /sources/<jobId>/jira-paste as jira_paste_source", () => {
+    const result = parseInspectorTestIntelligenceRoute(
+      "/workspace/test-intelligence/sources/job-1/jira-paste",
+    );
+    assert.equal(result.ok, true);
+    if (result.ok && result.route.kind === "jira_paste_source") {
+      assert.equal(result.route.jobId, "job-1");
+    } else {
+      assert.fail("expected jira_paste_source");
+    }
+  });
+
+  test("parses /sources/<jobId>/custom-context as custom_context_source", () => {
+    const result = parseInspectorTestIntelligenceRoute(
+      "/workspace/test-intelligence/sources/job-1/custom-context",
+    );
+    assert.equal(result.ok, true);
+    if (result.ok && result.route.kind === "custom_context_source") {
+      assert.equal(result.route.jobId, "job-1");
+    } else {
+      assert.fail("expected custom_context_source");
+    }
+  });
+
+  test("rejects unknown source ingestion subroutes", () => {
+    const result = parseInspectorTestIntelligenceRoute(
+      "/workspace/test-intelligence/sources/job-1/unknown",
+    );
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.error.reason, "unknown_subroute");
+    }
+  });
+
+  test("parses /write/config as jira_write_config", () => {
+    const result = parseInspectorTestIntelligenceRoute(
+      "/workspace/test-intelligence/write/config",
+    );
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.route.kind, "jira_write_config");
+    }
+  });
+
+  test("parses /write/<jobId>/jira-subtasks as jira_write_start", () => {
+    const result = parseInspectorTestIntelligenceRoute(
+      "/workspace/test-intelligence/write/job-1/jira-subtasks",
+    );
+    assert.equal(result.ok, true);
+    if (result.ok && result.route.kind === "jira_write_start") {
+      assert.equal(result.route.jobId, "job-1");
+    } else {
+      assert.fail("expected jira_write_start");
+    }
+  });
+
+  test("rejects unknown write subroutes", () => {
+    const result = parseInspectorTestIntelligenceRoute(
+      "/workspace/test-intelligence/write/job-1/unknown",
+    );
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.error.reason, "unknown_subroute");
+    }
+  });
+
+  test("rejects path traversal inside testCaseId", () => {
+    const result = parseInspectorTestIntelligenceRoute(
+      "/workspace/test-intelligence/review/job-1/approve/..",
+    );
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.error.reason, "unsafe_test_case_id");
+    }
+  });
+
+  test("rejects too many path segments", () => {
+    const result = parseInspectorTestIntelligenceRoute(
+      "/workspace/test-intelligence/review/job-1/approve/tc-1/extra",
+    );
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.error.reason, "segment_count_invalid");
+    }
+  });
+});
+
+describe("isInspectorTestIntelligenceWriteAction", () => {
+  test("returns false for list_jobs and read_bundle", () => {
+    assert.equal(
+      isInspectorTestIntelligenceWriteAction({ kind: "list_jobs" }),
+      false,
+    );
+    assert.equal(
+      isInspectorTestIntelligenceWriteAction({
+        kind: "read_bundle",
+        jobId: "job-1",
+      }),
+      false,
+    );
+    assert.equal(
+      isInspectorTestIntelligenceWriteAction({
+        kind: "list_sources",
+        jobId: "job-1",
+      }),
+      false,
+    );
+  });
+
+  test("returns false for review_state", () => {
+    assert.equal(
+      isInspectorTestIntelligenceWriteAction({
+        kind: "review_state",
+        jobId: "job-1",
+      }),
+      false,
+    );
+  });
+
+  test("returns true for any review_action", () => {
+    assert.equal(
+      isInspectorTestIntelligenceWriteAction({
+        kind: "review_action",
+        jobId: "job-1",
+        action: "approve",
+        testCaseId: "tc-1",
+      }),
+      true,
+    );
+    assert.equal(
+      isInspectorTestIntelligenceWriteAction({
+        kind: "review_action",
+        jobId: "job-1",
+        action: "note",
+      }),
+      true,
+    );
+  });
+
+  test("returns true for jira_paste_source", () => {
+    assert.equal(
+      isInspectorTestIntelligenceWriteAction({
+        kind: "jira_paste_source",
+        jobId: "job-1",
+      }),
+      true,
+    );
+  });
+
+  test("returns true for jira_fetch_source, remove_source, and resolve_conflict", () => {
+    assert.equal(
+      isInspectorTestIntelligenceWriteAction({
+        kind: "jira_fetch_source",
+        jobId: "job-1",
+      }),
+      true,
+    );
+    assert.equal(
+      isInspectorTestIntelligenceWriteAction({
+        kind: "remove_source",
+        jobId: "job-1",
+        sourceId: "jira-paste-1",
+      }),
+      true,
+    );
+    assert.equal(
+      isInspectorTestIntelligenceWriteAction({
+        kind: "resolve_conflict",
+        jobId: "job-1",
+        conflictId: "conflict-1",
+      }),
+      true,
+    );
+  });
+
+  test("returns true for custom_context_source", () => {
+    assert.equal(
+      isInspectorTestIntelligenceWriteAction({
+        kind: "custom_context_source",
+        jobId: "job-1",
+      }),
+      true,
+    );
+  });
+
+  test("returns true for Jira write config and start routes", () => {
+    assert.equal(
+      isInspectorTestIntelligenceWriteAction({ kind: "jira_write_config" }),
+      true,
+    );
+    assert.equal(
+      isInspectorTestIntelligenceWriteAction({
+        kind: "jira_write_start",
+        jobId: "job-1",
+      }),
+      true,
+    );
+  });
+
+  test("returns false for customer_markdown_export (read-only route)", () => {
+    assert.equal(
+      isInspectorTestIntelligenceWriteAction({
+        kind: "customer_markdown_export",
+        jobId: "job-1",
+      }),
+      false,
+    );
+  });
+});
+
+describe("parseInspectorTestIntelligenceRoute — customer-markdown export", () => {
+  test("parses /jobs/<jobId>/customer-markdown as customer_markdown_export", () => {
+    const result = parseInspectorTestIntelligenceRoute(
+      "/workspace/test-intelligence/jobs/job-1/customer-markdown",
+    );
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.deepEqual(result.route, {
+        kind: "customer_markdown_export",
+        jobId: "job-1",
+      });
+    }
+  });
+
+  test("rejects unsafe job ids on the export route", () => {
+    const result = parseInspectorTestIntelligenceRoute(
+      "/workspace/test-intelligence/jobs/..%2Fetc/customer-markdown",
+    );
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.error.reason, "unsafe_job_id");
+    }
+  });
+
+  test("rejects extra segments after customer-markdown", () => {
+    const result = parseInspectorTestIntelligenceRoute(
+      "/workspace/test-intelligence/jobs/job-1/customer-markdown/extra",
+    );
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.error.reason, "segment_count_invalid");
+    }
+  });
+});

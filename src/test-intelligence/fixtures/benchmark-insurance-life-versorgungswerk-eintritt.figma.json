@@ -1,0 +1,127 @@
+{
+  "source": {
+    "kind": "figma_local_json"
+  },
+  "screens": [
+    {
+      "screenId": "s-bav",
+      "screenName": "Versorgungswerk Eintritt",
+      "screenPath": "/insurance/life/bav/enrollment",
+      "nodes": [
+        {
+          "nodeId": "n-employer-id",
+          "nodeName": "Arbeitgeber-ID",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "employer/id",
+          "text": "Arbeitgeber-ID",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Format EMP-#####"
+          ]
+        },
+        {
+          "nodeId": "n-employee-id",
+          "nodeName": "Personalnummer",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "employee/id",
+          "text": "Personalnummer",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Max 20 characters"
+          ]
+        },
+        {
+          "nodeId": "n-eintritt",
+          "nodeName": "Eintrittsdatum",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "employee/start-date",
+          "text": "Eintrittsdatum",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "ISO date"
+          ]
+        },
+        {
+          "nodeId": "n-bruttogehalt",
+          "nodeName": "Brutto-Jahresgehalt",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "salary/gross-yearly",
+          "text": "Brutto-Jahresgehalt",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Numeric",
+            "Min 0",
+            "Max 1000000"
+          ]
+        },
+        {
+          "nodeId": "n-umwandlung",
+          "nodeName": "Entgeltumwandlung in EUR/Monat",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "bav/salary-conversion",
+          "text": "Entgeltumwandlung in EUR/Monat",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Numeric",
+            "Min 0",
+            "Max 4000"
+          ]
+        },
+        {
+          "nodeId": "n-durchfuehrungsweg",
+          "nodeName": "Durchfuehrungsweg",
+          "nodeType": "SELECT_FIELD",
+          "nodePath": "bav/path",
+          "text": "Durchfuehrungsweg",
+          "childNodeIds": [],
+          "defaultValue": "Direktversicherung",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-versorgungswerk",
+          "nodeName": "Versorgungswerk-Mitglied",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "bav/versorgungswerk-member",
+          "text": "Versorgungswerk-Mitglied",
+          "childNodeIds": [],
+          "defaultValue": "No",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-zustimmung",
+          "nodeName": "Zustimmung zur Entgeltumwandlung",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "compliance/salary-conversion-consent",
+          "text": "Zustimmung zur Entgeltumwandlung",
+          "childNodeIds": [],
+          "defaultValue": "No",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-submit",
+          "nodeName": "Eintritt abschliessen",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/submit",
+          "text": "Eintritt abschliessen",
+          "childNodeIds": []
+        }
+      ]
+    }
+  ]
+}

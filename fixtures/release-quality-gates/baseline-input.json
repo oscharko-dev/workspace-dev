@@ -1,0 +1,184 @@
+{
+  "schemaVersion": "1.0.0",
+  "contractVersion":"1.39.0",
+  "releaseId": "baseline-2026-05-04",
+  "mutation": {
+    "fixtures": [
+      {
+        "fixtureId": "wave1-banking-onboarding",
+        "mutationCount": 20,
+        "killedMutations": 19,
+        "mutationKillRate": 0.95,
+        "survivingMutationsForRepair": ["mut-banking-onboarding-decision-3"]
+      },
+      {
+        "fixtureId": "wave1-insurance-quote",
+        "mutationCount": 18,
+        "killedMutations": 17,
+        "mutationKillRate": 0.944444,
+        "survivingMutationsForRepair": ["mut-insurance-quote-boundary-2"]
+      },
+      {
+        "fixtureId": "wave1-payments-transfer",
+        "mutationCount": 15,
+        "killedMutations": 13,
+        "mutationKillRate": 0.866666,
+        "survivingMutationsForRepair": [
+          "mut-payments-transfer-required-1",
+          "mut-payments-transfer-equivalence-4"
+        ]
+      }
+    ]
+  },
+  "promptCache": {
+    "roles": [
+      {
+        "roleId": "test-designer",
+        "iterationsCounted": 6,
+        "cacheHits": 5,
+        "cacheMisses": 1,
+        "promptCacheHitRate": 0.833333
+      },
+      {
+        "roleId": "self-verifier",
+        "iterationsCounted": 4,
+        "cacheHits": 3,
+        "cacheMisses": 1,
+        "promptCacheHitRate": 0.75
+      },
+      {
+        "roleId": "repair-planner",
+        "iterationsCounted": 5,
+        "cacheHits": 4,
+        "cacheMisses": 1,
+        "promptCacheHitRate": 0.8
+      }
+    ]
+  },
+  "tamper": {
+    "samples": [
+      {
+        "sampleId": "release-job-banking-001",
+        "merkleChainVerified": true,
+        "headOfChainHashVerified": true,
+        "mlBomHashVerified": true
+      },
+      {
+        "sampleId": "release-job-insurance-001",
+        "merkleChainVerified": true,
+        "headOfChainHashVerified": true,
+        "mlBomHashVerified": true
+      }
+    ]
+  },
+  "cacheBreak": {
+    "samples": [
+      {
+        "querySource": "figma-only",
+        "responseCount": 100,
+        "breakCount": 2,
+        "diffArtifactBasenames": [
+          "cache-break-figma-only-001.json",
+          "cache-break-figma-only-002.json"
+        ]
+      },
+      {
+        "querySource": "figma-plus-jira",
+        "responseCount": 80,
+        "breakCount": 3,
+        "diffArtifactBasenames": [
+          "cache-break-figma-plus-jira-001.json",
+          "cache-break-figma-plus-jira-002.json",
+          "cache-break-figma-plus-jira-003.json"
+        ]
+      }
+    ]
+  },
+  "perSourceCostPlausibility": {
+    "samples": [
+      {
+        "sampleId": "cost-banking-onboarding-001",
+        "attestedBySourceHash": "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899",
+        "observedBySourceHash": "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899",
+        "sealed": true
+      },
+      {
+        "sampleId": "cost-insurance-quote-001",
+        "attestedBySourceHash": "bbccddeeff00112233445566778899aabbccddeeff00112233445566778899aa",
+        "observedBySourceHash": "bbccddeeff00112233445566778899aabbccddeeff00112233445566778899aa",
+        "sealed": true
+      }
+    ]
+  },
+  "memdirManifestConsistency": {
+    "pathValidator": {
+      "coveredCases": 8,
+      "totalCases": 8
+    },
+    "lessons": [
+      {
+        "lessonId": "lesson-banking-eu-onboarding",
+        "profile": "banking",
+        "mtimeMs": 1746230400000,
+        "lastRefreshAtMs": 1746316800000,
+        "nowMs": 1746403200000
+      },
+      {
+        "lessonId": "lesson-banking-payments-transfer",
+        "profile": "banking",
+        "mtimeMs": 1746144000000,
+        "nowMs": 1746403200000
+      },
+      {
+        "lessonId": "lesson-default-general-flow",
+        "profile": "default",
+        "mtimeMs": 1729296000000,
+        "nowMs": 1746403200000
+      }
+    ]
+  },
+  "libraryCoverageStatusCompleteness": {
+    "primitives": [
+      {
+        "primitiveId": "langgraph/StateGraph.add_node",
+        "status": "COVERED",
+        "justification": "Fully covered by the harness StepGraph adapter in src/test-intelligence/agent-harness-step-graph.ts.",
+        "referencedModulePath": "src/test-intelligence/agent-harness-step-graph.ts",
+        "moduleImplemented": true
+      },
+      {
+        "primitiveId": "langgraph/StateGraph.compile",
+        "status": "COVERED",
+        "justification": "Compilation is exercised transitively through all harness integration tests.",
+        "moduleImplemented": true
+      },
+      {
+        "primitiveId": "langgraph/MemorySaver",
+        "status": "PARITY-PATH",
+        "justification": "Workspace-dev uses an in-process review-store instead of LangGraph MemorySaver; parity verified by contract tests.",
+        "moduleImplemented": true
+      },
+      {
+        "primitiveId": "langgraph/interrupt",
+        "status": "NICHT-UEBERNOMMEN",
+        "justification": "Human-in-the-loop interrupt not in scope for the current release; deferred to post-release increment.",
+        "moduleImplemented": false
+      }
+    ]
+  },
+  "architectureFitSelfTest": {
+    "scannedFileCount": 1,
+    "violations": []
+  },
+  "contextBudgetRegression": {
+    "baseline": {
+      "meanInputTokens": 18500,
+      "sampleCount": 12
+    },
+    "harness": {
+      "meanInputTokens": 19200,
+      "sampleCount": 12
+    },
+    "qualityDeltaScore": 0.02
+  }
+}

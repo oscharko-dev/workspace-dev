@@ -1,0 +1,9 @@
+{
+  "notes": [
+    {
+      "text": "Internal beneficiary feature. Test environment: preprod-eu.",
+      "authorHandle": "qa-reviewer"
+    }
+  ],
+  "attributes": [{ "key": "data_class", "value": "internal" }]
+}

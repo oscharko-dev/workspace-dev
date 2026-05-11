@@ -1,0 +1,60 @@
+{
+  "citations": [
+    {
+      "euTarget": "PSD2 art. 97",
+      "local": "Zákon č. 370/2017 Sb. § 223",
+      "localTopic": "Strong customer authentication"
+    },
+    {
+      "euTarget": "PSD2 art. 66",
+      "local": "Zákon č. 370/2017 Sb. § 222",
+      "localTopic": "Open banking / TPP access"
+    },
+    {
+      "euTarget": "AMLD5 art. 13",
+      "local": "Zákon č. 253/2008 Sb. § 9",
+      "localTopic": "Customer due diligence"
+    },
+    {
+      "euTarget": "EBA/GL/2019/04",
+      "local": "Vyhláška ČNB č. 163/2014 Sb. § 21",
+      "localTopic": "ICT risk management"
+    },
+    {
+      "euTarget": "EBA/GL/2019/02",
+      "local": "Úřední sdělení ČNB k outsourcingu (2020)",
+      "localTopic": "Outsourcing governance"
+    },
+    {
+      "euTarget": "Consumer Credit Directive art. 5",
+      "local": "Zákon č. 257/2016 Sb. § 92",
+      "localTopic": "Consumer credit information"
+    },
+    {
+      "euTarget": "CRD IV art. 88",
+      "local": "Zákon č. 21/1992 Sb. § 12c",
+      "localTopic": "Governance arrangements"
+    },
+    {
+      "euTarget": "EU AI Act art. 9–15",
+      "local": "Pravidla ČNB pro AI v dohledu (2024)",
+      "localTopic": "AI risk management"
+    },
+    {
+      "euTarget": "DORA art. 5–16",
+      "local": "Vyhláška ČNB č. 163/2014 Sb. § 17",
+      "localTopic": "Operational resilience"
+    },
+    {
+      "euTarget": "DORA art. 28",
+      "local": "Vyhláška č. 163/2014 Sb. § 41",
+      "localTopic": "Third-party ICT services"
+    }
+  ],
+  "locale": "CS-CZ",
+  "nationalRegulator": {
+    "code": "ČNB",
+    "country": "Czech Republic",
+    "name": "Česká národní banka"
+  }
+}

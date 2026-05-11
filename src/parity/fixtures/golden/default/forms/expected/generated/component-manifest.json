@@ -1,0 +1,10 @@
+{
+  "screens": [
+    {
+      "screenId": "screen-form",
+      "screenName": "AccountOpening",
+      "file": "src/pages/accountopening.tsx",
+      "components": []
+    }
+  ]
+}

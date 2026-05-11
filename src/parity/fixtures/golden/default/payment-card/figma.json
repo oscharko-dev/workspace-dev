@@ -1,0 +1,382 @@
+{
+  "name": "Payment Authorization Card Board",
+  "document": {
+    "id": "0:0",
+    "type": "DOCUMENT",
+    "children": [
+      {
+        "id": "0:1",
+        "type": "CANVAS",
+        "name": "Page 1",
+        "children": [
+          {
+            "id": "screen-products",
+            "type": "FRAME",
+            "name": "PaymentAuthorizations",
+            "layoutMode": "VERTICAL",
+            "itemSpacing": 12,
+            "paddingTop": 16,
+            "paddingRight": 16,
+            "paddingBottom": 16,
+            "paddingLeft": 16,
+            "absoluteBoundingBox": { "x": 0, "y": 0, "width": 390, "height": 1200 },
+            "fills": [
+              {
+                "type": "SOLID",
+                "visible": true,
+                "color": { "r": 0.96, "g": 0.97, "b": 0.98, "a": 1 }
+              }
+            ],
+            "children": [
+              {
+                "id": "list-title",
+                "type": "TEXT",
+                "name": "Title",
+                "characters": "Payment Approvals",
+                "style": { "fontSize": 24, "fontWeight": 700, "fontFamily": "Inter", "lineHeightPx": 32, "textAlignHorizontal": "LEFT" },
+                "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }],
+                "absoluteBoundingBox": { "x": 16, "y": 16, "width": 200, "height": 32 }
+              },
+              {
+                "id": "product-card-1",
+                "type": "FRAME",
+                "name": "Authorization Card",
+                "layoutMode": "HORIZONTAL",
+                "itemSpacing": 12,
+                "cornerRadius": 8,
+                "absoluteBoundingBox": { "x": 16, "y": 60, "width": 358, "height": 100 },
+                "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }],
+                "children": [
+                  {
+                    "id": "pc1-image",
+                    "type": "RECTANGLE",
+                    "name": "Image",
+                    "absoluteBoundingBox": { "x": 28, "y": 72, "width": 76, "height": 76 },
+                    "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.9, "g": 0.91, "b": 0.93, "a": 1 } }]
+                  },
+                  {
+                    "id": "pc1-info",
+                    "type": "FRAME",
+                    "name": "Info",
+                    "layoutMode": "VERTICAL",
+                    "itemSpacing": 4,
+                    "absoluteBoundingBox": { "x": 116, "y": 72, "width": 240, "height": 76 },
+                    "children": [
+                      {
+                        "id": "pc1-name",
+                        "type": "TEXT",
+                        "name": "Payment Title",
+                        "characters": "SEPA Payroll Batch",
+                        "style": { "fontSize": 16, "fontWeight": 600, "fontFamily": "Inter", "lineHeightPx": 24, "textAlignHorizontal": "LEFT" },
+                        "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }],
+                        "absoluteBoundingBox": { "x": 116, "y": 72, "width": 240, "height": 24 }
+                      },
+                      {
+                        "id": "pc1-desc",
+                        "type": "TEXT",
+                        "name": "Approval Context",
+                        "characters": "Treasury desk approval",
+                        "style": { "fontSize": 14, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" },
+                        "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }],
+                        "absoluteBoundingBox": { "x": 116, "y": 100, "width": 240, "height": 20 }
+                      },
+                      {
+                        "id": "pc1-price",
+                        "type": "TEXT",
+                        "name": "Amount",
+                        "characters": "EUR 84,200",
+                        "style": { "fontSize": 16, "fontWeight": 700, "fontFamily": "Inter", "lineHeightPx": 24, "textAlignHorizontal": "LEFT" },
+                        "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.09, "g": 0.47, "b": 0.95, "a": 1 } }],
+                        "absoluteBoundingBox": { "x": 116, "y": 124, "width": 80, "height": 24 }
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "product-card-2",
+                "type": "FRAME",
+                "name": "Authorization Card",
+                "layoutMode": "HORIZONTAL",
+                "itemSpacing": 12,
+                "cornerRadius": 8,
+                "absoluteBoundingBox": { "x": 16, "y": 172, "width": 358, "height": 100 },
+                "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }],
+                "children": [
+                  {
+                    "id": "pc2-image",
+                    "type": "RECTANGLE",
+                    "name": "Image",
+                    "absoluteBoundingBox": { "x": 28, "y": 184, "width": 76, "height": 76 },
+                    "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.9, "g": 0.91, "b": 0.93, "a": 1 } }]
+                  },
+                  {
+                    "id": "pc2-info",
+                    "type": "FRAME",
+                    "name": "Info",
+                    "layoutMode": "VERTICAL",
+                    "itemSpacing": 4,
+                    "absoluteBoundingBox": { "x": 116, "y": 184, "width": 240, "height": 76 },
+                    "children": [
+                      {
+                        "id": "pc2-name",
+                        "type": "TEXT",
+                        "name": "Payment Title",
+                        "characters": "Vendor Invoice Run",
+                        "style": { "fontSize": 16, "fontWeight": 600, "fontFamily": "Inter", "lineHeightPx": 24, "textAlignHorizontal": "LEFT" },
+                        "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }],
+                        "absoluteBoundingBox": { "x": 116, "y": 184, "width": 240, "height": 24 }
+                      },
+                      {
+                        "id": "pc2-desc",
+                        "type": "TEXT",
+                        "name": "Approval Context",
+                        "characters": "Dual-control review",
+                        "style": { "fontSize": 14, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" },
+                        "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }],
+                        "absoluteBoundingBox": { "x": 116, "y": 212, "width": 240, "height": 20 }
+                      },
+                      {
+                        "id": "pc2-price",
+                        "type": "TEXT",
+                        "name": "Amount",
+                        "characters": "EUR 12,480",
+                        "style": { "fontSize": 16, "fontWeight": 700, "fontFamily": "Inter", "lineHeightPx": 24, "textAlignHorizontal": "LEFT" },
+                        "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.09, "g": 0.47, "b": 0.95, "a": 1 } }],
+                        "absoluteBoundingBox": { "x": 116, "y": 236, "width": 80, "height": 24 }
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "product-card-3",
+                "type": "FRAME",
+                "name": "Authorization Card",
+                "layoutMode": "HORIZONTAL",
+                "itemSpacing": 12,
+                "cornerRadius": 8,
+                "absoluteBoundingBox": { "x": 16, "y": 284, "width": 358, "height": 100 },
+                "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }],
+                "children": [
+                  {
+                    "id": "pc3-image",
+                    "type": "RECTANGLE",
+                    "name": "Image",
+                    "absoluteBoundingBox": { "x": 28, "y": 296, "width": 76, "height": 76 },
+                    "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.9, "g": 0.91, "b": 0.93, "a": 1 } }]
+                  },
+                  {
+                    "id": "pc3-info",
+                    "type": "FRAME",
+                    "name": "Info",
+                    "layoutMode": "VERTICAL",
+                    "itemSpacing": 4,
+                    "absoluteBoundingBox": { "x": 116, "y": 296, "width": 240, "height": 76 },
+                    "children": [
+                      {
+                        "id": "pc3-name",
+                        "type": "TEXT",
+                        "name": "Payment Title",
+                        "characters": "FX Settlement",
+                        "style": { "fontSize": 16, "fontWeight": 600, "fontFamily": "Inter", "lineHeightPx": 24, "textAlignHorizontal": "LEFT" },
+                        "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }],
+                        "absoluteBoundingBox": { "x": 116, "y": 296, "width": 240, "height": 24 }
+                      },
+                      {
+                        "id": "pc3-desc",
+                        "type": "TEXT",
+                        "name": "Approval Context",
+                        "characters": "Cutoff before 16:00 CET",
+                        "style": { "fontSize": 14, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" },
+                        "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }],
+                        "absoluteBoundingBox": { "x": 116, "y": 324, "width": 240, "height": 20 }
+                      },
+                      {
+                        "id": "pc3-price",
+                        "type": "TEXT",
+                        "name": "Amount",
+                        "characters": "USD 52,100",
+                        "style": { "fontSize": 16, "fontWeight": 700, "fontFamily": "Inter", "lineHeightPx": 24, "textAlignHorizontal": "LEFT" },
+                        "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.09, "g": 0.47, "b": 0.95, "a": 1 } }],
+                        "absoluteBoundingBox": { "x": 116, "y": 348, "width": 80, "height": 24 }
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "product-card-4",
+                "type": "FRAME",
+                "name": "Authorization Card",
+                "layoutMode": "HORIZONTAL",
+                "itemSpacing": 12,
+                "cornerRadius": 8,
+                "absoluteBoundingBox": { "x": 16, "y": 396, "width": 358, "height": 100 },
+                "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }],
+                "children": [
+                  {
+                    "id": "pc4-image",
+                    "type": "RECTANGLE",
+                    "name": "Image",
+                    "absoluteBoundingBox": { "x": 28, "y": 408, "width": 76, "height": 76 },
+                    "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.9, "g": 0.91, "b": 0.93, "a": 1 } }]
+                  },
+                  {
+                    "id": "pc4-info",
+                    "type": "FRAME",
+                    "name": "Info",
+                    "layoutMode": "VERTICAL",
+                    "itemSpacing": 4,
+                    "absoluteBoundingBox": { "x": 116, "y": 408, "width": 240, "height": 76 },
+                    "children": [
+                      {
+                        "id": "pc4-name",
+                        "type": "TEXT",
+                        "name": "Payment Title",
+                        "characters": "Card Limit Change",
+                        "style": { "fontSize": 16, "fontWeight": 600, "fontFamily": "Inter", "lineHeightPx": 24, "textAlignHorizontal": "LEFT" },
+                        "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }],
+                        "absoluteBoundingBox": { "x": 116, "y": 408, "width": 240, "height": 24 }
+                      },
+                      {
+                        "id": "pc4-desc",
+                        "type": "TEXT",
+                        "name": "Approval Context",
+                        "characters": "Private banking review",
+                        "style": { "fontSize": 14, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" },
+                        "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }],
+                        "absoluteBoundingBox": { "x": 116, "y": 436, "width": 240, "height": 20 }
+                      },
+                      {
+                        "id": "pc4-price",
+                        "type": "TEXT",
+                        "name": "Amount",
+                        "characters": "EUR 7,500",
+                        "style": { "fontSize": 16, "fontWeight": 700, "fontFamily": "Inter", "lineHeightPx": 24, "textAlignHorizontal": "LEFT" },
+                        "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.09, "g": 0.47, "b": 0.95, "a": 1 } }],
+                        "absoluteBoundingBox": { "x": 116, "y": 460, "width": 80, "height": 24 }
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "product-card-5",
+                "type": "FRAME",
+                "name": "Authorization Card",
+                "layoutMode": "HORIZONTAL",
+                "itemSpacing": 12,
+                "cornerRadius": 8,
+                "absoluteBoundingBox": { "x": 16, "y": 508, "width": 358, "height": 100 },
+                "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }],
+                "children": [
+                  {
+                    "id": "pc5-image",
+                    "type": "RECTANGLE",
+                    "name": "Image",
+                    "absoluteBoundingBox": { "x": 28, "y": 520, "width": 76, "height": 76 },
+                    "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.9, "g": 0.91, "b": 0.93, "a": 1 } }]
+                  },
+                  {
+                    "id": "pc5-info",
+                    "type": "FRAME",
+                    "name": "Info",
+                    "layoutMode": "VERTICAL",
+                    "itemSpacing": 4,
+                    "absoluteBoundingBox": { "x": 116, "y": 520, "width": 240, "height": 76 },
+                    "children": [
+                      {
+                        "id": "pc5-name",
+                        "type": "TEXT",
+                        "name": "Payment Title",
+                        "characters": "Instant Payment Hold",
+                        "style": { "fontSize": 16, "fontWeight": 600, "fontFamily": "Inter", "lineHeightPx": 24, "textAlignHorizontal": "LEFT" },
+                        "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }],
+                        "absoluteBoundingBox": { "x": 116, "y": 520, "width": 240, "height": 24 }
+                      },
+                      {
+                        "id": "pc5-desc",
+                        "type": "TEXT",
+                        "name": "Approval Context",
+                        "characters": "Fraud operations queue",
+                        "style": { "fontSize": 14, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" },
+                        "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }],
+                        "absoluteBoundingBox": { "x": 116, "y": 548, "width": 240, "height": 20 }
+                      },
+                      {
+                        "id": "pc5-price",
+                        "type": "TEXT",
+                        "name": "Amount",
+                        "characters": "EUR 2,940",
+                        "style": { "fontSize": 16, "fontWeight": 700, "fontFamily": "Inter", "lineHeightPx": 24, "textAlignHorizontal": "LEFT" },
+                        "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.09, "g": 0.47, "b": 0.95, "a": 1 } }],
+                        "absoluteBoundingBox": { "x": 116, "y": 572, "width": 80, "height": 24 }
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "product-card-6",
+                "type": "FRAME",
+                "name": "Authorization Card",
+                "layoutMode": "HORIZONTAL",
+                "itemSpacing": 12,
+                "cornerRadius": 8,
+                "absoluteBoundingBox": { "x": 16, "y": 620, "width": 358, "height": 100 },
+                "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }],
+                "children": [
+                  {
+                    "id": "pc6-image",
+                    "type": "RECTANGLE",
+                    "name": "Image",
+                    "absoluteBoundingBox": { "x": 28, "y": 632, "width": 76, "height": 76 },
+                    "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.9, "g": 0.91, "b": 0.93, "a": 1 } }]
+                  },
+                  {
+                    "id": "pc6-info",
+                    "type": "FRAME",
+                    "name": "Info",
+                    "layoutMode": "VERTICAL",
+                    "itemSpacing": 4,
+                    "absoluteBoundingBox": { "x": 116, "y": 632, "width": 240, "height": 76 },
+                    "children": [
+                      {
+                        "id": "pc6-name",
+                        "type": "TEXT",
+                        "name": "Payment Title",
+                        "characters": "Liquidity Sweep",
+                        "style": { "fontSize": 16, "fontWeight": 600, "fontFamily": "Inter", "lineHeightPx": 24, "textAlignHorizontal": "LEFT" },
+                        "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }],
+                        "absoluteBoundingBox": { "x": 116, "y": 632, "width": 240, "height": 24 }
+                      },
+                      {
+                        "id": "pc6-desc",
+                        "type": "TEXT",
+                        "name": "Approval Context",
+                        "characters": "Corporate treasury rule",
+                        "style": { "fontSize": 14, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" },
+                        "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }],
+                        "absoluteBoundingBox": { "x": 116, "y": 660, "width": 240, "height": 20 }
+                      },
+                      {
+                        "id": "pc6-price",
+                        "type": "TEXT",
+                        "name": "Amount",
+                        "characters": "EUR 125,000",
+                        "style": { "fontSize": 16, "fontWeight": 700, "fontFamily": "Inter", "lineHeightPx": 24, "textAlignHorizontal": "LEFT" },
+                        "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.09, "g": 0.47, "b": 0.95, "a": 1 } }],
+                        "absoluteBoundingBox": { "x": 116, "y": 684, "width": 80, "height": 24 }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

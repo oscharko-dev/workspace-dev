@@ -1,0 +1,13 @@
+{
+  "issues": [
+    {
+      "key": "RISK-4001",
+      "fields": {
+        "issuetype": { "name": "Story" },
+        "summary": "Regulatory reporting export for SREP submission",
+        "description": "Risk team must export the quarterly SREP regulatory report to a signed PDF. Acceptance: 1) The export covers all in-scope risk categories. 2) The signing certificate chain is validated against the EU trust list. 3) The export is reproducible with byte-stable output.",
+        "status": { "name": "Open" }
+      }
+    }
+  ]
+}

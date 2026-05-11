@@ -1,0 +1,124 @@
+{
+  "$comment": "Synthetic Figma REST file fixture for the live-end-to-end smoke. NOT a real Figma export. Shaped to match `FigmaRestFileSnapshot` with German banking-form labels (IBAN, Antrag stellen, Betrag, Verwendungszweck) so the prompt augmentation block fires. Kept under 50 KB.",
+  "name": "Live-E2E Banking Antrag (synthetic)",
+  "fileKey": "live-e2e-banking-antrag",
+  "lastModified": "2026-05-02T00:00:00.000Z",
+  "document": {
+    "id": "0:0",
+    "type": "DOCUMENT",
+    "name": "Document",
+    "children": [
+      {
+        "id": "0:1",
+        "type": "CANVAS",
+        "name": "Page 1",
+        "children": [
+          {
+            "id": "1:1",
+            "type": "FRAME",
+            "name": "Antrag stellen",
+            "absoluteBoundingBox": {
+              "x": 0,
+              "y": 0,
+              "width": 360,
+              "height": 800
+            },
+            "children": [
+              {
+                "id": "1:2",
+                "type": "TEXT",
+                "name": "Title",
+                "characters": "Antrag stellen"
+              },
+              {
+                "id": "1:3",
+                "type": "TEXT",
+                "name": "Hint",
+                "characters": "Bitte tragen Sie Ihre IBAN und den Betrag ein."
+              },
+              {
+                "id": "1:4",
+                "type": "INSTANCE",
+                "name": "TextField IBAN",
+                "componentPropertyDefinitions": {
+                  "label": { "type": "TEXT", "defaultValue": "IBAN" },
+                  "placeholder": {
+                    "type": "TEXT",
+                    "defaultValue": "DE00 0000 0000 0000 0000 00"
+                  },
+                  "required": { "type": "BOOLEAN", "defaultValue": true }
+                }
+              },
+              {
+                "id": "1:5",
+                "type": "INSTANCE",
+                "name": "TextField BIC",
+                "componentPropertyDefinitions": {
+                  "label": { "type": "TEXT", "defaultValue": "BIC" },
+                  "placeholder": { "type": "TEXT", "defaultValue": "BICDEFF" },
+                  "required": { "type": "BOOLEAN", "defaultValue": true }
+                }
+              },
+              {
+                "id": "1:6",
+                "type": "INSTANCE",
+                "name": "TextField Betrag",
+                "componentPropertyDefinitions": {
+                  "label": { "type": "TEXT", "defaultValue": "Betrag in EUR" },
+                  "placeholder": { "type": "TEXT", "defaultValue": "0,00" },
+                  "required": { "type": "BOOLEAN", "defaultValue": true }
+                }
+              },
+              {
+                "id": "1:7",
+                "type": "INSTANCE",
+                "name": "TextField Verwendungszweck",
+                "componentPropertyDefinitions": {
+                  "label": {
+                    "type": "TEXT",
+                    "defaultValue": "Verwendungszweck"
+                  },
+                  "placeholder": {
+                    "type": "TEXT",
+                    "defaultValue": "Rechnung 12345"
+                  },
+                  "required": { "type": "BOOLEAN", "defaultValue": false }
+                }
+              },
+              {
+                "id": "1:8",
+                "type": "INSTANCE",
+                "name": "Checkbox SEPA",
+                "componentPropertyDefinitions": {
+                  "label": {
+                    "type": "TEXT",
+                    "defaultValue": "SEPA-Lastschriftmandat erteilen"
+                  },
+                  "checked": { "type": "BOOLEAN", "defaultValue": false }
+                }
+              },
+              {
+                "id": "1:9",
+                "type": "INSTANCE",
+                "name": "Button Submit",
+                "componentPropertyDefinitions": {
+                  "label": { "type": "TEXT", "defaultValue": "Antrag stellen" },
+                  "variant": { "type": "TEXT", "defaultValue": "primary" }
+                }
+              },
+              {
+                "id": "1:10",
+                "type": "INSTANCE",
+                "name": "Button Cancel",
+                "componentPropertyDefinitions": {
+                  "label": { "type": "TEXT", "defaultValue": "Abbrechen" },
+                  "variant": { "type": "TEXT", "defaultValue": "secondary" }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

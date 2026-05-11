@@ -1,0 +1,58 @@
+{
+  "source": {
+    "kind": "figma_local_json"
+  },
+  "screens": [
+    {
+      "screenId": "s-loan-quote",
+      "screenName": "Loan Quote",
+      "nodes": [
+        {
+          "nodeId": "n-principal",
+          "nodeName": "Principal",
+          "nodeType": "TEXT_INPUT",
+          "text": "Principal",
+          "defaultValue": "10000",
+          "validations": ["Required", "Numeric >= 0"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-annual-rate",
+          "nodeName": "Annual Rate %",
+          "nodeType": "TEXT_INPUT",
+          "text": "Annual Rate %",
+          "defaultValue": "5.5",
+          "validations": ["Required", "Range 0..100"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-term-years",
+          "nodeName": "Term (Years)",
+          "nodeType": "TEXT_INPUT",
+          "text": "Term (Years)",
+          "defaultValue": "5",
+          "validations": ["Required", "Integer 1..30"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-monthly-payment",
+          "nodeName": "Monthly Payment",
+          "nodeType": "TEXT_INPUT",
+          "text": "Monthly Payment",
+          "defaultValue": "<computed>",
+          "validations": [
+            "Computed = principal * (rate/12) / (1 - (1 + rate/12)^(-12*years)); rounded HALF_UP to 2 decimals"
+          ],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-calculate",
+          "nodeName": "Calculate",
+          "nodeType": "BUTTON",
+          "text": "Calculate",
+          "childNodeIds": []
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "judge": "logic",
+  "input": {
+    "testDesignModel": {
+      "screens": [{ "screenId": "6:1", "screenName": "Settings" }],
+      "fields": [{ "id": "field-real", "screenId": "6:1", "label": "Username" }]
+    },
+    "coveragePlan": {
+      "perScreen": [{ "screenId": "6:1", "requiredFlows": ["save"] }]
+    },
+    "generatedTestCases": {
+      "schemaVersion": "1.0.0",
+      "jobId": "calibration-logic-adversarial-hallucinated-id",
+      "testCases": [
+        {
+          "id": "tc-hallu-1",
+          "title": "Save settings (with invented field id)",
+          "type": "functional",
+          "qualitySignals": {
+            "coveredFieldIds": ["field-real", "field-NEVER_EXISTED"],
+            "coveredActionIds": ["save"],
+            "coveredScreenIds": ["6:1"]
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,9 +1,0 @@
-# Workspace Dev workspace-dev NPM Ignore Rules
-
-# Exclude source code, tests, and config since we publish transpiled JS
-src/
-scripts/
-tsconfig.json
-*.test.ts
-node_modules/
-template/**/node_modules/

@@ -1,0 +1,124 @@
+{
+  "source": {
+    "kind": "figma_local_json"
+  },
+  "screens": [
+    {
+      "screenId": "s-girokonto",
+      "screenName": "Girokonto eroeffnen",
+      "screenPath": "/banking/retail/giro/open",
+      "nodes": [
+        {
+          "nodeId": "n-vorname",
+          "nodeName": "Vorname",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "applicant/given-name",
+          "text": "Vorname",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Max 60 characters"
+          ]
+        },
+        {
+          "nodeId": "n-nachname",
+          "nodeName": "Nachname",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "applicant/family-name",
+          "text": "Nachname",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Max 60 characters"
+          ]
+        },
+        {
+          "nodeId": "n-geburtsdatum",
+          "nodeName": "Geburtsdatum",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "applicant/dob",
+          "text": "Geburtsdatum",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "ISO date",
+            "Date implies age >= 18"
+          ]
+        },
+        {
+          "nodeId": "n-email",
+          "nodeName": "E-Mail",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "applicant/contact/email",
+          "text": "E-Mail",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Email format"
+          ]
+        },
+        {
+          "nodeId": "n-iban-referenz",
+          "nodeName": "IBAN-Referenzkonto",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "applicant/reference-iban",
+          "text": "IBAN-Referenzkonto",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "IBAN format"
+          ]
+        },
+        {
+          "nodeId": "n-kontomodell",
+          "nodeName": "Kontomodell",
+          "nodeType": "SELECT_FIELD",
+          "nodePath": "product/giro-tier",
+          "text": "Kontomodell",
+          "childNodeIds": [],
+          "defaultValue": "Basis",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-agb",
+          "nodeName": "AGB akzeptiert",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "compliance/agb-accepted",
+          "text": "AGB akzeptiert",
+          "childNodeIds": [],
+          "defaultValue": "No",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-datenschutz",
+          "nodeName": "Datenschutz akzeptiert",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "compliance/privacy-accepted",
+          "text": "Datenschutz akzeptiert",
+          "childNodeIds": [],
+          "defaultValue": "No",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-submit",
+          "nodeName": "Konto eroeffnen",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/submit",
+          "text": "Konto eroeffnen",
+          "childNodeIds": []
+        }
+      ]
+    }
+  ]
+}

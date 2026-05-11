@@ -1,0 +1,13 @@
+{
+  "issues": [
+    {
+      "key": "RISK-6001",
+      "fields": {
+        "issuetype": { "name": "Story" },
+        "summary": "Transaction screening against sanctions lists",
+        "description": "All outgoing payments must be screened against the consolidated sanctions list before they are released. Acceptance: 1) Screening matches yield a hold. 2) False positives are explainable. 3) The screening latency must remain under 200ms at peak load.",
+        "status": { "name": "Open" }
+      }
+    }
+  ]
+}

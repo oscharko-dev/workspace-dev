@@ -1,0 +1,191 @@
+{
+  "schemaVersion": "1.0.0",
+  "pipelineId": "default",
+  "summary": {
+    "status": "warn",
+    "message": "Generated accessibility report flagged 9 warning(s) across 1 screen(s).",
+    "screenCount": 1,
+    "warningCount": 9,
+    "semanticOutputWarningCount": 4,
+    "formLabelWarningCount": 0,
+    "buttonSemanticsWarningCount": 0,
+    "ariaLabelFallbackWarningCount": 0,
+    "altFallbackWarningCount": 0,
+    "focusOrderWarningCount": 5,
+    "lowContrastWarningCount": 0,
+    "clickDivFallbackWarningCount": 0
+  },
+  "screens": [
+    {
+      "screenId": "modal-card",
+      "screenName": "Risk Alert Modal",
+      "warningCount": 9,
+      "warnings": [
+        {
+          "screenId": "modal-card",
+          "screenName": "Risk Alert Modal",
+          "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+          "severity": "warning",
+          "nodeId": "risk-severity-label",
+          "nodeName": "Label",
+          "message": "Absolute layout fallback for 'Label' can make keyboard focus order depend on implementation details."
+        },
+        {
+          "screenId": "modal-card",
+          "screenName": "Risk Alert Modal",
+          "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+          "severity": "warning",
+          "nodeId": "risk-summary-label",
+          "nodeName": "Label",
+          "message": "Absolute layout fallback for 'Label' can make keyboard focus order depend on implementation details."
+        },
+        {
+          "screenId": "modal-card",
+          "screenName": "Risk Alert Modal",
+          "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+          "severity": "warning",
+          "nodeId": "risk-summary-value",
+          "nodeName": "Value",
+          "message": "Absolute layout fallback for 'Value' can make keyboard focus order depend on implementation details."
+        },
+        {
+          "screenId": "modal-card",
+          "screenName": "Risk Alert Modal",
+          "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+          "severity": "warning",
+          "nodeId": "risk-secondary-label",
+          "nodeName": "Label",
+          "message": "Absolute layout fallback for 'Label' can make keyboard focus order depend on implementation details."
+        },
+        {
+          "screenId": "modal-card",
+          "screenName": "Risk Alert Modal",
+          "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+          "severity": "warning",
+          "nodeId": "risk-primary-label",
+          "nodeName": "Label",
+          "message": "Absolute layout fallback for 'Label' can make keyboard focus order depend on implementation details."
+        },
+        {
+          "screenId": "modal-card",
+          "screenName": "Risk Alert Modal",
+          "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+          "severity": "warning",
+          "nodeId": "risk-severity-badge",
+          "nodeName": "Severity Badge",
+          "message": "Default semantic synthesis kept 'Severity Badge' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "screenId": "modal-card",
+          "screenName": "Risk Alert Modal",
+          "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+          "severity": "warning",
+          "nodeId": "risk-summary-panel",
+          "nodeName": "Risk Summary Panel",
+          "message": "Default semantic synthesis kept 'Risk Summary Panel' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "screenId": "modal-card",
+          "screenName": "Risk Alert Modal",
+          "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+          "severity": "warning",
+          "nodeId": "risk-secondary-button",
+          "nodeName": "Secondary Button",
+          "message": "Default semantic synthesis kept 'Secondary Button' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "screenId": "modal-card",
+          "screenName": "Risk Alert Modal",
+          "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+          "severity": "warning",
+          "nodeId": "risk-primary-button",
+          "nodeName": "Primary Button",
+          "message": "Default semantic synthesis kept 'Primary Button' inline because no matching reusable semantic structure was found."
+        }
+      ]
+    }
+  ],
+  "warnings": [
+    {
+      "screenId": "modal-card",
+      "screenName": "Risk Alert Modal",
+      "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+      "severity": "warning",
+      "nodeId": "risk-severity-label",
+      "nodeName": "Label",
+      "message": "Absolute layout fallback for 'Label' can make keyboard focus order depend on implementation details."
+    },
+    {
+      "screenId": "modal-card",
+      "screenName": "Risk Alert Modal",
+      "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+      "severity": "warning",
+      "nodeId": "risk-summary-label",
+      "nodeName": "Label",
+      "message": "Absolute layout fallback for 'Label' can make keyboard focus order depend on implementation details."
+    },
+    {
+      "screenId": "modal-card",
+      "screenName": "Risk Alert Modal",
+      "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+      "severity": "warning",
+      "nodeId": "risk-summary-value",
+      "nodeName": "Value",
+      "message": "Absolute layout fallback for 'Value' can make keyboard focus order depend on implementation details."
+    },
+    {
+      "screenId": "modal-card",
+      "screenName": "Risk Alert Modal",
+      "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+      "severity": "warning",
+      "nodeId": "risk-secondary-label",
+      "nodeName": "Label",
+      "message": "Absolute layout fallback for 'Label' can make keyboard focus order depend on implementation details."
+    },
+    {
+      "screenId": "modal-card",
+      "screenName": "Risk Alert Modal",
+      "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+      "severity": "warning",
+      "nodeId": "risk-primary-label",
+      "nodeName": "Label",
+      "message": "Absolute layout fallback for 'Label' can make keyboard focus order depend on implementation details."
+    },
+    {
+      "screenId": "modal-card",
+      "screenName": "Risk Alert Modal",
+      "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+      "severity": "warning",
+      "nodeId": "risk-severity-badge",
+      "nodeName": "Severity Badge",
+      "message": "Default semantic synthesis kept 'Severity Badge' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "modal-card",
+      "screenName": "Risk Alert Modal",
+      "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+      "severity": "warning",
+      "nodeId": "risk-summary-panel",
+      "nodeName": "Risk Summary Panel",
+      "message": "Default semantic synthesis kept 'Risk Summary Panel' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "modal-card",
+      "screenName": "Risk Alert Modal",
+      "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+      "severity": "warning",
+      "nodeId": "risk-secondary-button",
+      "nodeName": "Secondary Button",
+      "message": "Default semantic synthesis kept 'Secondary Button' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "modal-card",
+      "screenName": "Risk Alert Modal",
+      "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+      "severity": "warning",
+      "nodeId": "risk-primary-button",
+      "nodeName": "Primary Button",
+      "message": "Default semantic synthesis kept 'Primary Button' inline because no matching reusable semantic structure was found."
+    }
+  ]
+}

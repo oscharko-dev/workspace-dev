@@ -1,0 +1,71 @@
+{
+  "fetchedNodes": 0,
+  "skippedHidden": 0,
+  "skippedPlaceholders": 0,
+  "screenElementCounts": [
+    {
+      "screenId": "screen-splash",
+      "screenName": "Splash",
+      "elements": 2
+    },
+    {
+      "screenId": "screen-onboarding",
+      "screenName": "Onboarding",
+      "elements": 2
+    },
+    {
+      "screenId": "screen-login",
+      "screenName": "Login",
+      "elements": 5
+    },
+    {
+      "screenId": "screen-register",
+      "screenName": "Register",
+      "elements": 3
+    },
+    {
+      "screenId": "screen-home",
+      "screenName": "Home",
+      "elements": 2
+    },
+    {
+      "screenId": "screen-feed",
+      "screenName": "Feed",
+      "elements": 1
+    },
+    {
+      "screenId": "screen-search",
+      "screenName": "Search",
+      "elements": 3
+    },
+    {
+      "screenId": "screen-profile",
+      "screenName": "Profile",
+      "elements": 2
+    },
+    {
+      "screenId": "screen-settings",
+      "screenName": "Settings",
+      "elements": 3
+    },
+    {
+      "screenId": "screen-notifications",
+      "screenName": "Notifications",
+      "elements": 2
+    },
+    {
+      "screenId": "screen-about",
+      "screenName": "About",
+      "elements": 3
+    }
+  ],
+  "truncatedScreens": [],
+  "depthTruncatedScreens": [],
+  "classificationFallbacks": [],
+  "degradedGeometryNodes": [],
+  "prototypeNavigationDetected": 0,
+  "prototypeNavigationResolved": 0,
+  "prototypeNavigationUnresolved": 0,
+  "prototypeNavigationRendered": 0,
+  "nodeDiagnostics": []
+}

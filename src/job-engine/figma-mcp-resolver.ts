@@ -1,0 +1,1892 @@
+import { createHash } from "node:crypto";
+
+import type { FigmaMcpAuthMode } from "../parity/types-core.js";
+import {
+  createPipelineError,
+  getErrorMessage,
+  type PipelineDiagnosticLimits,
+} from "./errors.js";
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const DEFAULT_MCP_SERVER_URL = "https://mcp.figma.com/mcp";
+const ADAPTIVE_NODE_THRESHOLD = 50;
+const MAX_SUBTREE_BATCH_SIZE = 5;
+const STAGE = "figma.source" as const;
+const CACHE_TTL_MS: number = 5 * 60_000;
+const ALLOW_INSECURE_MCP_ENV = "WORKSPACE_ALLOW_INSECURE_MCP";
+const DIRECT_CHILD_SUBTREE_TAGS = new Set([
+  "FRAME",
+  "COMPONENT",
+  "COMPONENT_SET",
+  "GROUP",
+  "SECTION",
+]);
+
+// ---------------------------------------------------------------------------
+// Cache
+// ---------------------------------------------------------------------------
+
+interface CacheEntry {
+  context: FigmaDesignContext;
+  expiresAt: number;
+}
+
+const resolverCache = new Map<string, CacheEntry>();
+const inflightResolverCache = new Map<string, Promise<FigmaDesignContext>>();
+
+/**
+ * Sentinel `tokenScope` used when no Figma access token is configured (e.g.
+ * desktop / unauthenticated MCP modes). Distinct from the SHA-256 hash space so
+ * an empty/missing token never collides with a real one.
+ *
+ * Issue #1669 (audit-2026-05 Wave 8a): the cache must never serve a payload
+ * resolved under token A to a job authenticated as token B.
+ */
+const ANONYMOUS_TOKEN_SCOPE = "anon";
+
+const TOKEN_SCOPE_LENGTH = 16;
+
+/**
+ * Derive an opaque, non-reversible identifier for a Figma access token. Truncating
+ * the SHA-256 hex digest to 16 chars (64 bits) is enough to make accidental
+ * collisions on a single workstation effectively impossible while keeping the
+ * cache key compact. The token itself never appears in any log, error, or
+ * cache key — only the truncated digest does.
+ */
+const deriveTokenScope = (accessToken: string | undefined): string => {
+  if (typeof accessToken !== "string") {
+    return ANONYMOUS_TOKEN_SCOPE;
+  }
+  const trimmed = accessToken.trim();
+  if (trimmed.length === 0) {
+    return ANONYMOUS_TOKEN_SCOPE;
+  }
+  return createHash("sha256")
+    .update(trimmed)
+    .digest("hex")
+    .slice(0, TOKEN_SCOPE_LENGTH);
+};
+
+const getCacheKey = (
+  fileKey: string,
+  nodeId: string,
+  version: string | undefined,
+  tokenScope: string,
+): string =>
+  `${fileKey}:${nodeId}:${version?.trim() || "current"}:${tokenScope}`;
+
+export const clearResolverCache = (): void => {
+  resolverCache.clear();
+  inflightResolverCache.clear();
+};
+
+// ---------------------------------------------------------------------------
+// Public types
+// ---------------------------------------------------------------------------
+
+export interface FigmaMeta {
+  fileKey: string;
+  nodeId?: string;
+  pasteID?: number;
+  dataType?: string;
+  version?: string;
+}
+
+export interface FigmaDesignContext {
+  code: string;
+  assets: Record<string, string>;
+  screenshot?: string;
+  metadata?: FigmaNodeMetadata;
+  fallbackMode?: "none" | "rest";
+  fileKey: string;
+  nodeId: string;
+  resolvedAt: string;
+  diagnostics?: McpResolverDiagnostic[];
+}
+
+export interface FigmaNodeMetadata {
+  xml: string;
+  nodeCount: number;
+  rootNodeType: string;
+  rootNodeName: string;
+}
+
+export interface ResolverOptions {
+  signal?: AbortSignal;
+  skipScreenshot?: boolean;
+  forceRefresh?: boolean;
+  maxDepth?: number;
+}
+
+export interface McpResolverDiagnostic {
+  code: string;
+  message: string;
+  severity: "info" | "warning";
+}
+
+export interface McpResolverConfig {
+  serverUrl: string;
+  accessToken?: string | undefined;
+  authMode: FigmaMcpAuthMode;
+  fetchImpl: typeof fetch;
+  timeoutMs: number;
+  maxRetries: number;
+  pipelineDiagnosticLimits?: PipelineDiagnosticLimits;
+  onLog?: (message: string) => void;
+}
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+const toRetryDelay = ({ attempt }: { attempt: number }): number => {
+  const base = Math.min(8_000, 500 * 2 ** Math.max(0, attempt - 1));
+  const jitter = Math.floor(Math.random() * 250);
+  return base + jitter;
+};
+
+const waitFor = async (
+  delayMs: number,
+  signal?: AbortSignal,
+): Promise<void> => {
+  if (!signal) {
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, delayMs);
+    });
+    return;
+  }
+
+  if (signal.aborted) {
+    throw new DOMException("The operation was aborted.", "AbortError");
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, delayMs);
+
+    const onAbort = (): void => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", onAbort);
+      reject(new DOMException("The operation was aborted.", "AbortError"));
+    };
+
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+};
+
+const parseRetryAfterMs = (value: string | null): number | undefined => {
+  if (!value) {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return undefined;
+  }
+  const asSeconds = Number(trimmed);
+  if (Number.isFinite(asSeconds) && asSeconds >= 0) {
+    return Math.max(0, Math.trunc(asSeconds * 1_000));
+  }
+  const asDate = Date.parse(trimmed);
+  if (Number.isNaN(asDate)) {
+    return undefined;
+  }
+  return Math.max(0, asDate - Date.now());
+};
+
+const retryAfterArg = (
+  value: string | null,
+): { retryAfterMs: number } | Record<string, never> => {
+  const retryAfterMs = parseRetryAfterMs(value);
+  return retryAfterMs !== undefined ? { retryAfterMs } : {};
+};
+
+const isAbortError = (error: unknown): boolean => {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  if ("name" in error && error.name === "AbortError") {
+    return true;
+  }
+  const message = error.message.toLowerCase();
+  return message.includes("aborted");
+};
+
+const isTimeoutError = (error: unknown): boolean => {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  if ("name" in error && error.name === "TimeoutError") {
+    return true;
+  }
+  return error.message.toLowerCase().includes("timeout");
+};
+
+const throwIfAborted = (signal: AbortSignal | undefined): void => {
+  if (signal?.aborted) {
+    throw new DOMException("The operation was aborted.", "AbortError");
+  }
+};
+
+const buildSignal = (
+  timeoutMs: number,
+  external?: AbortSignal,
+): AbortSignal => {
+  const timeoutSignal = AbortSignal.timeout(Math.max(1, timeoutMs));
+  return external ? AbortSignal.any([external, timeoutSignal]) : timeoutSignal;
+};
+
+/**
+ * Wraps `limits` for `createPipelineError` so that `undefined` is never
+ * passed to the optional `limits` property under `exactOptionalPropertyTypes`.
+ */
+const limitsArg = (
+  limits: PipelineDiagnosticLimits | undefined,
+): { limits: PipelineDiagnosticLimits } | Record<string, never> =>
+  limits ? { limits } : {};
+
+const isTruthyEnvValue = (value: string | undefined): boolean => {
+  if (!value) {
+    return false;
+  }
+  return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
+};
+
+const normalizeHostname = (hostname: string): string => {
+  const normalized = hostname.trim().toLowerCase();
+  return normalized.startsWith("[") && normalized.endsWith("]")
+    ? normalized.slice(1, -1)
+    : normalized;
+};
+
+const parseIpv4Address = (hostname: string): number[] | null => {
+  const octets = hostname.split(".");
+  if (octets.length !== 4) {
+    return null;
+  }
+  const values = octets.map((octet) => {
+    if (!/^\d{1,3}$/.test(octet)) {
+      return Number.NaN;
+    }
+    return Number(octet);
+  });
+  if (
+    values.some((value) => !Number.isInteger(value) || value < 0 || value > 255)
+  ) {
+    return null;
+  }
+  return values;
+};
+
+const isIpv4LoopbackHostname = (hostname: string): boolean => {
+  const octets = parseIpv4Address(hostname);
+  return octets !== null && octets[0] === 127;
+};
+
+const parseIpv6Address = (hostname: string): number[] | null => {
+  const normalized = normalizeHostname(hostname);
+  if (!normalized.includes(":")) {
+    return null;
+  }
+
+  let ipv6Source = normalized;
+  const rawSegments = normalized.split(":");
+  const lastSegment = rawSegments.at(-1);
+  if (lastSegment?.includes(".")) {
+    const ipv4Octets = parseIpv4Address(lastSegment);
+    if (ipv4Octets === null) {
+      return null;
+    }
+    const [octet0, octet1, octet2, octet3] = ipv4Octets;
+    if (
+      octet0 === undefined ||
+      octet1 === undefined ||
+      octet2 === undefined ||
+      octet3 === undefined
+    ) {
+      return null;
+    }
+    rawSegments.splice(
+      -1,
+      1,
+      ((octet0 << 8) | octet1).toString(16),
+      ((octet2 << 8) | octet3).toString(16),
+    );
+    ipv6Source = rawSegments.join(":");
+  }
+
+  if (ipv6Source.indexOf("::") !== ipv6Source.lastIndexOf("::")) {
+    return null;
+  }
+
+  const [leftSource, rightSource = ""] = ipv6Source.split("::");
+  const leftSegments = leftSource ? leftSource.split(":") : [];
+  const rightSegments = rightSource ? rightSource.split(":") : [];
+  const allSegments = [...leftSegments, ...rightSegments];
+  if (allSegments.some((segment) => !/^[\da-f]{1,4}$/i.test(segment))) {
+    return null;
+  }
+
+  if (!ipv6Source.includes("::")) {
+    if (leftSegments.length !== 8) {
+      return null;
+    }
+    return leftSegments.map((segment) => parseInt(segment, 16));
+  }
+
+  const zeroFillLength = 8 - allSegments.length;
+  if (zeroFillLength < 1) {
+    return null;
+  }
+
+  return [
+    ...leftSegments.map((segment) => parseInt(segment, 16)),
+    ...Array.from({ length: zeroFillLength }, () => 0),
+    ...rightSegments.map((segment) => parseInt(segment, 16)),
+  ];
+};
+
+const isIpv4MappedIpv6LoopbackHostname = (hostname: string): boolean => {
+  const hextets = parseIpv6Address(hostname);
+  if (hextets === null) {
+    return false;
+  }
+  const [
+    hextet0,
+    hextet1,
+    hextet2,
+    hextet3,
+    hextet4,
+    hextet5,
+    hextet6,
+    hextet7,
+  ] = hextets;
+  if (
+    hextet0 === undefined ||
+    hextet1 === undefined ||
+    hextet2 === undefined ||
+    hextet3 === undefined ||
+    hextet4 === undefined ||
+    hextet5 === undefined ||
+    hextet6 === undefined ||
+    hextet7 === undefined
+  ) {
+    return false;
+  }
+  return (
+    hextet0 === 0 &&
+    hextet1 === 0 &&
+    hextet2 === 0 &&
+    hextet3 === 0 &&
+    hextet4 === 0 &&
+    hextet5 === 0xffff &&
+    hextet6 >> 8 === 127
+  );
+};
+
+const isLoopbackHostname = (hostname: string): boolean => {
+  const normalized = normalizeHostname(hostname);
+  return (
+    normalized === "localhost" ||
+    normalized === "::1" ||
+    isIpv4LoopbackHostname(normalized) ||
+    isIpv4MappedIpv6LoopbackHostname(normalized)
+  );
+};
+
+/**
+ * Issue #1683 (audit-2026-05 Wave 1): block obviously unsafe hostnames on the
+ * HTTPS validation path so a misconfigured `figmaMcpServerUrl` cannot pivot
+ * the runtime against internal services with the configured Figma access
+ * token attached.
+ *
+ * Coverage:
+ *   - loopback (already covered by `isLoopbackHostname`).
+ *   - RFC1918 private IPv4: 10/8, 172.16/12, 192.168/16.
+ *   - 169.254/16 (link-local + AWS/GCP IMDS).
+ *   - 0.0.0.0/8 ("this network").
+ *   - 100.64/10 (CGNAT).
+ *   - IPv6 ULA fc00::/7, link-local fe80::/10, IPv4-mapped private ranges.
+ *
+ * Public DNS hostnames are *not* resolved here (no DNS lookup at validation
+ * time, by design — that would be a side-effect on the validation path).
+ * The check is therefore conservative: it blocks operator-supplied IP
+ * literals and hostnames already in literal numeric form.
+ */
+const isRfc1918Ipv4 = (octets: readonly number[]): boolean => {
+  const [a, b] = octets;
+  if (a === undefined || b === undefined) {
+    return false;
+  }
+  if (a === 10) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  return false;
+};
+
+const isLinkLocalOrImdsIpv4 = (octets: readonly number[]): boolean => {
+  const [a, b] = octets;
+  return a === 169 && b === 254;
+};
+
+const isThisNetworkIpv4 = (octets: readonly number[]): boolean => {
+  return octets[0] === 0;
+};
+
+const isCgnatIpv4 = (octets: readonly number[]): boolean => {
+  const [a, b] = octets;
+  if (a === undefined || b === undefined) {
+    return false;
+  }
+  return a === 100 && b >= 64 && b <= 127;
+};
+
+const isUniqueLocalIpv6 = (hextets: readonly number[]): boolean => {
+  const first = hextets[0];
+  return first !== undefined && (first & 0xfe00) === 0xfc00;
+};
+
+const isLinkLocalIpv6 = (hextets: readonly number[]): boolean => {
+  const first = hextets[0];
+  return first !== undefined && (first & 0xffc0) === 0xfe80;
+};
+
+const isIpv4MappedPrivateIpv6 = (hextets: readonly number[]): boolean => {
+  const [h0, h1, h2, h3, h4, h5, h6, h7] = hextets;
+  if (
+    h0 !== 0 ||
+    h1 !== 0 ||
+    h2 !== 0 ||
+    h3 !== 0 ||
+    h4 !== 0 ||
+    h5 !== 0xffff ||
+    h6 === undefined ||
+    h7 === undefined
+  ) {
+    return false;
+  }
+  const a = h6 >> 8;
+  const b = h6 & 0xff;
+  const c = h7 >> 8;
+  const d = h7 & 0xff;
+  const octets = [a, b, c, d] as const;
+  return (
+    isRfc1918Ipv4(octets) ||
+    isLinkLocalOrImdsIpv4(octets) ||
+    isThisNetworkIpv4(octets) ||
+    isCgnatIpv4(octets) ||
+    a === 127
+  );
+};
+
+const isBlockedHostname = (hostname: string): boolean => {
+  const normalized = normalizeHostname(hostname);
+  if (isLoopbackHostname(normalized)) {
+    return true;
+  }
+  const ipv4Octets = parseIpv4Address(normalized);
+  if (ipv4Octets !== null) {
+    return (
+      isRfc1918Ipv4(ipv4Octets) ||
+      isLinkLocalOrImdsIpv4(ipv4Octets) ||
+      isThisNetworkIpv4(ipv4Octets) ||
+      isCgnatIpv4(ipv4Octets)
+    );
+  }
+  const ipv6Hextets = parseIpv6Address(normalized);
+  if (ipv6Hextets !== null) {
+    return (
+      isUniqueLocalIpv6(ipv6Hextets) ||
+      isLinkLocalIpv6(ipv6Hextets) ||
+      isIpv4MappedPrivateIpv6(ipv6Hextets)
+    );
+  }
+  return false;
+};
+
+const getMcpServerLogTarget = (parsedUrl: URL): string => parsedUrl.origin;
+
+const validateMcpServerUrl = ({
+  serverUrl,
+  onLog,
+  limits,
+}: {
+  serverUrl: string;
+  onLog?: (message: string) => void;
+  limits: { limits: PipelineDiagnosticLimits } | Record<string, never>;
+}): URL => {
+  if (!serverUrl) {
+    throw createPipelineError({
+      code: "E_MCP_NO_SERVER",
+      stage: STAGE,
+      message: "MCP server URL is not configured",
+      ...limits,
+    });
+  }
+
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(serverUrl);
+  } catch (error: unknown) {
+    throw createPipelineError({
+      code: "E_MCP_NO_SERVER",
+      stage: STAGE,
+      message: `MCP server URL is invalid: ${getErrorMessage(error)}`,
+      cause: error,
+      ...limits,
+    });
+  }
+
+  const insecureLoopbackAllowed = isTruthyEnvValue(
+    process.env[ALLOW_INSECURE_MCP_ENV],
+  );
+
+  if (parsedUrl.protocol === "https:") {
+    if (isBlockedHostname(parsedUrl.hostname) && !insecureLoopbackAllowed) {
+      throw createPipelineError({
+        code: "E_MCP_NO_SERVER",
+        stage: STAGE,
+        message: `MCP server host is in a blocked range (loopback/RFC1918/IMDS/link-local/ULA/CGNAT). Set ${ALLOW_INSECURE_MCP_ENV}=true only when the deployment intentionally points at an internal endpoint.`,
+        ...limits,
+      });
+    }
+    return parsedUrl;
+  }
+
+  if (
+    parsedUrl.protocol === "http:" &&
+    isLoopbackHostname(parsedUrl.hostname) &&
+    insecureLoopbackAllowed
+  ) {
+    onLog?.(
+      `MCP security warning: using insecure loopback HTTP for ${getMcpServerLogTarget(parsedUrl)}. This is allowed only because ${ALLOW_INSECURE_MCP_ENV}=true.`,
+    );
+    return parsedUrl;
+  }
+
+  throw createPipelineError({
+    code: "E_MCP_NO_SERVER",
+    stage: STAGE,
+    message: `MCP server URL must use HTTPS. Plain HTTP is allowed only for loopback when ${ALLOW_INSECURE_MCP_ENV}=true.`,
+    ...limits,
+  });
+};
+
+// ---------------------------------------------------------------------------
+// MCP response shape (internal)
+// ---------------------------------------------------------------------------
+
+interface McpToolResponse {
+  result?: unknown;
+  error?: { message?: string; code?: number };
+}
+
+// ---------------------------------------------------------------------------
+// MCP tool call arguments
+// ---------------------------------------------------------------------------
+
+type McpToolArgs = Record<string, unknown>;
+
+// ---------------------------------------------------------------------------
+// MCP tool result shapes (internal)
+// ---------------------------------------------------------------------------
+
+interface DesignContextResult {
+  code?: string;
+  assets?: Record<string, string>;
+}
+
+interface MetadataResult {
+  xml?: string;
+}
+
+interface ScreenshotResult {
+  url?: string;
+}
+
+interface MetadataNodeCandidate {
+  id: string;
+  type: string;
+  name?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Error classification helpers
+// ---------------------------------------------------------------------------
+
+const classifyHttpStatus = (status: number): string => {
+  if (status === 400) {
+    return "E_MCP_INVALID_REQUEST";
+  }
+  if (status === 401 || status === 403) {
+    return "E_MCP_AUTH";
+  }
+  if (status === 404) {
+    return "E_MCP_NOT_FOUND";
+  }
+  if (status === 429) {
+    return "E_MCP_RATE_LIMIT";
+  }
+  return "E_MCP_SERVER_ERROR";
+};
+
+const isRetryableStatus = (status: number): boolean =>
+  status === 429 || status >= 500;
+
+const isPipelineError = (error: unknown): boolean =>
+  error instanceof Error &&
+  "code" in error &&
+  typeof (error as Record<string, unknown>).code === "string" &&
+  (error as Record<string, unknown>).stage === STAGE;
+
+const isRetryablePipelineCode = (code: string): boolean =>
+  code === "E_MCP_RATE_LIMIT" || code === "E_MCP_SERVER_ERROR";
+
+// ---------------------------------------------------------------------------
+// parseMcpResponse — extract result from MCP JSON envelope
+// ---------------------------------------------------------------------------
+
+const parseMcpResponse = ({
+  response,
+  toolName,
+  limits,
+}: {
+  response: Response;
+  toolName: string;
+  limits: { limits: PipelineDiagnosticLimits } | Record<string, never>;
+}): Promise<unknown> =>
+  response
+    .json()
+    .then((parsed: unknown) => {
+      const mcpResponse = parsed as McpToolResponse;
+      if (mcpResponse.error) {
+        throw createPipelineError({
+          code: "E_MCP_SERVER_ERROR",
+          stage: STAGE,
+          message: `MCP ${toolName} error: ${mcpResponse.error.message ?? "unknown"}`,
+          ...limits,
+        });
+      }
+      return mcpResponse.result;
+    })
+    .catch((jsonError: unknown) => {
+      if (isPipelineError(jsonError)) {
+        throw jsonError;
+      }
+      throw createPipelineError({
+        code: "E_MCP_SERVER_ERROR",
+        stage: STAGE,
+        message: `MCP ${toolName} returned invalid JSON: ${getErrorMessage(jsonError)}`,
+        cause: jsonError,
+        ...limits,
+      });
+    });
+
+// ---------------------------------------------------------------------------
+// classifyCatchError — wrap non-pipeline errors for retry logic
+// ---------------------------------------------------------------------------
+
+const classifyCatchError = ({
+  error,
+  toolName,
+  timeoutMs,
+  signal,
+  limits,
+}: {
+  error: unknown;
+  toolName: string;
+  timeoutMs: number;
+  signal?: AbortSignal;
+  limits: { limits: PipelineDiagnosticLimits } | Record<string, never>;
+}): { wrapped: Error; retryable: boolean } => {
+  if (isPipelineError(error)) {
+    const code = (error as Record<string, unknown>).code as string;
+    return {
+      wrapped: error as Error,
+      retryable: isRetryablePipelineCode(code),
+    };
+  }
+  if (signal?.aborted || isAbortError(error)) {
+    return {
+      wrapped: createPipelineError({
+        code: "E_MCP_ABORTED",
+        stage: STAGE,
+        message: `MCP ${toolName} aborted`,
+        cause: error,
+        ...limits,
+      }),
+      retryable: false,
+    };
+  }
+  if (isTimeoutError(error)) {
+    return {
+      wrapped: createPipelineError({
+        code: "E_MCP_TIMEOUT",
+        stage: STAGE,
+        message: `MCP ${toolName} timed out after ${String(timeoutMs)}ms`,
+        cause: error,
+        ...limits,
+      }),
+      retryable: true,
+    };
+  }
+  return {
+    wrapped: createPipelineError({
+      code: "E_MCP_NETWORK",
+      stage: STAGE,
+      message: `MCP ${toolName} network error: ${getErrorMessage(error)}`,
+      cause: error,
+      ...limits,
+    }),
+    retryable: true,
+  };
+};
+
+// ---------------------------------------------------------------------------
+// callMcpTool — low-level MCP call with retries
+// ---------------------------------------------------------------------------
+
+const callMcpTool = async ({
+  toolName,
+  args,
+  config,
+  signal,
+  diagnostics,
+}: {
+  toolName: string;
+  args: McpToolArgs;
+  config: McpResolverConfig;
+  signal?: AbortSignal;
+  diagnostics?: McpResolverDiagnostic[];
+}): Promise<unknown> => {
+  const { serverUrl, accessToken, fetchImpl, timeoutMs, maxRetries, onLog } =
+    config;
+  const limits = limitsArg(config.pipelineDiagnosticLimits);
+  const parsedServerUrl = validateMcpServerUrl({
+    serverUrl,
+    ...(onLog ? { onLog } : {}),
+    limits,
+  });
+
+  const body = JSON.stringify({
+    method: "tools/call",
+    params: { name: toolName, arguments: args },
+  });
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Accept: "application/json",
+  };
+  if (typeof accessToken === "string" && accessToken.trim().length > 0) {
+    headers["Authorization"] = `Bearer ${accessToken}`;
+  }
+
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= Math.max(1, maxRetries); attempt += 1) {
+    try {
+      const combinedSignal = buildSignal(timeoutMs, signal);
+      onLog?.(`MCP call ${toolName} attempt ${String(attempt)}`);
+
+      const response = await fetchImpl(parsedServerUrl.href, {
+        method: "POST",
+        headers,
+        body,
+        signal: combinedSignal,
+      });
+
+      if (!response.ok) {
+        const errorCode = classifyHttpStatus(response.status);
+        const actionHint =
+          response.status === 400
+            ? " The file key may be invalid or expired — try re-copying from Figma."
+            : response.status === 403
+              ? " Check your Figma access permissions."
+              : "";
+        if (response.status === 429) {
+          diagnostics?.push({
+            code: "W_MCP_RATE_LIMITED",
+            message: `MCP ${toolName} rate limited (attempt ${String(attempt)}/${String(maxRetries)})`,
+            severity: "warning",
+          });
+        }
+        if (isRetryableStatus(response.status) && attempt < maxRetries) {
+          onLog?.(
+            `MCP ${toolName} returned ${String(response.status)}, retrying`,
+          );
+          lastError = createPipelineError({
+            code: errorCode,
+            stage: STAGE,
+            message: `MCP ${toolName} returned HTTP ${String(response.status)}${actionHint}`,
+            retryable: true,
+            ...(response.status === 429
+              ? retryAfterArg(response.headers.get("retry-after"))
+              : {}),
+            ...limits,
+          });
+          await waitFor(
+            response.status === 429
+              ? (parseRetryAfterMs(response.headers.get("retry-after")) ??
+                  toRetryDelay({ attempt }))
+              : toRetryDelay({ attempt }),
+            signal,
+          );
+          continue;
+        }
+        throw createPipelineError({
+          code: errorCode,
+          stage: STAGE,
+          message: `MCP ${toolName} failed with HTTP ${String(response.status)}${actionHint}`,
+          retryable: isRetryableStatus(response.status),
+          ...(response.status === 429
+            ? retryAfterArg(response.headers.get("retry-after"))
+            : {}),
+          ...limits,
+        });
+      }
+
+      return await parseMcpResponse({ response, toolName, limits });
+    } catch (error: unknown) {
+      const classified = classifyCatchError({
+        error,
+        toolName,
+        timeoutMs,
+        ...(signal ? { signal } : {}),
+        limits,
+      });
+      lastError = classified.wrapped;
+      if (!classified.retryable || attempt >= maxRetries) {
+        throw classified.wrapped;
+      }
+      await waitFor(toRetryDelay({ attempt }), signal);
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : createPipelineError({
+        code: "E_MCP_NETWORK",
+        stage: STAGE,
+        message: `MCP ${toolName} failed after ${String(maxRetries)} attempts`,
+        ...limitsArg(config.pipelineDiagnosticLimits),
+      });
+};
+
+// ---------------------------------------------------------------------------
+// XML parsing helpers
+// ---------------------------------------------------------------------------
+
+const estimateNodeCount = (xml: string): number => {
+  return extractMetadataNodeCandidates(xml).length;
+};
+
+const extractRootNodeInfo = (
+  xml: string,
+): { rootNodeType: string; rootNodeName: string } => {
+  const match = /<(\w+)\s[^>]*name="([^"]*)"/.exec(xml);
+  if (match?.[1] !== undefined && match[2] !== undefined) {
+    return { rootNodeType: match[1], rootNodeName: match[2] };
+  }
+  const tagMatch = /<(\w+)/.exec(xml);
+  return {
+    rootNodeType: tagMatch?.[1] ?? "unknown",
+    rootNodeName: "unnamed",
+  };
+};
+
+const extractFirstFrameNodeId = (xml: string): string | undefined => {
+  const framePattern = /<(?:FRAME|COMPONENT|COMPONENT_SET)\s[^>]*id="([^"]+)"/i;
+  const match = framePattern.exec(xml);
+  return match?.[1];
+};
+
+const extractChildSubtreeIds = (xml: string): string[] => {
+  const ids: string[] = [];
+  const pattern = /<(\/?)([A-Z_]+)\b([^>]*)>/gi;
+  let rootDepth = 0;
+  let rootSeen = false;
+  let match = pattern.exec(xml);
+  while (match !== null) {
+    const isClosingTag = match[1] === "/";
+    const tagName = match[2]?.toUpperCase();
+    const attributes = match[3] ?? "";
+
+    if (isClosingTag) {
+      if (rootDepth > 0) {
+        rootDepth -= 1;
+      }
+      match = pattern.exec(xml);
+      continue;
+    }
+
+    const isSelfClosingTag = /\/\s*$/.test(attributes);
+
+    if (!rootSeen) {
+      rootSeen = true;
+      if (!isSelfClosingTag) {
+        rootDepth = 1;
+      }
+      match = pattern.exec(xml);
+      continue;
+    }
+
+    if (rootDepth === 1 && tagName && DIRECT_CHILD_SUBTREE_TAGS.has(tagName)) {
+      const subtreeId = /\bid="([^"]+)"/i.exec(attributes)?.[1];
+      if (subtreeId) {
+        ids.push(subtreeId);
+      }
+    }
+
+    if (!isSelfClosingTag) {
+      rootDepth += 1;
+    }
+
+    match = pattern.exec(xml);
+  }
+  return ids;
+};
+
+const extractMetadataNodeCandidates = (
+  xml: string,
+): MetadataNodeCandidate[] => {
+  const candidates: MetadataNodeCandidate[] = [];
+  const pattern = /<([A-Z_]+)\s([^>]*)>/gi;
+  let match = pattern.exec(xml);
+  while (match !== null) {
+    const type = match[1]?.trim();
+    const attributes = match[2] ?? "";
+    const idMatch = /\bid="([^"]+)"/i.exec(attributes);
+    if (!type || !idMatch?.[1]) {
+      match = pattern.exec(xml);
+      continue;
+    }
+    const nameMatch = /\bname="([^"]*)"/i.exec(attributes);
+    candidates.push({
+      id: idMatch[1],
+      type,
+      ...(nameMatch?.[1] !== undefined ? { name: nameMatch[1] } : {}),
+    });
+    match = pattern.exec(xml);
+  }
+  return candidates;
+};
+
+const normalizeMetadataComparable = (value: string): string =>
+  value
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "_");
+
+const isPrimaryMcpNodeType = (value: unknown): boolean =>
+  value === "FRAME" ||
+  value === "COMPONENT" ||
+  value === "COMPONENT_SET" ||
+  value === "SECTION" ||
+  value === "GROUP";
+
+const resolvePreferredNodeTypes = (
+  dataType: string | undefined,
+): readonly string[] => {
+  const normalized = normalizeMetadataComparable(dataType ?? "");
+  if (normalized === "COMPONENT_SET") {
+    return ["COMPONENT_SET"];
+  }
+  if (normalized === "COMPONENT") {
+    return ["COMPONENT", "INSTANCE"];
+  }
+  if (normalized === "INSTANCE") {
+    return ["INSTANCE", "COMPONENT"];
+  }
+  if (normalized === "SCENE") {
+    return ["FRAME", "SECTION", "GROUP", "COMPONENT", "COMPONENT_SET"];
+  }
+  return [];
+};
+
+const matchesPasteIdHint = ({
+  nodeId,
+  pasteID,
+}: {
+  nodeId: string;
+  pasteID: number | undefined;
+}): boolean => {
+  if (!Number.isInteger(pasteID)) {
+    return false;
+  }
+  const target = String(pasteID);
+  return nodeId
+    .split(/[:-]/)
+    .map((segment) => segment.trim())
+    .some((segment) => segment === target);
+};
+
+const resolveNodeIdFromMetadataCandidates = ({
+  candidates,
+  meta,
+}: {
+  candidates: readonly MetadataNodeCandidate[];
+  meta: FigmaMeta;
+}): { nodeId?: string; reason?: string } => {
+  const primaryCandidates = candidates.filter((candidate) =>
+    isPrimaryMcpNodeType(candidate.type),
+  );
+  const preferredNodeTypes = resolvePreferredNodeTypes(meta.dataType);
+
+  if (meta.pasteID !== undefined) {
+    const pasteMatches = primaryCandidates.filter((candidate) =>
+      matchesPasteIdHint({ nodeId: candidate.id, pasteID: meta.pasteID }),
+    );
+    const preferredPasteMatch =
+      pasteMatches.find((candidate) =>
+        preferredNodeTypes.includes(
+          normalizeMetadataComparable(candidate.type),
+        ),
+      ) ?? pasteMatches[0];
+    if (preferredPasteMatch) {
+      return {
+        nodeId: preferredPasteMatch.id,
+        reason:
+          preferredNodeTypes.length > 0
+            ? "metadata pasteID + dataType hint"
+            : "metadata pasteID hint",
+      };
+    }
+  }
+
+  if (preferredNodeTypes.length > 0) {
+    const preferredCandidate = primaryCandidates.find((candidate) =>
+      preferredNodeTypes.includes(normalizeMetadataComparable(candidate.type)),
+    );
+    if (preferredCandidate) {
+      return {
+        nodeId: preferredCandidate.id,
+        reason: "metadata dataType hint",
+      };
+    }
+  }
+
+  if (primaryCandidates[0]) {
+    return {
+      nodeId: primaryCandidates[0].id,
+      reason: "metadata primary-node fallback",
+    };
+  }
+
+  return {};
+};
+
+// ---------------------------------------------------------------------------
+// resolveNodeId
+// ---------------------------------------------------------------------------
+
+const resolveNodeId = async (
+  meta: FigmaMeta,
+  config: McpResolverConfig,
+  signal?: AbortSignal,
+): Promise<string> => {
+  throwIfAborted(signal);
+
+  if (meta.nodeId && meta.nodeId.length > 0) {
+    return meta.nodeId;
+  }
+
+  config.onLog?.("No nodeId provided, scanning root for first frame");
+
+  try {
+    const result = await callMcpTool({
+      toolName: "get_metadata",
+      args: { fileKey: meta.fileKey, nodeId: "0:1" },
+      config,
+      ...(signal ? { signal } : {}),
+    });
+
+    const metadataResult = result as MetadataResult | null | undefined;
+    if (metadataResult?.xml) {
+      const candidates = extractMetadataNodeCandidates(metadataResult.xml);
+      const resolvedFromMetadata = resolveNodeIdFromMetadataCandidates({
+        candidates,
+        meta,
+      });
+      if (resolvedFromMetadata.nodeId) {
+        config.onLog?.(
+          `Resolved root nodeId from ${resolvedFromMetadata.reason ?? "metadata"}: ${resolvedFromMetadata.nodeId}`,
+        );
+        return resolvedFromMetadata.nodeId;
+      }
+
+      const frameNodeId = extractFirstFrameNodeId(metadataResult.xml);
+      if (frameNodeId) {
+        config.onLog?.(
+          `Resolved root frame nodeId via legacy fallback: ${frameNodeId}`,
+        );
+        return frameNodeId;
+      }
+    }
+  } catch (error: unknown) {
+    if (signal?.aborted || isAbortError(error)) {
+      throw error;
+    }
+    config.onLog?.(
+      `Failed to resolve nodeId from root metadata: ${getErrorMessage(error)}`,
+    );
+  }
+
+  config.onLog?.("Falling back to document root 0:1");
+  return "0:1";
+};
+
+// ---------------------------------------------------------------------------
+// Adaptive design context fetching
+// ---------------------------------------------------------------------------
+
+const fetchDesignContextSingle = async (
+  fileKey: string,
+  nodeId: string,
+  config: McpResolverConfig,
+  signal?: AbortSignal,
+  diagnostics?: McpResolverDiagnostic[],
+): Promise<DesignContextResult> => {
+  const result = await callMcpTool({
+    toolName: "get_design_context",
+    args: { fileKey, nodeId },
+    config,
+    ...(signal ? { signal } : {}),
+    ...(diagnostics ? { diagnostics } : {}),
+  });
+  return (result ?? { code: "", assets: {} }) as DesignContextResult;
+};
+
+const mergeDesignContextResults = (
+  results: readonly DesignContextResult[],
+): DesignContextResult => {
+  const codeParts: string[] = [];
+  const mergedAssets: Record<string, string> = {};
+
+  for (const entry of results) {
+    if (entry.code) {
+      codeParts.push(entry.code);
+    }
+    if (entry.assets) {
+      for (const [key, value] of Object.entries(entry.assets)) {
+        mergedAssets[key] = value;
+      }
+    }
+  }
+
+  return {
+    code: codeParts.join("\n"),
+    assets: mergedAssets,
+  };
+};
+
+const fetchDesignContextAdaptive = async (
+  fileKey: string,
+  nodeId: string,
+  xml: string,
+  nodeCount: number,
+  config: McpResolverConfig,
+  signal?: AbortSignal,
+  diagnostics?: McpResolverDiagnostic[],
+): Promise<DesignContextResult> => {
+  if (nodeCount < ADAPTIVE_NODE_THRESHOLD) {
+    config.onLog?.(
+      `Node count ${String(nodeCount)} < ${String(ADAPTIVE_NODE_THRESHOLD)}, using single fetch`,
+    );
+    return fetchDesignContextSingle(
+      fileKey,
+      nodeId,
+      config,
+      signal,
+      diagnostics,
+    );
+  }
+
+  config.onLog?.(
+    `Node count ${String(nodeCount)} >= ${String(ADAPTIVE_NODE_THRESHOLD)}, using subtree batching`,
+  );
+
+  const subtreeIds = extractChildSubtreeIds(xml);
+  if (subtreeIds.length === 0) {
+    config.onLog?.("No subtree IDs found, falling back to single fetch");
+    return fetchDesignContextSingle(
+      fileKey,
+      nodeId,
+      config,
+      signal,
+      diagnostics,
+    );
+  }
+
+  const results: DesignContextResult[] = [];
+  const subtreeDiagnosticsByIndex: McpResolverDiagnostic[][] = Array.from(
+    { length: subtreeIds.length },
+    () => [],
+  );
+  const subtreeAbortController = new AbortController();
+  const subtreeSignal =
+    signal === undefined
+      ? subtreeAbortController.signal
+      : AbortSignal.any([signal, subtreeAbortController.signal]);
+  const subtreeResults: Array<DesignContextResult | undefined> = Array.from(
+    { length: subtreeIds.length },
+    () => undefined,
+  );
+  const inFlight = new Set<Promise<void>>();
+  let firstTaskError: unknown;
+  let nextIndex = 0;
+
+  const launchNext = (): void => {
+    const currentIndex = nextIndex;
+    nextIndex += 1;
+    const subtreeId = subtreeIds[currentIndex]!;
+    const task = (async () => {
+      try {
+        subtreeResults[currentIndex] = await fetchDesignContextSingle(
+          fileKey,
+          subtreeId,
+          config,
+          subtreeSignal,
+          subtreeDiagnosticsByIndex[currentIndex],
+        );
+      } catch (error: unknown) {
+        if (firstTaskError === undefined) {
+          firstTaskError = error;
+          subtreeAbortController.abort();
+        }
+        throw error;
+      }
+    })();
+    inFlight.add(task);
+    void task.then(
+      () => {
+        inFlight.delete(task);
+      },
+      () => {
+        inFlight.delete(task);
+      },
+    );
+  };
+
+  while (
+    nextIndex < subtreeIds.length &&
+    inFlight.size < MAX_SUBTREE_BATCH_SIZE &&
+    firstTaskError === undefined
+  ) {
+    launchNext();
+  }
+
+  while (inFlight.size > 0) {
+    try {
+      await Promise.race(inFlight);
+    } catch (error: unknown) {
+      firstTaskError ??= error;
+    }
+    if (firstTaskError !== undefined) {
+      await Promise.allSettled(inFlight);
+      throw firstTaskError instanceof Error
+        ? firstTaskError
+        : new Error(getErrorMessage(firstTaskError));
+    }
+    while (
+      nextIndex < subtreeIds.length &&
+      inFlight.size < MAX_SUBTREE_BATCH_SIZE
+    ) {
+      launchNext();
+    }
+  }
+
+  for (let index = 0; index < subtreeResults.length; index += 1) {
+    results.push(subtreeResults[index]!);
+    diagnostics?.push(...(subtreeDiagnosticsByIndex[index] ?? []));
+  }
+
+  return mergeDesignContextResults(results);
+};
+
+// ---------------------------------------------------------------------------
+// REST fallback helpers
+// ---------------------------------------------------------------------------
+
+const classifyRestStatus = (status: number): string => {
+  if (status === 401 || status === 403) {
+    return "E_FIGMA_REST_AUTH";
+  }
+  if (status === 404) {
+    return "E_FIGMA_REST_NOT_FOUND";
+  }
+  if (status === 429) {
+    return "E_FIGMA_REST_RATE_LIMIT";
+  }
+  return "E_FIGMA_REST_ERROR";
+};
+
+const shouldForwardRestVersion = (version: string | undefined): boolean => {
+  if (!version) {
+    return false;
+  }
+  const trimmed = version.trim();
+  if (trimmed.length === 0) {
+    return false;
+  }
+  return !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(trimmed);
+};
+
+const toRestRetryDelay = ({
+  attempt,
+  retryAfter,
+}: {
+  attempt: number;
+  retryAfter: string | null;
+}): number => parseRetryAfterMs(retryAfter) ?? toRetryDelay({ attempt });
+
+const buildRestNodesUrl = ({
+  fileKey,
+  nodeId,
+  version,
+  maxDepth,
+}: {
+  fileKey: string;
+  nodeId: string;
+  version?: string;
+  maxDepth?: number;
+}): string => {
+  const params = new URLSearchParams({
+    ids: nodeId,
+  });
+  const trimmedVersion = version?.trim();
+  if (trimmedVersion && shouldForwardRestVersion(trimmedVersion)) {
+    params.set("version", trimmedVersion);
+  }
+  if (
+    typeof maxDepth === "number" &&
+    Number.isFinite(maxDepth) &&
+    maxDepth > 0
+  ) {
+    params.set("depth", String(Math.trunc(maxDepth)));
+  }
+  return `https://api.figma.com/v1/files/${encodeURIComponent(fileKey)}/nodes?${params.toString()}`;
+};
+
+const buildRestImageUrl = ({
+  fileKey,
+  nodeId,
+  version,
+}: {
+  fileKey: string;
+  nodeId: string;
+  version?: string;
+}): string => {
+  const params = new URLSearchParams({
+    ids: nodeId,
+    format: "png",
+  });
+  const trimmedVersion = version?.trim();
+  if (trimmedVersion && shouldForwardRestVersion(trimmedVersion)) {
+    params.set("version", trimmedVersion);
+  }
+  return `https://api.figma.com/v1/images/${encodeURIComponent(fileKey)}?${params.toString()}`;
+};
+
+const fetchDesignContextViaRest = async ({
+  fileKey,
+  nodeId,
+  version,
+  accessToken,
+  fetchImpl,
+  timeoutMs,
+  maxRetries,
+  maxDepth,
+  limits,
+  onLog,
+  diagnostics,
+  ...rest
+}: {
+  fileKey: string;
+  nodeId: string;
+  version?: string;
+  accessToken?: string | undefined;
+  fetchImpl: typeof fetch;
+  timeoutMs: number;
+  maxRetries: number;
+  maxDepth?: number;
+  signal?: AbortSignal;
+  limits: { limits: PipelineDiagnosticLimits } | Record<string, never>;
+  onLog?: (message: string) => void;
+  diagnostics?: McpResolverDiagnostic[];
+}): Promise<DesignContextResult> => {
+  throwIfAborted(rest.signal);
+  onLog?.("Falling back to Figma REST API");
+
+  const url = buildRestNodesUrl({
+    fileKey,
+    nodeId,
+    ...(version ? { version } : {}),
+    ...(maxDepth !== undefined ? { maxDepth } : {}),
+  });
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= Math.max(1, maxRetries); attempt += 1) {
+    let response: Response;
+    try {
+      const headers: Record<string, string> = {
+        Accept: "application/json",
+      };
+      if (typeof accessToken === "string" && accessToken.trim().length > 0) {
+        headers["X-Figma-Token"] = accessToken;
+      }
+      response = await fetchImpl(url, {
+        method: "GET",
+        headers,
+        signal: buildSignal(timeoutMs, rest.signal),
+      });
+    } catch (error: unknown) {
+      if (rest.signal?.aborted || isAbortError(error)) {
+        throw error;
+      }
+      lastError = createPipelineError({
+        code: isTimeoutError(error)
+          ? "E_FIGMA_REST_TIMEOUT"
+          : "E_FIGMA_REST_NETWORK",
+        stage: STAGE,
+        message: `Figma REST fallback request failed: ${getErrorMessage(error)}`,
+        cause: error,
+        retryable: true,
+        fallbackMode: "rest",
+        ...limits,
+      });
+      if (attempt >= maxRetries) {
+        throw lastError;
+      }
+      await waitFor(toRetryDelay({ attempt }), rest.signal);
+      continue;
+    }
+
+    if (!response.ok) {
+      if (response.status === 429) {
+        diagnostics?.push({
+          code: "W_FIGMA_REST_RATE_LIMITED",
+          message: `Figma REST fallback rate limited (attempt ${String(attempt)}/${String(maxRetries)})`,
+          severity: "warning",
+        });
+      }
+      lastError = createPipelineError({
+        code: classifyRestStatus(response.status),
+        stage: STAGE,
+        message: `Figma REST fallback failed with HTTP ${String(response.status)}`,
+        retryable: response.status === 429 || response.status >= 500,
+        fallbackMode: "rest",
+        ...(response.status === 429
+          ? retryAfterArg(response.headers.get("retry-after"))
+          : {}),
+        ...limits,
+      });
+      if (
+        (response.status === 429 || response.status >= 500) &&
+        attempt < maxRetries
+      ) {
+        await waitFor(
+          toRestRetryDelay({
+            attempt,
+            retryAfter: response.headers.get("retry-after"),
+          }),
+          rest.signal,
+        );
+        continue;
+      }
+      throw lastError;
+    }
+
+    const data = (await response.json()) as Record<string, unknown>;
+    const nodes = data.nodes as Record<string, unknown> | undefined;
+    const nodeData = nodes?.[nodeId];
+    if (!nodeData || typeof nodeData !== "object") {
+      throw createPipelineError({
+        code: "E_FIGMA_REST_NOT_FOUND",
+        stage: STAGE,
+        message: `Figma REST fallback did not return a document for node '${nodeId}'`,
+        fallbackMode: "rest",
+        ...limits,
+      });
+    }
+
+    return {
+      code: JSON.stringify(
+        ((nodeData as Record<string, unknown>).document as
+          | Record<string, unknown>
+          | undefined) ?? {},
+        null,
+        2,
+      ),
+      assets: {},
+    };
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : createPipelineError({
+        code: "E_FIGMA_REST_ERROR",
+        stage: STAGE,
+        message: "Figma REST fallback failed after retries",
+        ...limits,
+      });
+};
+
+const fetchScreenshotViaRest = async ({
+  fileKey,
+  nodeId,
+  version,
+  accessToken,
+  fetchImpl,
+  timeoutMs,
+  maxRetries,
+  signal,
+  limits,
+  onLog,
+  diagnostics,
+}: {
+  fileKey: string;
+  nodeId: string;
+  version?: string;
+  accessToken?: string | undefined;
+  fetchImpl: typeof fetch;
+  timeoutMs: number;
+  maxRetries: number;
+  signal?: AbortSignal;
+  limits: { limits: PipelineDiagnosticLimits } | Record<string, never>;
+  onLog?: (message: string) => void;
+  diagnostics?: McpResolverDiagnostic[];
+}): Promise<string | undefined> => {
+  throwIfAborted(signal);
+  onLog?.("Falling back to Figma REST image export for screenshot");
+
+  const url = buildRestImageUrl({
+    fileKey,
+    nodeId,
+    ...(version ? { version } : {}),
+  });
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= Math.max(1, maxRetries); attempt += 1) {
+    let response: Response;
+    try {
+      const headers: Record<string, string> = {
+        Accept: "application/json",
+      };
+      if (typeof accessToken === "string" && accessToken.trim().length > 0) {
+        headers["X-Figma-Token"] = accessToken;
+      }
+      response = await fetchImpl(url, {
+        method: "GET",
+        headers,
+        signal: buildSignal(timeoutMs, signal),
+      });
+    } catch (error: unknown) {
+      if (signal?.aborted || isAbortError(error)) {
+        throw error;
+      }
+      lastError = createPipelineError({
+        code: isTimeoutError(error)
+          ? "E_FIGMA_REST_TIMEOUT"
+          : "E_FIGMA_REST_NETWORK",
+        stage: STAGE,
+        message: `Figma REST screenshot fallback request failed: ${getErrorMessage(error)}`,
+        cause: error,
+        retryable: true,
+        fallbackMode: "rest",
+        ...limits,
+      });
+      if (attempt >= maxRetries) {
+        throw lastError;
+      }
+      await waitFor(toRetryDelay({ attempt }), signal);
+      continue;
+    }
+
+    if (!response.ok) {
+      if (response.status === 429) {
+        diagnostics?.push({
+          code: "W_FIGMA_REST_RATE_LIMITED",
+          message: `Figma REST screenshot fallback rate limited (attempt ${String(attempt)}/${String(maxRetries)})`,
+          severity: "warning",
+        });
+      }
+      lastError = createPipelineError({
+        code: classifyRestStatus(response.status),
+        stage: STAGE,
+        message: `Figma REST screenshot fallback failed with HTTP ${String(response.status)}`,
+        retryable: response.status === 429 || response.status >= 500,
+        fallbackMode: "rest",
+        ...(response.status === 429
+          ? retryAfterArg(response.headers.get("retry-after"))
+          : {}),
+        ...limits,
+      });
+      if (
+        (response.status === 429 || response.status >= 500) &&
+        attempt < maxRetries
+      ) {
+        await waitFor(
+          toRestRetryDelay({
+            attempt,
+            retryAfter: response.headers.get("retry-after"),
+          }),
+          signal,
+        );
+        continue;
+      }
+      throw lastError;
+    }
+
+    const payload = (await response.json()) as {
+      images?: Record<string, string | null>;
+    };
+    const imageUrl = payload.images?.[nodeId];
+    return typeof imageUrl === "string" && imageUrl.length > 0
+      ? imageUrl
+      : undefined;
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : createPipelineError({
+        code: "E_FIGMA_REST_ERROR",
+        stage: STAGE,
+        message: "Figma REST screenshot fallback failed after retries",
+        ...limits,
+      });
+};
+
+// ---------------------------------------------------------------------------
+// resolveFigmaDesignContext — main entry point
+// ---------------------------------------------------------------------------
+
+export const resolveFigmaDesignContext = async (
+  meta: FigmaMeta,
+  config: McpResolverConfig,
+  options?: ResolverOptions,
+): Promise<FigmaDesignContext> => {
+  const signal = options?.signal;
+  throwIfAborted(signal);
+  const resolvedNodeId = await resolveNodeId(meta, config, signal);
+  const tokenScope = deriveTokenScope(config.accessToken);
+  const cacheKey = getCacheKey(
+    meta.fileKey,
+    resolvedNodeId,
+    meta.version,
+    tokenScope,
+  );
+
+  const executeResolution = async (): Promise<FigmaDesignContext> => {
+    throwIfAborted(signal);
+    const diagnostics: McpResolverDiagnostic[] = [];
+
+    config.onLog?.(`Resolving design context for fileKey=${meta.fileKey}`);
+
+    if (!options?.forceRefresh) {
+      const cached = resolverCache.get(cacheKey);
+      if (cached && cached.expiresAt > Date.now()) {
+        config.onLog?.("Cache hit — returning cached design context");
+        return cached.context;
+      }
+    }
+
+    config.onLog?.(`Fetching metadata for node ${resolvedNodeId}`);
+
+    let xml = "";
+    let nodeCount = 0;
+    let rootNodeType = "unknown";
+    let rootNodeName = "unnamed";
+
+    try {
+      const metaResult = await callMcpTool({
+        toolName: "get_metadata",
+        args: { fileKey: meta.fileKey, nodeId: resolvedNodeId },
+        config,
+        ...(signal ? { signal } : {}),
+        diagnostics,
+      });
+
+      const metadataResult = metaResult as MetadataResult | null | undefined;
+      if (metadataResult?.xml) {
+        xml = metadataResult.xml;
+        nodeCount = estimateNodeCount(xml);
+        const rootInfo = extractRootNodeInfo(xml);
+        rootNodeType = rootInfo.rootNodeType;
+        rootNodeName = rootInfo.rootNodeName;
+        config.onLog?.(
+          `Metadata: ${String(nodeCount)} nodes, root=${rootNodeType}/${rootNodeName}`,
+        );
+      }
+    } catch (error: unknown) {
+      if (signal?.aborted || isAbortError(error)) {
+        throw error;
+      }
+      config.onLog?.(
+        `Metadata fetch failed, proceeding with single design context call: ${getErrorMessage(error)}`,
+      );
+    }
+
+    let designContext: DesignContextResult;
+    let restFallbackUsed = false;
+
+    try {
+      designContext = await fetchDesignContextAdaptive(
+        meta.fileKey,
+        resolvedNodeId,
+        xml,
+        nodeCount,
+        config,
+        signal,
+        diagnostics,
+      );
+    } catch (mcpError: unknown) {
+      if (signal?.aborted || isAbortError(mcpError)) {
+        throw mcpError;
+      }
+      config.onLog?.(
+        `MCP design context failed: ${getErrorMessage(mcpError)}, attempting REST fallback`,
+      );
+      diagnostics.push({
+        code: "W_MCP_FALLBACK_REST",
+        message: `MCP failed, fell back to Figma REST API: ${getErrorMessage(mcpError)}`,
+        severity: "warning",
+      });
+      restFallbackUsed = true;
+      designContext = await fetchDesignContextViaRest({
+        fileKey: meta.fileKey,
+        nodeId: resolvedNodeId,
+        ...(meta.version ? { version: meta.version } : {}),
+        accessToken: config.accessToken,
+        fetchImpl: config.fetchImpl,
+        timeoutMs: config.timeoutMs,
+        maxRetries: config.maxRetries,
+        ...(options?.maxDepth !== undefined
+          ? { maxDepth: options.maxDepth }
+          : {}),
+        ...(signal ? { signal } : {}),
+        limits: limitsArg(config.pipelineDiagnosticLimits),
+        ...(config.onLog ? { onLog: config.onLog } : {}),
+        diagnostics,
+      });
+    }
+
+    let screenshotUrl: string | undefined;
+
+    if (!options?.skipScreenshot) {
+      try {
+        config.onLog?.("Fetching screenshot");
+        const screenshotResult = await callMcpTool({
+          toolName: "get_screenshot",
+          args: { fileKey: meta.fileKey, nodeId: resolvedNodeId },
+          config,
+          ...(signal ? { signal } : {}),
+          diagnostics,
+        });
+        const screenshotData = screenshotResult as
+          | ScreenshotResult
+          | null
+          | undefined;
+        screenshotUrl = screenshotData?.url ?? undefined;
+      } catch (error: unknown) {
+        if (signal?.aborted || isAbortError(error)) {
+          throw error;
+        }
+        config.onLog?.(
+          `Screenshot fetch failed (non-fatal): ${getErrorMessage(error)}`,
+        );
+      }
+
+      if (!screenshotUrl) {
+        try {
+          screenshotUrl = await fetchScreenshotViaRest({
+            fileKey: meta.fileKey,
+            nodeId: resolvedNodeId,
+            ...(meta.version ? { version: meta.version } : {}),
+            accessToken: config.accessToken,
+            fetchImpl: config.fetchImpl,
+            timeoutMs: config.timeoutMs,
+            maxRetries: config.maxRetries,
+            ...(signal ? { signal } : {}),
+            limits: limitsArg(config.pipelineDiagnosticLimits),
+            ...(config.onLog ? { onLog: config.onLog } : {}),
+            diagnostics,
+          });
+          if (screenshotUrl) {
+            diagnostics.push({
+              code: "W_MCP_SCREENSHOT_FALLBACK_REST",
+              message:
+                "MCP screenshot failed, REST screenshot fallback applied.",
+              severity: "warning",
+            });
+          }
+        } catch (error: unknown) {
+          if (signal?.aborted || isAbortError(error)) {
+            throw error;
+          }
+          config.onLog?.(
+            `REST screenshot fallback failed (non-fatal): ${getErrorMessage(error)}`,
+          );
+        }
+      }
+    }
+
+    const result: FigmaDesignContext = {
+      code: designContext.code ?? "",
+      assets: designContext.assets ?? {},
+      ...(screenshotUrl ? { screenshot: screenshotUrl } : {}),
+      fallbackMode: restFallbackUsed ? "rest" : "none",
+      ...(xml.length > 0
+        ? { metadata: { xml, nodeCount, rootNodeType, rootNodeName } }
+        : {}),
+      fileKey: meta.fileKey,
+      nodeId: resolvedNodeId,
+      resolvedAt: new Date().toISOString(),
+      ...(diagnostics.length > 0 ? { diagnostics } : {}),
+    };
+
+    resolverCache.set(cacheKey, {
+      context: result,
+      expiresAt: Date.now() + CACHE_TTL_MS,
+    });
+
+    return result;
+  };
+
+  if (!options?.forceRefresh) {
+    const cached = resolverCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      config.onLog?.("Cache hit — returning cached design context");
+      return cached.context;
+    }
+    if (!signal) {
+      const inflight = inflightResolverCache.get(cacheKey);
+      if (inflight) {
+        config.onLog?.("In-flight cache hit — awaiting existing resolution");
+        return inflight;
+      }
+      const pending = executeResolution().finally(() => {
+        inflightResolverCache.delete(cacheKey);
+      });
+      inflightResolverCache.set(cacheKey, pending);
+      return pending;
+    }
+  }
+
+  return executeResolution();
+};
+
+// ---------------------------------------------------------------------------
+// Re-export constants for external use
+// ---------------------------------------------------------------------------
+
+export {
+  DEFAULT_MCP_SERVER_URL,
+  ADAPTIVE_NODE_THRESHOLD,
+  MAX_SUBTREE_BATCH_SIZE,
+  CACHE_TTL_MS,
+  callMcpTool,
+};

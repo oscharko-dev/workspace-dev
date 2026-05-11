@@ -1,0 +1,26 @@
+{
+  "fetchedNodes": 0,
+  "skippedHidden": 0,
+  "skippedPlaceholders": 0,
+  "screenElementCounts": [
+    {
+      "screenId": "screen-dashboard-light",
+      "screenName": "Dashboard Light",
+      "elements": 5
+    },
+    {
+      "screenId": "screen-dashboard-dark",
+      "screenName": "Dashboard Dark",
+      "elements": 5
+    }
+  ],
+  "truncatedScreens": [],
+  "depthTruncatedScreens": [],
+  "classificationFallbacks": [],
+  "degradedGeometryNodes": [],
+  "prototypeNavigationDetected": 0,
+  "prototypeNavigationResolved": 0,
+  "prototypeNavigationUnresolved": 0,
+  "prototypeNavigationRendered": 0,
+  "nodeDiagnostics": []
+}

@@ -1,0 +1,140 @@
+{
+  "schemaVersion": "1.0.0",
+  "pipelineId": "default",
+  "screens": [
+    {
+      "screenId": "screen-products",
+      "screenName": "PaymentAuthorizations",
+      "components": [
+        {
+          "componentName": "AuthorizationCard",
+          "filePath": "src/components/AuthorizationCard.tsx",
+          "kind": "card",
+          "instanceNodeIds": [
+            "product-card-1",
+            "product-card-2",
+            "product-card-3",
+            "product-card-4",
+            "product-card-5",
+            "product-card-6"
+          ],
+          "propNames": [
+            "paymentTitle",
+            "approvalContext",
+            "amount"
+          ]
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "pc1-info",
+          "nodeName": "Info",
+          "message": "Default semantic synthesis kept 'Info' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "pc2-info",
+          "nodeName": "Info",
+          "message": "Default semantic synthesis kept 'Info' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "pc3-info",
+          "nodeName": "Info",
+          "message": "Default semantic synthesis kept 'Info' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "pc4-info",
+          "nodeName": "Info",
+          "message": "Default semantic synthesis kept 'Info' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "pc5-info",
+          "nodeName": "Info",
+          "message": "Default semantic synthesis kept 'Info' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "pc6-info",
+          "nodeName": "Info",
+          "message": "Default semantic synthesis kept 'Info' inline because no matching reusable semantic structure was found."
+        }
+      ]
+    }
+  ],
+  "components": [
+    {
+      "screenId": "screen-products",
+      "screenName": "PaymentAuthorizations",
+      "componentName": "AuthorizationCard",
+      "filePath": "src/components/AuthorizationCard.tsx",
+      "kind": "card",
+      "instanceNodeIds": [
+        "product-card-1",
+        "product-card-2",
+        "product-card-3",
+        "product-card-4",
+        "product-card-5",
+        "product-card-6"
+      ],
+      "propNames": [
+        "paymentTitle",
+        "approvalContext",
+        "amount"
+      ]
+    }
+  ],
+  "diagnostics": [
+    {
+      "screenId": "screen-products",
+      "screenName": "PaymentAuthorizations",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "pc1-info",
+      "nodeName": "Info",
+      "message": "Default semantic synthesis kept 'Info' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-products",
+      "screenName": "PaymentAuthorizations",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "pc2-info",
+      "nodeName": "Info",
+      "message": "Default semantic synthesis kept 'Info' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-products",
+      "screenName": "PaymentAuthorizations",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "pc3-info",
+      "nodeName": "Info",
+      "message": "Default semantic synthesis kept 'Info' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-products",
+      "screenName": "PaymentAuthorizations",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "pc4-info",
+      "nodeName": "Info",
+      "message": "Default semantic synthesis kept 'Info' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-products",
+      "screenName": "PaymentAuthorizations",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "pc5-info",
+      "nodeName": "Info",
+      "message": "Default semantic synthesis kept 'Info' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-products",
+      "screenName": "PaymentAuthorizations",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "pc6-info",
+      "nodeName": "Info",
+      "message": "Default semantic synthesis kept 'Info' inline because no matching reusable semantic structure was found."
+    }
+  ]
+}

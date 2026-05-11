@@ -1,0 +1,84 @@
+{
+  "artifactVersion": 1,
+  "sourceName": "Account Opening Form Board",
+  "summary": {
+    "pageCount": 1,
+    "sectionCount": 0,
+    "topLevelFrameCount": 1,
+    "totalNodeCount": 20,
+    "totalInstanceCount": 0,
+    "localComponentCount": 0,
+    "localStyleCount": 0,
+    "externalComponentCount": 0
+  },
+  "tokenSignals": {
+    "boundVariableIds": [],
+    "variableModeIds": [],
+    "styleReferences": {
+      "allStyleIds": [],
+      "byType": {
+        "fill": [],
+        "stroke": [],
+        "effect": [],
+        "text": [],
+        "generic": []
+      },
+      "localStyleIds": [],
+      "linkedStyleIds": []
+    }
+  },
+  "layoutGraph": {
+    "pages": [
+      {
+        "id": "0:1",
+        "name": "Page 1",
+        "sectionIds": [],
+        "frameIds": [
+          "screen-form"
+        ]
+      }
+    ],
+    "sections": [],
+    "frames": [
+      {
+        "id": "screen-form",
+        "name": "AccountOpening",
+        "pageId": "0:1",
+        "nodeType": "FRAME",
+        "layoutMode": "VERTICAL",
+        "width": 420,
+        "height": 900,
+        "directChildCount": 6,
+        "subtreeNodeCount": 18,
+        "instanceCount": 0
+      }
+    ],
+    "edges": [
+      {
+        "parentId": "0:1",
+        "parentType": "page",
+        "childId": "screen-form",
+        "childType": "frame"
+      }
+    ]
+  },
+  "componentFamilies": [],
+  "externalComponents": [],
+  "frameVariantGroups": [],
+  "appShellSignals": [],
+  "componentDensity": {
+    "boardDominantFamilies": [],
+    "byFrame": [
+      {
+        "frameId": "screen-form",
+        "frameName": "AccountOpening",
+        "subtreeNodeCount": 18,
+        "instanceCount": 0,
+        "density": 0,
+        "dominantFamilies": []
+      }
+    ],
+    "hotspots": []
+  },
+  "diagnostics": []
+}

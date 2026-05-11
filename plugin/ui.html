@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: Inter, system-ui, -apple-system, sans-serif;
+        font-size: 13px;
+        color: #333;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        min-height: 100vh;
+      }
+      h2 {
+        font-size: 14px;
+        font-weight: 600;
+      }
+      p {
+        font-size: 12px;
+        color: #666;
+        line-height: 1.4;
+      }
+      button {
+        padding: 8px 16px;
+        border: none;
+        border-radius: 6px;
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: background 0.15s;
+      }
+      /* Issue #1698 (audit-2026-05 Wave 4, WCAG 2.4.7): visible focus
+         indicator for keyboard navigation. The Figma plugin host does not
+         guarantee a default browser outline; an explicit focus ring is
+         required. */
+      button:focus-visible {
+        outline: 2px solid #1f6dd2;
+        outline-offset: 2px;
+      }
+      input:focus-visible {
+        outline: 2px solid #1f6dd2;
+        outline-offset: 2px;
+        border-color: #1f6dd2;
+      }
+      /* Issue #1701 (Wave 4): respect user motion preference. */
+      @media (prefers-reduced-motion: reduce) {
+        * {
+          transition-duration: 0.001ms !important;
+          animation-duration: 0.001ms !important;
+        }
+      }
+      .btn-primary {
+        background: #4eba87;
+        color: #fff;
+      }
+      .btn-primary:hover {
+        background: #3da876;
+      }
+      .btn-primary:disabled {
+        background: #ccc;
+        cursor: not-allowed;
+      }
+      .btn-secondary {
+        background: #f0f0f0;
+        color: #333;
+      }
+      .btn-secondary:hover {
+        background: #e0e0e0;
+      }
+      .btn-secondary:disabled {
+        background: #f5f5f5;
+        color: #999;
+        cursor: not-allowed;
+      }
+      #status {
+        font-size: 12px;
+        min-height: 18px;
+        word-break: break-word;
+      }
+      /* Issue #1698 (audit-2026-05 Wave 4, WCAG 1.4.1): non-color cues for
+         status. Each variant carries a leading symbol so red/green colour-
+         blind users can distinguish failure from success without reading
+         the message text. */
+      .status-error {
+        color: #b00020;
+        font-weight: 600;
+      }
+      .status-error::before {
+        content: "✕ ";
+        speak: literal-punctuation;
+      }
+      .status-success {
+        color: #2e7d4f;
+        font-weight: 600;
+      }
+      .status-success::before {
+        content: "✓ ";
+        speak: literal-punctuation;
+      }
+      .actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      hr {
+        border: none;
+        border-top: 1px solid #eee;
+      }
+      .upload-section {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      label {
+        font-size: 12px;
+        color: #666;
+        display: block;
+        margin-bottom: 4px;
+      }
+      input[type="url"] {
+        width: 100%;
+        padding: 6px 8px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 12px;
+        font-family: inherit;
+      }
+      #upload-btn {
+        background: #4a6cf7;
+        color: #fff;
+      }
+      #upload-btn:hover {
+        background: #3a5ce6;
+      }
+      #upload-btn:disabled {
+        background: #ccc;
+        cursor: not-allowed;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>WorkspaceDev Export</h2>
+    <p>
+      Select layers in Figma, then <strong>Copy to Clipboard</strong> (paste
+      into WorkspaceDev Inspector). Use <strong>Download JSON</strong> if
+      clipboard access is unavailable in the current host.
+    </p>
+    <div class="actions">
+      <button id="export-btn" class="btn-primary">Copy to Clipboard</button>
+      <button id="download-btn" class="btn-secondary">Download JSON</button>
+    </div>
+    <hr />
+    <div class="upload-section">
+      <label for="endpoint-url">WorkspaceDev URL</label>
+      <input id="endpoint-url" type="url" value="http://127.0.0.1:1983" />
+      <button id="upload-btn" class="btn-primary">Send to WorkspaceDev</button>
+    </div>
+    <hr />
+    <!-- Issue #1698 (audit-2026-05 Wave 4, WCAG 4.1.3): expose the dynamic
+         status updates as an ARIA live region so screen-reader users hear
+         success / failure / progress changes the moment they happen. -->
+    <div id="status" role="status" aria-live="polite" aria-atomic="true"></div>
+
+    <script>
+      const exportBtn = document.getElementById("export-btn");
+      const downloadBtn = document.getElementById("download-btn");
+      const uploadBtn = document.getElementById("upload-btn");
+      const urlInput = document.getElementById("endpoint-url");
+      const statusEl = document.getElementById("status");
+
+      let lastPayload = null;
+      let lastUploadEndpointUrl = "";
+
+      exportBtn.addEventListener("click", () => {
+        exportBtn.disabled = true;
+        lastPayload = null;
+        statusEl.textContent = "";
+        statusEl.className = "";
+        parent.postMessage(
+          { pluginMessage: { type: "export-selection" } },
+          "*",
+        );
+      });
+
+      uploadBtn.addEventListener("click", () => {
+        const endpointUrl = normalizeWorkspaceDevUrl(urlInput.value);
+        if (!endpointUrl) {
+          statusEl.textContent =
+            "Please enter a valid local WorkspaceDev URL (localhost, 127.0.0.1, or ::1).";
+          statusEl.className = "status-error";
+          return;
+        }
+        urlInput.value = endpointUrl;
+        lastUploadEndpointUrl = endpointUrl;
+        exportBtn.disabled = true;
+        uploadBtn.disabled = true;
+        statusEl.textContent = "";
+        statusEl.className = "";
+        parent.postMessage(
+          { pluginMessage: { type: "upload-to-local", endpointUrl } },
+          "*",
+        );
+      });
+
+      downloadBtn.addEventListener("click", () => {
+        if (!lastPayload) {
+          statusEl.textContent = "Nothing to download. Export first.";
+          statusEl.className = "status-error";
+          return;
+        }
+        downloadJson(lastPayload);
+      });
+
+      window.onmessage = async (event) => {
+        const msg = event.data?.pluginMessage;
+        if (!msg) return;
+
+        if (msg.type === "copy-to-clipboard") {
+          lastPayload = msg.payload;
+          try {
+            await navigator.clipboard.writeText(msg.payload);
+            statusEl.textContent =
+              "Copied to clipboard. Paste into WorkspaceDev Inspector.";
+            statusEl.className = "status-success";
+          } catch {
+            statusEl.textContent =
+              "Clipboard write failed. Use Download instead.";
+            statusEl.className = "status-error";
+          }
+          exportBtn.disabled = false;
+        }
+
+        if (msg.type === "status") {
+          statusEl.textContent = msg.message;
+          statusEl.className = "";
+        }
+
+        if (msg.type === "error") {
+          statusEl.textContent = msg.message;
+          statusEl.className = "status-error";
+          exportBtn.disabled = false;
+          uploadBtn.disabled = false;
+        }
+
+        if (msg.type === "upload-result") {
+          statusEl.textContent = "";
+          const prefix = document.createTextNode("Sent! Job ");
+          const suffix = document.createTextNode(" is processing.");
+          const trackingUrl = buildTrackingUrl(lastUploadEndpointUrl, msg.jobId);
+          const jobIdText = String(msg.jobId ?? "");
+          statusEl.appendChild(prefix);
+          if (trackingUrl) {
+            const link = document.createElement("a");
+            link.href = trackingUrl;
+            link.target = "_blank";
+            link.rel = "noopener noreferrer";
+            link.textContent = jobIdText;
+            statusEl.appendChild(link);
+          } else {
+            statusEl.appendChild(document.createTextNode(jobIdText));
+          }
+          statusEl.appendChild(suffix);
+          statusEl.className = "status-success";
+          exportBtn.disabled = false;
+          uploadBtn.disabled = false;
+        }
+
+        if (msg.type === "upload-error") {
+          const requestIdSuffix = msg.requestId
+            ? ` (request ID: ${msg.requestId})`
+            : "";
+          statusEl.textContent = `${msg.message}${requestIdSuffix}`;
+          statusEl.className = "status-error";
+          exportBtn.disabled = false;
+          uploadBtn.disabled = false;
+        }
+      };
+
+      function downloadJson(payload) {
+        const blob = new Blob([payload], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "workspace-dev-export.json";
+        a.click();
+        URL.revokeObjectURL(url);
+        statusEl.textContent = "Downloaded!";
+        statusEl.className = "status-success";
+      }
+
+      function normalizeWorkspaceDevUrl(rawUrl) {
+        const trimmed = String(rawUrl ?? "").trim();
+        if (!trimmed) {
+          return "";
+        }
+        try {
+          const parsed = new URL(trimmed);
+          if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+            return "";
+          }
+          const hostname = parsed.hostname.toLowerCase();
+          if (
+            hostname !== "localhost" &&
+            hostname !== "127.0.0.1" &&
+            hostname !== "::1" &&
+            hostname !== "[::1]"
+          ) {
+            return "";
+          }
+          parsed.search = "";
+          parsed.hash = "";
+          parsed.pathname = parsed.pathname.replace(/\/+$/, "");
+          return parsed.toString().replace(/\/$/, "");
+        } catch {
+          return "";
+        }
+      }
+
+      function buildTrackingUrl(endpointUrl, jobId) {
+        const normalizedEndpoint = normalizeWorkspaceDevUrl(endpointUrl);
+        const safeJobId = String(jobId ?? "").trim();
+        if (!normalizedEndpoint || !safeJobId) {
+          return "";
+        }
+        return `${normalizedEndpoint}/workspace/jobs/${encodeURIComponent(safeJobId)}`;
+      }
+
+    </script>
+  </body>
+</html>

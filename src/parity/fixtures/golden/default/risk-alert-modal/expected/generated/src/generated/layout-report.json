@@ -1,0 +1,137 @@
+{
+  "schemaVersion": "1.0.0",
+  "pipelineId": "default",
+  "warnings": [
+    {
+      "code": "W_ABSOLUTE_LAYOUT_FALLBACK",
+      "nodeId": "risk-severity-label",
+      "nodeName": "Label",
+      "message": "Absolute layout fallback used for 'Label' because no deterministic flex or grid structure could be inferred."
+    },
+    {
+      "code": "W_ABSOLUTE_LAYOUT_FALLBACK",
+      "nodeId": "risk-summary-label",
+      "nodeName": "Label",
+      "message": "Absolute layout fallback used for 'Label' because no deterministic flex or grid structure could be inferred."
+    },
+    {
+      "code": "W_ABSOLUTE_LAYOUT_FALLBACK",
+      "nodeId": "risk-summary-value",
+      "nodeName": "Value",
+      "message": "Absolute layout fallback used for 'Value' because no deterministic flex or grid structure could be inferred."
+    },
+    {
+      "code": "W_ABSOLUTE_LAYOUT_FALLBACK",
+      "nodeId": "risk-secondary-label",
+      "nodeName": "Label",
+      "message": "Absolute layout fallback used for 'Label' because no deterministic flex or grid structure could be inferred."
+    },
+    {
+      "code": "W_ABSOLUTE_LAYOUT_FALLBACK",
+      "nodeId": "risk-primary-label",
+      "nodeName": "Label",
+      "message": "Absolute layout fallback used for 'Label' because no deterministic flex or grid structure could be inferred."
+    }
+  ],
+  "semanticComponents": [],
+  "semanticDiagnostics": [
+    {
+      "screenId": "modal-card",
+      "screenName": "Risk Alert Modal",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "risk-severity-badge",
+      "nodeName": "Severity Badge",
+      "message": "Default semantic synthesis kept 'Severity Badge' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "modal-card",
+      "screenName": "Risk Alert Modal",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "risk-summary-panel",
+      "nodeName": "Risk Summary Panel",
+      "message": "Default semantic synthesis kept 'Risk Summary Panel' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "modal-card",
+      "screenName": "Risk Alert Modal",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "risk-secondary-button",
+      "nodeName": "Secondary Button",
+      "message": "Default semantic synthesis kept 'Secondary Button' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "modal-card",
+      "screenName": "Risk Alert Modal",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "risk-primary-button",
+      "nodeName": "Primary Button",
+      "message": "Default semantic synthesis kept 'Primary Button' inline because no matching reusable semantic structure was found."
+    }
+  ],
+  "screens": [
+    {
+      "screenId": "modal-card",
+      "screenName": "Risk Alert Modal",
+      "rootLayoutKind": "grid",
+      "warnings": [
+        {
+          "code": "W_ABSOLUTE_LAYOUT_FALLBACK",
+          "nodeId": "risk-severity-label",
+          "nodeName": "Label",
+          "message": "Absolute layout fallback used for 'Label' because no deterministic flex or grid structure could be inferred."
+        },
+        {
+          "code": "W_ABSOLUTE_LAYOUT_FALLBACK",
+          "nodeId": "risk-summary-label",
+          "nodeName": "Label",
+          "message": "Absolute layout fallback used for 'Label' because no deterministic flex or grid structure could be inferred."
+        },
+        {
+          "code": "W_ABSOLUTE_LAYOUT_FALLBACK",
+          "nodeId": "risk-summary-value",
+          "nodeName": "Value",
+          "message": "Absolute layout fallback used for 'Value' because no deterministic flex or grid structure could be inferred."
+        },
+        {
+          "code": "W_ABSOLUTE_LAYOUT_FALLBACK",
+          "nodeId": "risk-secondary-label",
+          "nodeName": "Label",
+          "message": "Absolute layout fallback used for 'Label' because no deterministic flex or grid structure could be inferred."
+        },
+        {
+          "code": "W_ABSOLUTE_LAYOUT_FALLBACK",
+          "nodeId": "risk-primary-label",
+          "nodeName": "Label",
+          "message": "Absolute layout fallback used for 'Label' because no deterministic flex or grid structure could be inferred."
+        }
+      ],
+      "semanticComponents": [],
+      "semanticDiagnostics": [
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "risk-severity-badge",
+          "nodeName": "Severity Badge",
+          "message": "Default semantic synthesis kept 'Severity Badge' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "risk-summary-panel",
+          "nodeName": "Risk Summary Panel",
+          "message": "Default semantic synthesis kept 'Risk Summary Panel' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "risk-secondary-button",
+          "nodeName": "Secondary Button",
+          "message": "Default semantic synthesis kept 'Secondary Button' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "risk-primary-button",
+          "nodeName": "Primary Button",
+          "message": "Default semantic synthesis kept 'Primary Button' inline because no matching reusable semantic structure was found."
+        }
+      ]
+    }
+  ]
+}

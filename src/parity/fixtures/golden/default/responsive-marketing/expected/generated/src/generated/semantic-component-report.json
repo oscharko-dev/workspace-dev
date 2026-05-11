@@ -1,0 +1,76 @@
+{
+  "schemaVersion": "1.0.0",
+  "pipelineId": "default",
+  "screens": [
+    {
+      "screenId": "screen-home-desktop",
+      "screenName": "Home Desktop",
+      "components": [
+        {
+          "componentName": "FeatureCard",
+          "filePath": "src/components/FeatureCard.tsx",
+          "kind": "card",
+          "instanceNodeIds": [
+            "feature-1",
+            "feature-2",
+            "feature-3"
+          ],
+          "propNames": [
+            "featureTitle",
+            "featureDescription"
+          ]
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "hero-cta-desktop",
+          "nodeName": "CTA Button",
+          "message": "Default semantic synthesis kept 'CTA Button' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "features-desktop",
+          "nodeName": "Features Section",
+          "message": "Default semantic synthesis kept 'Features Section' inline because no matching reusable semantic structure was found."
+        }
+      ]
+    }
+  ],
+  "components": [
+    {
+      "screenId": "screen-home-desktop",
+      "screenName": "Home Desktop",
+      "componentName": "FeatureCard",
+      "filePath": "src/components/FeatureCard.tsx",
+      "kind": "card",
+      "instanceNodeIds": [
+        "feature-1",
+        "feature-2",
+        "feature-3"
+      ],
+      "propNames": [
+        "featureTitle",
+        "featureDescription"
+      ]
+    }
+  ],
+  "diagnostics": [
+    {
+      "screenId": "screen-home-desktop",
+      "screenName": "Home Desktop",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "hero-cta-desktop",
+      "nodeName": "CTA Button",
+      "message": "Default semantic synthesis kept 'CTA Button' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-home-desktop",
+      "screenName": "Home Desktop",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "features-desktop",
+      "nodeName": "Features Section",
+      "message": "Default semantic synthesis kept 'Features Section' inline because no matching reusable semantic structure was found."
+    }
+  ]
+}

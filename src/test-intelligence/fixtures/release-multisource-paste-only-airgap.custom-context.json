@@ -1,0 +1,8 @@
+{
+  "notes": [
+    {
+      "text": "Air-gap test: no outbound calls. Environment: isolated-ci.",
+      "authorHandle": "ci-runner"
+    }
+  ]
+}

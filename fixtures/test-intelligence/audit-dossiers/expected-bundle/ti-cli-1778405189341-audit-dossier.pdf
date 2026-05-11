@@ -1,0 +1,579 @@
+%PDF-1.41 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Count 3 /Kids [6 0 R 8 0 R 10 0 R] >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>
+endobj
+5 0 obj
+<< /Length 3848 >>
+stream
+BT
+/F2 19 Tf
+1 0 0 1 44.00 789.89 Tm
+(Audit Dossier — ti-cli-1778405189341) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 774.89 Tm
+(Signed regulator-ready bundle for ti-cli-1778405189341) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 744.89 Tm
+(Harness version: 1.0.0-fixture) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 729.89 Tm
+(Git SHA: fixture-git-sha-2175) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 714.89 Tm
+(ICT register reference: ict://tier1/eu-banking-default/2026-05-10) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 699.89 Tm
+(Benchmark protocol version: docs/test-intelligence/local-benchmark-protocol.md@fixture) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 684.89 Tm
+(Policy profile: eu-banking-default) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 669.89 Tm
+(Model card: unknown) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 654.89 Tm
+(Provenance Merkle root: bff371d0f558152b8556e39597c12c100c3866210de5e95a78ff3dca1002fbd0) Tj
+ET
+BT
+/F2 15 Tf
+1 0 0 1 44.00 624.89 Tm
+(Bundle Contents) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 609.89 Tm
+(JSON manifest: ti-cli-1778405189341-audit-dossier.json) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 594.89 Tm
+(Signature: ti-cli-1778405189341-audit-dossier.sig) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 579.89 Tm
+(Merkle proof: ti-cli-1778405189341-audit-dossier.merkle.txt) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 564.89 Tm
+(Rendered PDF: ti-cli-1778405189341-audit-dossier.pdf) Tj
+ET
+BT
+/F2 15 Tf
+1 0 0 1 44.00 534.89 Tm
+(Run Summary) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 519.89 Tm
+(Compliance frameworks covered: 7) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 504.89 Tm
+(Compliance annotations: 9) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 489.89 Tm
+(Calibration samples: 12) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 474.89 Tm
+(Locale calibration curves: 4) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 459.89 Tm
+(Inter-rater failures: 0) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 444.89 Tm
+(Drift findings: 1) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 429.89 Tm
+(Incidents logged: 1) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 414.89 Tm
+(Subprocessors tracked: 2) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 399.89 Tm
+(Faithfulness mismatch count: 0) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 384.89 Tm
+(Self-consistency reviewed targets: 1) Tj
+ET
+BT
+/F2 15 Tf
+1 0 0 1 44.00 354.89 Tm
+(BaFin / Bundesbank) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 339.89 Tm
+(Operational quality reconstruction for one run: eu-banking-default.model-card.json,) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 324.89 Tm
+(provenance.jsonld, compliance-coverage-report.json, judge-calibration-eval.json,) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 309.89 Tm
+(inter-rater-agreement.json, production-runner-evidence-seal.json. Notes: Ties quality,) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 294.89 Tm
+(provenance, and reviewer controls to a single attested run.) Tj
+ET
+BT
+/F2 15 Tf
+1 0 0 1 44.00 264.89 Tm
+(EIOPA) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 249.89 Tm
+(Insurance-grade auditability and oversight evidence: eu-banking-default.model-card.json,) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 234.89 Tm
+(compliance-annotations.json, faithfulness-tier-report.json, incidents.json,) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 219.89 Tm
+(self-consistency-arbitration.json. Notes: Bundles insurer-relevant oversight, annotation, and) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 204.89 Tm
+(incident evidence.) Tj
+ET
+BT
+/F2 15 Tf
+1 0 0 1 44.00 174.89 Tm
+(EBA) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 159.89 Tm
+(Banking model-risk and governance evidence: eu-banking-default.model-card.json,) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 144.89 Tm
+(judge-calibration-eval.json, locale-calibration-curves.json, inter-rater-agreement.json,) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 129.89 Tm
+(distribution-shift-report.json. Notes: Supports model governance with calibration, locale, and) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 114.89 Tm
+(drift controls.) Tj
+ET
+BT
+/F2 15 Tf
+1 0 0 1 44.00 84.89 Tm
+(DORA Art. 10) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 69.89 Tm
+(ICT incident logging and run-level traceability: incidents.json, provenance.jsonld,) Tj
+ET
+endstream
+endobj
+6 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 5 0 R >>
+endobj
+7 0 obj
+<< /Length 4565 >>
+stream
+BT
+/F1 11 Tf
+1 0 0 1 44.00 789.89 Tm
+(production-runner-evidence-seal.json. Notes: Incident register, provenance, and evidence seal) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 774.89 Tm
+(cover tamper-evident logging.) Tj
+ET
+BT
+/F2 15 Tf
+1 0 0 1 44.00 744.89 Tm
+(DORA Art. 28) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 729.89 Tm
+(Third-party ICT service provider record and FinOps evidence: subprocessor-register.json,) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 714.89 Tm
+(region-attestations.json, finops/budget-report.json, eu-banking-default.model-card.json. Notes:) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 699.89 Tm
+(Subprocessor register, region attestations, and FinOps budget show provider geography and cost) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 684.89 Tm
+(accountability.) Tj
+ET
+BT
+/F2 15 Tf
+1 0 0 1 44.00 654.89 Tm
+(EU AI Act Art. 12) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 639.89 Tm
+(Record-keeping and reproducibility for one run: provenance.jsonld,) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 624.89 Tm
+(production-runner-evidence-seal.json, self-consistency-arbitration.json. Notes: Merkle-sealed) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 609.89 Tm
+(provenance plus reproducible voting metadata support record-keeping.) Tj
+ET
+BT
+/F2 15 Tf
+1 0 0 1 44.00 579.89 Tm
+(EU AI Act Art. 13) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 564.89 Tm
+(Transparency package for the deployed model bundle: eu-banking-default.model-card.json,) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 549.89 Tm
+(judge-calibration-eval.json, locale-calibration-curves.json. Notes: Model card and calibration) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 534.89 Tm
+(artifacts provide the transparency core.) Tj
+ET
+BT
+/F2 15 Tf
+1 0 0 1 44.00 504.89 Tm
+(EU AI Act Art. 14) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 489.89 Tm
+(Human-oversight and review-quality controls: inter-rater-agreement.json,) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 474.89 Tm
+(faithfulness-tier-report.json, incidents.json, self-consistency-arbitration.json. Notes:) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 459.89 Tm
+(Oversight coverage combines inter-rater protocol, faithfulness, incidents, arbitration, and the) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 444.89 Tm
+(per-run human-review audit trail \(Issue #2179\).) Tj
+ET
+BT
+/F2 15 Tf
+1 0 0 1 44.00 414.89 Tm
+(GDPR Ch. V) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 399.89 Tm
+(Cross-border transfer and subprocessor visibility: subprocessor-register.json,) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 384.89 Tm
+(region-attestations.json, eu-banking-default.model-card.json, finops/budget-report.json. Notes:) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 369.89 Tm
+(Subprocessor register, region attestations, and model card expose provider geography and hosting) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 354.89 Tm
+(scope.) Tj
+ET
+BT
+/F2 15 Tf
+1 0 0 1 44.00 324.89 Tm
+(Source Artifacts) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 309.89 Tm
+(compliance_annotations: compliance-annotations.json) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 294.89 Tm
+(sha256=a07f6b4e308bf5237b3e2896b703ad7caf4ca578994350b992b2e4614aaad070 bytes=2165) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 279.89 Tm
+(compliance_coverage: compliance-coverage-report.json) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 264.89 Tm
+(sha256=259633827ccfe2a137804c4538bd77732c22de2fad81efabfc2430413df7c368 bytes=6084) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 249.89 Tm
+(drift_baseline: distribution-shift-report.json) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 234.89 Tm
+(sha256=f66365742f3f1de869f49d9ff0b6045a5f87849096c2bb7fab09cafde696c1df bytes=820) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 219.89 Tm
+(model_card: eu-banking-default.model-card.json) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 204.89 Tm
+(sha256=c80d771a2750b632548efd53a1b77f7352fd78015bd0aece153d4125ef7cd936 bytes=31442) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 189.89 Tm
+(faithfulness_tier: faithfulness-tier-report.json) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 174.89 Tm
+(sha256=286998580a114d0cc0e22fb769666f3dd099e35c0dbd854a600d866b0cacc1e0 bytes=2783) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 159.89 Tm
+(finops_budget: finops/budget-report.json) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 144.89 Tm
+(sha256=b7c0baa2c9f01406e16b3601adbf51809a5fe75f3eeb832312d9a9bfb58f8f86 bytes=6522) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 129.89 Tm
+(incident_log: incidents.json) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 114.89 Tm
+(sha256=89d87bb9f671648affed09b093d3a351cbd184f303012d6ad5c6ae8565a77b4c bytes=520) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 99.89 Tm
+(inter_rater_agreement: inter-rater-agreement.json) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 84.89 Tm
+(sha256=ce6a498a2794c6cb73a0d77c0413e5a60580d119311c0100518adf01b471f793 bytes=1197) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 69.89 Tm
+(judge_calibration: judge-calibration-eval.json) Tj
+ET
+endstream
+endobj
+8 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 7 0 R >>
+endobj
+9 0 obj
+<< /Length 2083 >>
+stream
+BT
+/F1 11 Tf
+1 0 0 1 44.00 789.89 Tm
+(sha256=5f90436d80e000c732435d50813fb9d4492a60a5cd1aa1de36e6a75785171ee7 bytes=2424) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 774.89 Tm
+(locale_calibration: locale-calibration-curves.json) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 759.89 Tm
+(sha256=24c82e98c84a7ceb71eded97cf405e5b44612e9b90f28ce2f38ef2c48264de7f bytes=465) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 744.89 Tm
+(policy_report: policy-report.json) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 729.89 Tm
+(sha256=72830bc3d8d8d9511a73a1797f8a002caf0becf0eb8479e3db8a2a38716001e7 bytes=5882) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 714.89 Tm
+(evidence_seal: production-runner-evidence-seal.json) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 699.89 Tm
+(sha256=263a8053711bf35a14d0fa05d6d7c2e9689870efe94bf2ce5d0ce95f370c7e3a bytes=1142) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 684.89 Tm
+(provenance: provenance.jsonld) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 669.89 Tm
+(sha256=dfb54310d68d561becf52b52cd9c91e7783cdfc831ae71de23ac8fdbfb5a7686 bytes=44719) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 654.89 Tm
+(region_attestations: region-attestations.json) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 639.89 Tm
+(sha256=853ed6b828a9452755fece6787583ec03b66815c63387ad7a783603ac9ce6308 bytes=1402) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 624.89 Tm
+(self_consistency: self-consistency-arbitration.json) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 609.89 Tm
+(sha256=1422018ee2f90cbc58ae19c07f1b45db10f9d7e495bf6ad78ad605e689996a63 bytes=355) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 594.89 Tm
+(subprocessor_register: subprocessor-register.json) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 579.89 Tm
+(sha256=4751ffac2ab83173156bf23bdccac5a6d5cdb6f1307a1375c53e477216bbdc89 bytes=645) Tj
+ET
+BT
+/F2 15 Tf
+1 0 0 1 44.00 549.89 Tm
+(Region Attestations) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 534.89 Tm
+(finops/budget-report.json: eu-central-1, switzerland-north \(attestations=3\)) Tj
+ET
+BT
+/F2 15 Tf
+1 0 0 1 44.00 504.89 Tm
+(Signing) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 489.89 Tm
+(Algorithm: ed25519) Tj
+ET
+BT
+/F1 11 Tf
+1 0 0 1 44.00 474.89 Tm
+(Key fingerprint: 6930ddea43f4acafcc0ca16f690ca996dcef01462d01fb5a309b27e73c951951) Tj
+ET
+endstream
+endobj
+10 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 9 0 R >>
+endobj
+xref
+0 11
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000128 00000 n 
+0000000198 00000 n 
+0000000273 00000 n 
+0000004173 00000 n 
+0000004315 00000 n 
+0000008932 00000 n 
+0000009074 00000 n 
+0000011209 00000 n 
+trailer
+<< /Size 11 /Root 1 0 R /ID [<22b0df0f6a88b569a793138009ea41e2><22b0df0f6a88b569a793138009ea41e2>] >>
+startxref
+11352
+%%EOF

@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "1.0.0",
+  "pipelineId": "default",
+  "unsupportedNodeCount": 1,
+  "diagnostics": [
+    {
+      "nodeId": "badge-icon",
+      "category": "classification-fallback",
+      "reason": "Element type classification used fallback rule for Figma node type 'ELLIPSE'.",
+      "screenId": "screen-profile"
+    }
+  ],
+  "classificationFallbacks": [
+    {
+      "screenId": "screen-profile",
+      "screenName": "Profile",
+      "nodeId": "badge-icon",
+      "nodeName": "Icon",
+      "nodeType": "ELLIPSE",
+      "depth": 1
+    }
+  ]
+}

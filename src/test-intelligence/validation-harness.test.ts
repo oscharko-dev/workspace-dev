@@ -1,0 +1,1477 @@
+import assert from "node:assert/strict";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test from "node:test";
+
+import {
+  GENEALOGY_ARTIFACT_FILENAME,
+  BUSINESS_TEST_INTENT_IR_SCHEMA_VERSION,
+  FINOPS_ARTIFACT_DIRECTORY,
+  FINOPS_BUDGET_REPORT_ARTIFACT_FILENAME,
+  GENERATED_TEST_CASE_SCHEMA_VERSION,
+  REDACTION_POLICY_VERSION,
+  type FinOpsBudgetReport,
+  LBOM_ARTIFACT_DIRECTORY,
+  LBOM_ARTIFACT_FILENAME,
+  LBOM_ARTIFACT_SCHEMA_VERSION,
+  LBOM_CYCLONEDX_SPEC_VERSION,
+  TEST_INTELLIGENCE_CONTRACT_VERSION,
+  TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
+  TEST_DATA_ORACLE_REPORT_ARTIFACT_FILENAME,
+  WAVE1_VALIDATION_ATTESTATION_ARTIFACT_FILENAME,
+  WAVE1_VALIDATION_ATTESTATION_BUNDLE_FILENAME,
+  WAVE1_VALIDATION_ATTESTATIONS_DIRECTORY,
+  WAVE1_VALIDATION_FIXTURE_IDS,
+  WAVE1_VALIDATION_SIGNATURES_DIRECTORY,
+  VISUAL_SIDECAR_SCHEMA_VERSION,
+  type BusinessTestIntentIr,
+  type Wave1ValidationFixtureId,
+  type Wave1ValidationLbomDocument,
+} from "../contracts/index.js";
+import { canonicalJson } from "./content-hash.js";
+import {
+  createKeyBoundSigstoreSigner,
+  generateWave1ValidationAttestationKeyPair,
+  verifyWave1ValidationAttestationFromDisk,
+} from "./evidence-attestation.js";
+import {
+  computeWave1ValidationEvidenceManifestDigest,
+  verifyWave1ValidationEvidenceFromDisk,
+} from "./evidence-manifest.js";
+import { validateLbomDocument } from "./lbom-emitter.js";
+import {
+  ML_BOM_ARTIFACT_DIRECTORY,
+  ML_BOM_ARTIFACT_FILENAME,
+  ML_BOM_CYCLONEDX_SPEC_VERSION,
+  validateMlBomDocument,
+  type MlBomDocument,
+} from "./ml-bom.js";
+import { deriveBusinessTestIntentIr } from "./intent-derivation.js";
+import { loadWave1ValidationFixture } from "./validation-fixtures.js";
+import {
+  BUSINESS_INTENT_IR_ARTIFACT_FILENAME,
+  COMPILED_PROMPT_ARTIFACT_FILENAME,
+  GATEWAY_REQUEST_AUDIT_ARTIFACT_FILENAME,
+  runWave1Validation,
+  synthesizeGeneratedTestCases,
+  Wave1ValidationFinOpsBudgetExceededError,
+} from "./validation-harness.js";
+import { compilePrompt } from "./prompt-compiler.js";
+import { createMemoryReplayCache } from "./replay-cache.js";
+
+const GENERATED_AT = "2026-04-25T10:00:00.000Z";
+const TEST_GENERATION_MODEL_REVISION = "gpt-oss-120b-2026-04-25";
+const TEST_GENERATION_GATEWAY_RELEASE = "wave1-validation-mock";
+const POLICY_BUNDLE_VERSION = "wave1-validation";
+const VISUAL_PRIMARY_DEPLOYMENT = "llama-4-maverick-vision";
+
+const ORIGINAL_PII_SUBSTRINGS: Record<
+  Wave1ValidationFixtureId,
+  ReadonlyArray<string>
+> = {
+  "validation-onboarding": [
+    "anna.beispiel@example.test",
+    "+49 30 5550199",
+    "65929970489",
+  ],
+  "validation-payment-auth": ["DE02500105170137075030", "INGDDEFFXXX"],
+};
+
+const newRunDir = async (): Promise<string> => {
+  return mkdtemp(join(tmpdir(), "ti-validation-run-"));
+};
+
+const lbomPropertyMap = (
+  lbom: Wave1ValidationLbomDocument,
+): Map<string, string> =>
+  new Map(lbom.metadata.properties.map((property) => [property.name, property.value]));
+
+const audit = {
+  jobId: "job-synthetic-coverage",
+  generatedAt: GENERATED_AT,
+  contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+  schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+  promptTemplateVersion: TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
+  redactionPolicyVersion: "1.0.0",
+  visualSidecarSchemaVersion: VISUAL_SIDECAR_SCHEMA_VERSION,
+  cacheHit: false,
+  cacheKey: "synthetic",
+  inputHash: "0".repeat(64),
+  promptHash: "0".repeat(64),
+  schemaHash: "0".repeat(64),
+};
+
+test("validation-harness: synthetic test generation covers risk labels, actions, navigation, and trace fallbacks", () => {
+  const intent: BusinessTestIntentIr = {
+    version: BUSINESS_TEST_INTENT_IR_SCHEMA_VERSION,
+    source: { kind: "figma_local_json", contentHash: "1".repeat(64) },
+    screens: [
+      { screenId: "checkout", screenName: "Checkout", trace: {} },
+      { screenId: "profile", screenName: "Profile", trace: { nodeId: "screen.profile" } },
+    ],
+    detectedFields: [
+      {
+        id: "field.iban",
+        screenId: "checkout",
+        trace: { nodeId: "node.iban", nodeName: "IBAN" },
+        provenance: "figma_node",
+        confidence: 0.9,
+        label: "IBAN",
+        type: "text",
+      },
+      {
+        id: "field.email",
+        screenId: "profile",
+        trace: {},
+        provenance: "figma_node",
+        confidence: 0.9,
+        label: "Email",
+        type: "email",
+      },
+      {
+        id: "field.notes",
+        screenId: "profile",
+        trace: { nodeName: "Notes" },
+        provenance: "figma_node",
+        confidence: 0.8,
+        label: "Display notes",
+        type: "textarea",
+      },
+    ],
+    detectedActions: [
+      {
+        id: "action.submit",
+        screenId: "checkout",
+        trace: { nodeId: "node.submit", nodeName: "Submit" },
+        provenance: "figma_node",
+        confidence: 0.9,
+        label: "Submit",
+        intent: "submit",
+      },
+      {
+        id: "action.save",
+        screenId: "profile",
+        trace: {},
+        provenance: "figma_node",
+        confidence: 0.8,
+        label: "Save",
+        intent: "submit",
+      },
+    ],
+    detectedValidations: [
+      {
+        id: "validation.iban",
+        screenId: "checkout",
+        trace: { nodeId: "node.iban" },
+        provenance: "figma_node",
+        confidence: 0.9,
+        rule: "Required",
+        targetFieldId: "field.iban",
+      },
+      {
+        id: "validation.orphan",
+        screenId: "profile",
+        trace: {},
+        provenance: "figma_node",
+        confidence: 0.7,
+        rule: "Optional warning",
+      },
+    ],
+    detectedNavigation: [
+      {
+        id: "nav.checkout.profile",
+        screenId: "checkout",
+        targetScreenId: "profile",
+        trigger: "submit",
+        trace: { nodeName: "Submit" },
+        confidence: 0.8,
+      },
+    ],
+    inferredBusinessObjects: [],
+    risks: [],
+    assumptions: [],
+    openQuestions: [],
+    piiIndicators: [],
+    redactions: [],
+  };
+
+  const list = synthesizeGeneratedTestCases({
+    jobId: audit.jobId,
+    generatedAt: GENERATED_AT,
+    intent,
+    audit,
+  });
+  assert.equal(list.schemaVersion, GENERATED_TEST_CASE_SCHEMA_VERSION);
+  assert.equal(list.jobId, audit.jobId);
+  assert.equal(
+    list.testCases.some(
+      (tc) =>
+        tc.riskCategory === "financial_transaction" &&
+        tc.qualitySignals.coveredFieldIds.includes("field.iban") &&
+        tc.qualitySignals.coveredActionIds.includes("action.submit"),
+    ),
+    true,
+  );
+  assert.equal(
+    list.testCases.some(
+      (tc) =>
+        tc.riskCategory === "regulated_data" &&
+        tc.qualitySignals.coveredFieldIds.includes("field.email"),
+    ),
+    true,
+  );
+  assert.equal(
+    list.testCases.some(
+      (tc) =>
+        tc.type === "navigation" &&
+        tc.polarity === "navigation" &&
+        tc.category === "navigation_flow" &&
+        tc.qualitySignals.coveredNavigationIds.includes("nav.checkout.profile"),
+    ),
+    true,
+  );
+  assert.equal(
+    list.testCases.some(
+      (tc) =>
+        tc.type === "accessibility" &&
+        tc.polarity === "accessibility" &&
+        tc.category === "accessibility" &&
+        tc.qualitySignals.coveredFieldIds.includes("field.notes"),
+    ),
+    true,
+  );
+  assert.equal(
+    list.testCases.some(
+      (tc) =>
+        tc.type === "negative" &&
+        tc.polarity === "negative" &&
+        tc.category === "negative_path" &&
+        tc.qualitySignals.coveredFieldIds.includes("field.iban"),
+    ),
+    true,
+  );
+  assert.equal(
+    list.testCases.some(
+      (tc) =>
+        tc.type === "boundary" &&
+        tc.polarity === "boundary" &&
+        tc.category === "boundary_value" &&
+        tc.qualitySignals.coveredFieldIds.includes("field.iban"),
+    ),
+    true,
+  );
+  assert.equal(
+    list.testCases.some(
+      (tc) =>
+        tc.type === "validation" &&
+        tc.polarity === "validation" &&
+        tc.category === "validation_rule" &&
+        tc.qualitySignals.coveredFieldIds.includes("field.iban"),
+    ),
+    true,
+  );
+  assert.equal(
+    list.testCases.every(
+      (tc) => typeof tc.polarity === "string" && typeof tc.category === "string",
+    ),
+    true,
+  );
+  assert.equal(
+    list.testCases.every((tc) => tc.audit !== audit && tc.audit.jobId === audit.jobId),
+    true,
+  );
+});
+
+test("validation-harness: unresolved validation rules stay generic and surface open questions", () => {
+  const intent: BusinessTestIntentIr = {
+    version: BUSINESS_TEST_INTENT_IR_SCHEMA_VERSION,
+    source: { kind: "figma_local_json", contentHash: "2".repeat(64) },
+    screens: [
+      { screenId: "vat", screenName: "VAT Form", trace: { nodeId: "screen.vat" } },
+    ],
+    detectedFields: [
+      {
+        id: "field.vat-rate",
+        screenId: "vat",
+        trace: { nodeId: "node.vat-rate", nodeName: "VAT rate" },
+        provenance: "figma_node",
+        confidence: 0.9,
+        label: "VAT rate",
+        type: "text",
+      },
+    ],
+    detectedActions: [],
+    detectedValidations: [
+      {
+        id: "validation.vat-rate",
+        screenId: "vat",
+        trace: { nodeId: "node.vat-rate" },
+        provenance: "figma_node",
+        confidence: 0.8,
+        rule: "Validation rules for amount fields and VAT selection still need to be specified.",
+        targetFieldId: "field.vat-rate",
+      },
+    ],
+    detectedNavigation: [],
+    inferredBusinessObjects: [],
+    risks: [],
+    assumptions: [],
+    openQuestions: [],
+    piiIndicators: [],
+    redactions: [],
+  };
+
+  const list = synthesizeGeneratedTestCases({
+    jobId: "job-unresolved-validation",
+    generatedAt: GENERATED_AT,
+    intent,
+    audit,
+  });
+
+  const negativeCase = list.testCases.find((testCase) =>
+    testCase.id.includes("field-negative-field-vat-rate"),
+  );
+  const validationCase = list.testCases.find((testCase) =>
+    testCase.id.includes("field-validation-field-vat-rate"),
+  );
+  const boundaryCase = list.testCases.find((testCase) =>
+    testCase.id.includes("field-boundary-field-vat-rate"),
+  );
+
+  assert.equal(boundaryCase, undefined);
+  assert.ok(negativeCase);
+  assert.ok(validationCase);
+  assert.deepEqual(negativeCase?.expectedResults, [
+    "A validation response is shown according to the specified validation concept.",
+  ]);
+  assert.deepEqual(validationCase?.expectedResults, [
+    "A validation response is shown according to the specified validation concept.",
+  ]);
+  assert.equal(
+    negativeCase?.title,
+    "Capture unresolved validation behavior for VAT rate on vat",
+  );
+  assert.equal(
+    negativeCase?.objective,
+    "Document the validation behavior for VAT rate once the final validation scenario is specified.",
+  );
+  assert.equal(
+    negativeCase?.steps[1]?.action,
+    "Exercise the VAT rate validation scenario defined by the finalized specification",
+  );
+  assert.equal(
+    validationCase?.title,
+    "Capture unresolved validation rules for VAT rate on vat",
+  );
+  assert.equal(
+    validationCase?.steps[1]?.action,
+    "Exercise the VAT rate validation path using the finalized specification",
+  );
+  assert.ok(
+    negativeCase?.openQuestions.some((question) =>
+      question.includes("still need to be specified"),
+    ),
+  );
+  assert.ok(
+    validationCase?.openQuestions.some((question) =>
+      question.includes('Validation rules for "VAT rate" are unresolved'),
+    ),
+  );
+  assert.equal(
+    [negativeCase, validationCase].every(
+      (testCase) =>
+        !JSON.stringify(testCase).match(/\b(empty|invalid|required)\b/i),
+    ),
+    true,
+  );
+});
+
+for (const fixtureId of WAVE1_VALIDATION_FIXTURE_IDS) {
+  test(`validation-harness: ${fixtureId} runs end-to-end without external network`, async () => {
+    const runDir = await newRunDir();
+    const result = await runWave1Validation({
+      fixtureId,
+      jobId: `job-${fixtureId}`,
+      generatedAt: GENERATED_AT,
+      runDir,
+    });
+    assert.equal(result.fixtureId, fixtureId);
+    assert.ok(result.generatedList.testCases.length > 0);
+    assert.equal(result.exportArtifacts.refused, false);
+    assert.equal(
+      result.manifest.artifacts.some(
+        (artifact) => artifact.filename === GENEALOGY_ARTIFACT_FILENAME,
+      ),
+      true,
+    );
+    // Every artifact filename must be unique; subdirectory artifacts remain
+    // safe relative paths so they can be attested by the manifest.
+    const filenames = result.artifactFilenames;
+    assert.equal(new Set(filenames).size, filenames.length);
+    assert.ok(filenames.includes(BUSINESS_INTENT_IR_ARTIFACT_FILENAME));
+    assert.ok(filenames.includes(COMPILED_PROMPT_ARTIFACT_FILENAME));
+    assert.ok(filenames.includes(GATEWAY_REQUEST_AUDIT_ARTIFACT_FILENAME));
+    assert.ok(filenames.includes(TEST_DATA_ORACLE_REPORT_ARTIFACT_FILENAME));
+    // Manifest invariants.
+    assert.equal(result.manifest.rawScreenshotsIncluded, false);
+    assert.equal(result.manifest.imagePayloadSentToTestGeneration, false);
+    assert.equal(
+      result.manifest.modelDeployments.testGeneration,
+      "gpt-oss-120b-mock",
+    );
+    assert.equal(
+      result.manifest.modelDeployments.visualPrimary,
+      "llama-4-maverick-vision",
+    );
+    assert.equal(result.attestation.signingMode, "unsigned");
+    assert.equal(result.attestation.signerReference, undefined);
+    assert.equal(
+      result.attestation.attestationFilename,
+      `${WAVE1_VALIDATION_ATTESTATIONS_DIRECTORY}/${WAVE1_VALIDATION_ATTESTATION_ARTIFACT_FILENAME}`,
+    );
+    assert.match(result.attestation.attestationSha256, /^[0-9a-f]{64}$/);
+    assert.equal(result.attestation.bundleFilename, undefined);
+    assert.equal(result.attestation.bundleSha256, undefined);
+
+    // Issue #1378 — every completed run emits a per-job CycloneDX 1.6
+    // ML-BOM under `<runDir>/lbom/ai-bom.cdx.json`, and the manifest
+    // attests it via SHA-256 + byte length.
+    assert.equal(result.lbom.bomFormat, "CycloneDX");
+    assert.equal(result.lbom.specVersion, LBOM_CYCLONEDX_SPEC_VERSION);
+    const lbomProps = lbomPropertyMap(result.lbom);
+    assert.equal(lbomProps.get("workspace-dev:secretsIncluded"), "false");
+    assert.equal(lbomProps.get("workspace-dev:rawPromptsIncluded"), "false");
+    assert.equal(
+      lbomProps.get("workspace-dev:rawScreenshotsIncluded"),
+      "false",
+    );
+    assert.equal(
+      result.lbomSummary.schemaVersion,
+      LBOM_ARTIFACT_SCHEMA_VERSION,
+    );
+    assert.equal(result.lbomSummary.componentCounts.models, 3);
+    assert.equal(result.lbomSummary.componentCounts.data, 2);
+    assert.equal(result.lbomSummary.visualFallbackUsed, false);
+    assert.equal(
+      result.lbomSummary.filename,
+      `${LBOM_ARTIFACT_DIRECTORY}/${LBOM_ARTIFACT_FILENAME}`,
+    );
+    assert.ok(filenames.includes(result.lbomSummary.filename));
+    const lbomBytes = await readFile(result.lbomArtifactPath, "utf8");
+    const parsedLbom = JSON.parse(lbomBytes) as Wave1ValidationLbomDocument;
+    const lbomValidation = validateLbomDocument(parsedLbom);
+    assert.equal(
+      lbomValidation.valid,
+      true,
+      JSON.stringify(lbomValidation.issues, null, 2),
+    );
+    const attestedLbom = result.manifest.artifacts.find(
+      (artifact) => artifact.filename === result.lbomSummary.filename,
+    );
+    assert.ok(attestedLbom, "manifest must attest the LBOM artifact");
+    assert.equal(attestedLbom?.category, "lbom");
+    assert.equal(attestedLbom?.sha256, result.lbomSummary.sha256);
+    assert.equal(attestedLbom?.bytes, result.lbomSummary.bytes);
+
+    assert.equal(result.mlBom.bomFormat, "CycloneDX");
+    assert.equal(result.mlBom.specVersion, ML_BOM_CYCLONEDX_SPEC_VERSION);
+    assert.equal(
+      result.mlBomSummary.filename,
+      `${ML_BOM_ARTIFACT_DIRECTORY}/${ML_BOM_ARTIFACT_FILENAME}`,
+    );
+    assert.ok(filenames.includes(result.mlBomSummary.filename));
+    const mlBomBytes = await readFile(result.mlBomArtifactPath, "utf8");
+    const parsedMlBom = JSON.parse(mlBomBytes) as MlBomDocument;
+    const mlBomValidation = validateMlBomDocument(parsedMlBom);
+    assert.equal(
+      mlBomValidation.valid,
+      true,
+      JSON.stringify(mlBomValidation.issues, null, 2),
+    );
+    const attestedMlBom = result.manifest.artifacts.find(
+      (artifact) => artifact.filename === result.mlBomSummary.filename,
+    );
+    assert.ok(attestedMlBom, "manifest must attest the release ML-BOM artifact");
+    assert.equal(attestedMlBom?.category, "ml_bom");
+    assert.equal(attestedMlBom?.sha256, result.mlBomSummary.sha256);
+    assert.equal(attestedMlBom?.bytes, result.mlBomSummary.bytes);
+  });
+
+  test(`validation-harness: ${fixtureId} produces deterministic artifacts on replay`, async () => {
+    const dirA = await newRunDir();
+    const dirB = await newRunDir();
+    const a = await runWave1Validation({
+      fixtureId,
+      jobId: `job-${fixtureId}-deterministic`,
+      generatedAt: GENERATED_AT,
+      runDir: dirA,
+    });
+    const b = await runWave1Validation({
+      fixtureId,
+      jobId: `job-${fixtureId}-deterministic`,
+      generatedAt: GENERATED_AT,
+      runDir: dirB,
+    });
+    // Manifest sha256 hashes must be byte-identical run-to-run.
+    const hashesA = a.manifest.artifacts.map(
+      (x) => `${x.filename}:${x.sha256}`,
+    );
+    const hashesB = b.manifest.artifacts.map(
+      (x) => `${x.filename}:${x.sha256}`,
+    );
+    assert.deepEqual(hashesA, hashesB);
+    // Generated test case list is byte-identical.
+    assert.equal(
+      canonicalJson(a.generatedList),
+      canonicalJson(b.generatedList),
+    );
+  });
+
+  test(`validation-harness: ${fixtureId} no original PII substrings appear in any persisted artifact`, async () => {
+    const runDir = await newRunDir();
+    const result = await runWave1Validation({
+      fixtureId,
+      jobId: `job-${fixtureId}-pii`,
+      generatedAt: GENERATED_AT,
+      runDir,
+    });
+    const violators = ORIGINAL_PII_SUBSTRINGS[fixtureId];
+    for (const filename of result.artifactFilenames) {
+      const path = join(runDir, filename);
+      const raw = await readFile(path, "utf8").catch(async () => {
+        // Some artifacts (review-store) live one layer deeper; the
+        // manifest stores their basenames so re-resolve from manifest.
+        return readFile(
+          join(runDir, "review-store", result.jobId, filename),
+          "utf8",
+        );
+      });
+      for (const needle of violators) {
+        assert.equal(
+          raw.includes(needle),
+          false,
+          `original PII substring "${needle}" leaked into ${filename}`,
+        );
+      }
+    }
+  });
+
+  test(`validation-harness: ${fixtureId} verifies clean against verifyWave1ValidationEvidenceFromDisk`, async () => {
+    const runDir = await newRunDir();
+    await runWave1Validation({
+      fixtureId,
+      jobId: `job-${fixtureId}-verify`,
+      generatedAt: GENERATED_AT,
+      runDir,
+    });
+    const { result } = await verifyWave1ValidationEvidenceFromDisk(runDir);
+    assert.equal(result.ok, true, JSON.stringify(result));
+  });
+
+  test(`validation-harness: ${fixtureId} verification fails after deliberate artifact mutation`, async () => {
+    const runDir = await newRunDir();
+    const run = await runWave1Validation({
+      fixtureId,
+      jobId: `job-${fixtureId}-mutate`,
+      generatedAt: GENERATED_AT,
+      runDir,
+    });
+    // Mutate the first non-manifest artifact.
+    const target = run.artifactFilenames.find(
+      (f) => f !== "wave1-validation-evidence-manifest.json",
+    );
+    assert.ok(target);
+    const path = join(runDir, target);
+    const raw = await readFile(path, "utf8");
+    await writeFile(path, raw + "\n# tampered\n", "utf8");
+    const { result } = await verifyWave1ValidationEvidenceFromDisk(runDir);
+    assert.equal(result.ok, false);
+    assert.ok(
+      result.mutated.includes(target) || result.resized.includes(target),
+    );
+  });
+}
+
+test("validation-harness: export-refused run still emits and attests the release ML-BOM", async () => {
+  const fixtureId = "validation-onboarding";
+  const jobId = "job-validation-onboarding-export-refused";
+  const fixture = await loadWave1ValidationFixture(fixtureId);
+  const intent = deriveBusinessTestIntentIr({
+    figma: fixture.figma,
+    visual: fixture.visual,
+  });
+  const compiled = compilePrompt({
+    jobId,
+    intent,
+    visual: fixture.visual,
+    modelBinding: {
+      modelRevision: TEST_GENERATION_MODEL_REVISION,
+      gatewayRelease: TEST_GENERATION_GATEWAY_RELEASE,
+    },
+    policyBundleVersion: POLICY_BUNDLE_VERSION,
+    visualBinding: {
+      schemaVersion: VISUAL_SIDECAR_SCHEMA_VERSION,
+      selectedDeployment: VISUAL_PRIMARY_DEPLOYMENT,
+      fallbackReason: "none",
+      screenCount: fixture.visual.length,
+      ...(fixture.visualImageSha256 !== undefined
+        ? { fixtureImageHash: fixture.visualImageSha256 }
+        : {}),
+    },
+  });
+  const replayCache = createMemoryReplayCache();
+  const cachedList = synthesizeGeneratedTestCases({
+    jobId,
+    generatedAt: GENERATED_AT,
+    intent,
+    audit: {
+      jobId,
+      generatedAt: GENERATED_AT,
+      contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+      schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+      promptTemplateVersion: TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
+      redactionPolicyVersion: REDACTION_POLICY_VERSION,
+      visualSidecarSchemaVersion: VISUAL_SIDECAR_SCHEMA_VERSION,
+      cacheHit: false,
+      cacheKey: compiled.request.hashes.cacheKey,
+      inputHash: compiled.request.hashes.inputHash,
+      promptHash: compiled.request.hashes.promptHash,
+      schemaHash: compiled.request.hashes.schemaHash,
+    },
+  });
+  await replayCache.store(compiled.cacheKey, {
+    ...cachedList,
+    testCases: cachedList.testCases.map((testCase) => ({
+      ...testCase,
+      qcMappingPreview: {
+        ...testCase.qcMappingPreview,
+        exportable: false,
+      },
+    })),
+  });
+
+  const runDir = await newRunDir();
+  const result = await runWave1Validation({
+    fixtureId,
+    jobId,
+    generatedAt: GENERATED_AT,
+    runDir,
+    replayCache,
+  });
+
+  assert.equal(result.exportArtifacts.refused, true);
+  assert.ok(
+    result.exportArtifacts.refusalCodes.includes("policy_blocked_cases_present"),
+  );
+  assert.equal(result.mlBom.specVersion, ML_BOM_CYCLONEDX_SPEC_VERSION);
+  const mlBomRaw = await readFile(result.mlBomArtifactPath, "utf8");
+  const parsedMlBom = JSON.parse(mlBomRaw) as MlBomDocument;
+  const mlBomValidation = validateMlBomDocument(parsedMlBom);
+  assert.equal(
+    mlBomValidation.valid,
+    true,
+    JSON.stringify(mlBomValidation.issues, null, 2),
+  );
+  const manifestMlBom = result.manifest.artifacts.find(
+    (artifact) => artifact.filename === result.mlBomSummary.filename,
+  );
+  assert.ok(
+    manifestMlBom,
+    "export-refused manifest must attest the release ML-BOM artifact",
+  );
+  assert.equal(manifestMlBom?.category, "ml_bom");
+  assert.equal(manifestMlBom?.sha256, result.mlBomSummary.sha256);
+  assert.equal(manifestMlBom?.bytes, result.mlBomSummary.bytes);
+});
+
+test("validation-harness: seals request audit proof that test generation received no images", async () => {
+  const runDir = await newRunDir();
+  const result = await runWave1Validation({
+    fixtureId: "validation-payment-auth",
+    jobId: "job-validation-payment-auth-request-audit",
+    generatedAt: GENERATED_AT,
+    runDir,
+  });
+  const raw = await readFile(
+    join(runDir, GATEWAY_REQUEST_AUDIT_ARTIFACT_FILENAME),
+    "utf8",
+  );
+  const audit = JSON.parse(raw) as {
+    deployment: string;
+    requestCount: number;
+    imageInputCounts: number[];
+    imagePayloadSent: boolean;
+    promptHash: string;
+    schemaHash: string;
+    inputHash: string;
+    cacheKeyDigest: string;
+  };
+  assert.equal(audit.deployment, "gpt-oss-120b-mock");
+  assert.equal(audit.requestCount, 1);
+  assert.deepEqual(audit.imageInputCounts, [0]);
+  assert.equal(audit.imagePayloadSent, false);
+  assert.equal(
+    audit.promptHash,
+    result.compiledPrompt.request.hashes.promptHash,
+  );
+  assert.equal(
+    audit.schemaHash,
+    result.compiledPrompt.request.hashes.schemaHash,
+  );
+  assert.equal(audit.inputHash, result.compiledPrompt.request.hashes.inputHash);
+  assert.equal(
+    audit.cacheKeyDigest,
+    result.compiledPrompt.request.hashes.cacheKey,
+  );
+  const attested = result.manifest.artifacts.find(
+    (artifact) => artifact.filename === GATEWAY_REQUEST_AUDIT_ARTIFACT_FILENAME,
+  );
+  assert.equal(attested?.category, "manifest");
+});
+
+test("validation-harness: sigstore signing returns summary and verifies from disk", async () => {
+  const runDir = await newRunDir();
+  const { privateKeyPem, publicKeyPem } = generateWave1ValidationAttestationKeyPair();
+  const signer = createKeyBoundSigstoreSigner({
+    signerReference: "validation-harness-signer",
+    privateKeyPem,
+    publicKeyPem,
+  });
+  const run = await runWave1Validation({
+    fixtureId: "validation-onboarding",
+    jobId: "job-validation-onboarding-signed",
+    generatedAt: GENERATED_AT,
+    runDir,
+    attestationSigningMode: "sigstore",
+    attestationSigner: signer,
+  });
+
+  assert.equal(run.attestation.signingMode, "sigstore");
+  assert.equal(run.attestation.signerReference, "validation-harness-signer");
+  assert.equal(
+    run.attestation.attestationFilename,
+    `${WAVE1_VALIDATION_ATTESTATIONS_DIRECTORY}/${WAVE1_VALIDATION_ATTESTATION_ARTIFACT_FILENAME}`,
+  );
+  assert.equal(
+    run.attestation.bundleFilename,
+    `${WAVE1_VALIDATION_SIGNATURES_DIRECTORY}/${WAVE1_VALIDATION_ATTESTATION_BUNDLE_FILENAME}`,
+  );
+  assert.match(run.attestation.attestationSha256, /^[0-9a-f]{64}$/);
+  assert.match(run.attestation.bundleSha256 ?? "", /^[0-9a-f]{64}$/);
+
+  const verification = await verifyWave1ValidationAttestationFromDisk(
+    runDir,
+    run.manifest,
+    computeWave1ValidationEvidenceManifestDigest(run.manifest),
+    { expectedSigningMode: "sigstore" },
+  );
+  assert.equal(verification.ok, true, JSON.stringify(verification.failures));
+  assert.equal(verification.signaturesVerified, true);
+});
+
+test("validation-harness: post-hoc bySource mutation fails signed attestation verify", async () => {
+  const runDir = await newRunDir();
+  const { privateKeyPem, publicKeyPem } = generateWave1ValidationAttestationKeyPair();
+  const signer = createKeyBoundSigstoreSigner({
+    signerReference: "validation-harness-bysource-signer",
+    privateKeyPem,
+    publicKeyPem,
+  });
+  const run = await runWave1Validation({
+    fixtureId: "validation-onboarding",
+    jobId: "job-validation-onboarding-bysource-tamper",
+    generatedAt: GENERATED_AT,
+    runDir,
+    attestationSigningMode: "sigstore",
+    attestationSigner: signer,
+  });
+
+  const reportPath = join(
+    runDir,
+    FINOPS_ARTIFACT_DIRECTORY,
+    FINOPS_BUDGET_REPORT_ARTIFACT_FILENAME,
+  );
+  const report = JSON.parse(await readFile(reportPath, "utf8")) as FinOpsBudgetReport;
+  const tampered: FinOpsBudgetReport = {
+    ...report,
+    bySource: {
+      ...report.bySource,
+      generator: {
+        ...report.bySource.generator,
+        callCount: report.bySource.generator.callCount + 1,
+      },
+    },
+  };
+  await writeFile(reportPath, canonicalJson(tampered), "utf8");
+
+  const verification = await verifyWave1ValidationAttestationFromDisk(
+    runDir,
+    run.manifest,
+    computeWave1ValidationEvidenceManifestDigest(run.manifest),
+    { expectedSigningMode: "sigstore" },
+  );
+  assert.equal(verification.ok, false);
+  assert.ok(
+    verification.failures.some(
+      (failure) => failure.code === "bySource_hash_mismatch",
+    ),
+    JSON.stringify(verification.failures),
+  );
+});
+
+test("validation-harness: visual mask hash participates in compiled prompt identity", async () => {
+  const runDir = await newRunDir();
+  const result = await runWave1Validation({
+    fixtureId: "validation-payment-auth",
+    jobId: "job-validation-payment-auth-mask",
+    generatedAt: GENERATED_AT,
+    runDir,
+  });
+  const fixtureImageHash =
+    result.compiledPrompt.artifacts.visualBinding.fixtureImageHash;
+  assert.match(fixtureImageHash ?? "", /^[0-9a-f]{64}$/);
+  assert.equal(
+    result.compiledPrompt.request.userPrompt.includes(fixtureImageHash ?? ""),
+    false,
+    "compiled prompt should carry visual image provenance by hash identity, not prompt text",
+  );
+});
+
+test("validation-harness: visual sidecar gate must not block on shipped fixtures", async () => {
+  for (const fixtureId of WAVE1_VALIDATION_FIXTURE_IDS) {
+    const runDir = await newRunDir();
+    const run = await runWave1Validation({
+      fixtureId,
+      jobId: `job-${fixtureId}-visual`,
+      generatedAt: GENERATED_AT,
+      runDir,
+    });
+    assert.ok(run.validation.visual !== undefined);
+    assert.equal(run.validation.visual?.blocked, false);
+  }
+});
+
+test("validation-harness: structured-test-case generator never receives image payloads", async () => {
+  // The mock LLM gateway already enforces this fail-closed; the harness
+  // additionally asserts at runtime that no recorded request carries
+  // imageInputs. A successful run is itself the proof: any leak would
+  // throw in `runWave1Validation`. We exercise the assert path here by running
+  // every fixture and observing the harness completes successfully.
+  for (const fixtureId of WAVE1_VALIDATION_FIXTURE_IDS) {
+    const runDir = await newRunDir();
+    await runWave1Validation({
+      fixtureId,
+      jobId: `job-${fixtureId}-leak`,
+      generatedAt: GENERATED_AT,
+      runDir,
+    });
+  }
+});
+
+test("validation-harness: default execution does not touch live gateway fetch", async () => {
+  const originalFetch = globalThis.fetch;
+  let fetchCalls = 0;
+  globalThis.fetch = (async () => {
+    fetchCalls += 1;
+    throw new Error("default validation path attempted live fetch");
+  }) as typeof fetch;
+
+  try {
+    const runDir = await newRunDir();
+    const result = await runWave1Validation({
+      fixtureId: "validation-onboarding",
+      jobId: "job-validation-default-no-live-fetch",
+      generatedAt: GENERATED_AT,
+      runDir,
+    });
+
+    assert.equal(result.visualSidecar, undefined);
+    assert.equal(
+      result.manifest.modelDeployments.testGeneration,
+      "gpt-oss-120b-mock",
+    );
+    assert.equal(fetchCalls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("validation-harness: FinOps report is returned and persisted with supplied budget and cost rates", async () => {
+  const runDir = await newRunDir();
+  const budget = {
+    budgetId: "test-success-budget",
+    budgetVersion: "2026-04-25",
+    roles: {
+      test_generation: {
+        maxInputTokensPerRequest: 100_000,
+        maxOutputTokensPerRequest: 1_000,
+      },
+    },
+  };
+  const result = await runWave1Validation({
+    fixtureId: "validation-onboarding",
+    jobId: "job-validation-finops-success",
+    generatedAt: GENERATED_AT,
+    runDir,
+    finopsBudget: budget,
+    finopsCostRates: {
+      currencyLabel: "USD",
+      rates: {
+        test_generation: {
+          fixedCostPerAttempt: 0.01,
+        },
+      },
+    },
+  });
+
+  assert.equal(
+    result.finopsArtifactPath,
+    join(
+      runDir,
+      FINOPS_ARTIFACT_DIRECTORY,
+      FINOPS_BUDGET_REPORT_ARTIFACT_FILENAME,
+    ),
+  );
+  assert.equal(result.finopsReport.budget.budgetId, budget.budgetId);
+  assert.equal(result.finopsReport.currencyLabel, "USD");
+  assert.equal(result.finopsReport.outcome, "completed");
+  assert.equal(result.finopsReport.totals.attempts, 1);
+  assert.equal(result.finopsReport.totals.estimatedCost, 0.01);
+  assert.equal(result.finopsReport.bySource.generator.callCount, 1);
+  assert.equal(result.finopsReport.bySource.generator.costMinorUnits, 1);
+  assert.equal(result.finopsReport.bySourceTotal.callCount, 1);
+  assert.equal(result.finopsReport.bySourceSealedAt, GENERATED_AT);
+  assert.equal(
+    result.manifest.artifacts.find(
+      (artifact) =>
+        artifact.filename ===
+        `${FINOPS_ARTIFACT_DIRECTORY}/${FINOPS_BUDGET_REPORT_ARTIFACT_FILENAME}`,
+    )?.category,
+    "finops",
+  );
+
+  const onDisk = JSON.parse(
+    await readFile(result.finopsArtifactPath, "utf8"),
+  ) as FinOpsBudgetReport;
+  assert.deepEqual(onDisk, result.finopsReport);
+  assert.equal(onDisk.secretsIncluded, false);
+  assert.equal(onDisk.rawPromptsIncluded, false);
+  assert.equal(onDisk.rawScreenshotsIncluded, false);
+});
+
+test("validation-harness: FinOps maxInputTokensPerRequest fails closed before downstream artifacts", async () => {
+  const runDir = await newRunDir();
+  await assert.rejects(
+    runWave1Validation({
+      fixtureId: "validation-onboarding",
+      jobId: "job-validation-finops-input-budget",
+      generatedAt: GENERATED_AT,
+      runDir,
+      finopsBudget: {
+        budgetId: "test-tight-input",
+        budgetVersion: "1.0.0",
+        roles: {
+          test_generation: {
+            maxInputTokensPerRequest: 1,
+          },
+        },
+      },
+    }),
+    Wave1ValidationFinOpsBudgetExceededError,
+  );
+
+  const rawReport = await readFile(
+    join(
+      runDir,
+      FINOPS_ARTIFACT_DIRECTORY,
+      FINOPS_BUDGET_REPORT_ARTIFACT_FILENAME,
+    ),
+    "utf8",
+  );
+  const report = JSON.parse(rawReport) as FinOpsBudgetReport;
+  assert.equal(report.outcome, "budget_exceeded");
+  assert.equal(report.totals.attempts, 0);
+  assert.deepEqual(
+    report.breaches.map((breach) => breach.rule),
+    ["max_input_tokens"],
+  );
+  assert.equal(report.rawPromptsIncluded, false);
+  assert.equal(report.rawScreenshotsIncluded, false);
+  await assert.rejects(
+    readFile(join(runDir, "generated-testcases.json"), "utf8"),
+    /ENOENT/,
+  );
+});
+
+test("validation-harness: aggregate FinOps breaches stop before validation and export", async () => {
+  const runDir = await newRunDir();
+  await assert.rejects(
+    runWave1Validation({
+      fixtureId: "validation-onboarding",
+      jobId: "job-validation-finops-aggregate-budget",
+      generatedAt: GENERATED_AT,
+      runDir,
+      finopsBudget: {
+        budgetId: "test-tight-attempts",
+        budgetVersion: "1.0.0",
+        roles: {
+          test_generation: {
+            maxAttempts: 0,
+          },
+        },
+      },
+    }),
+    Wave1ValidationFinOpsBudgetExceededError,
+  );
+
+  const report = JSON.parse(
+    await readFile(
+      join(
+        runDir,
+        FINOPS_ARTIFACT_DIRECTORY,
+        FINOPS_BUDGET_REPORT_ARTIFACT_FILENAME,
+      ),
+      "utf8",
+    ),
+  ) as FinOpsBudgetReport;
+  assert.equal(report.outcome, "budget_exceeded");
+  assert.deepEqual(
+    report.breaches.map((breach) => breach.rule),
+    ["max_attempts"],
+  );
+  await assert.rejects(
+    readFile(join(runDir, "test-case-validation-report.json"), "utf8"),
+    /ENOENT/,
+  );
+});
+
+test("validation-harness: replay-cache hit skips generation and reports completed_cache_hit", async () => {
+  const cache = createMemoryReplayCache();
+  const firstDir = await newRunDir();
+  const secondDir = await newRunDir();
+  await runWave1Validation({
+    fixtureId: "validation-onboarding",
+    jobId: "job-validation-cache-hit",
+    generatedAt: GENERATED_AT,
+    runDir: firstDir,
+    replayCache: cache,
+  });
+  const second = await runWave1Validation({
+    fixtureId: "validation-onboarding",
+    jobId: "job-validation-cache-hit",
+    generatedAt: GENERATED_AT,
+    runDir: secondDir,
+    replayCache: cache,
+  });
+
+  assert.equal(second.finopsReport.outcome, "completed_cache_hit");
+  assert.equal(second.finopsReport.totals.attempts, 0);
+  assert.equal(second.finopsReport.totals.cacheHits, 1);
+  assert.equal(second.finopsReport.bySource.generator.idempotentReplayHits, 1);
+  assert.equal(second.generatedList.testCases[0]?.audit.cacheHit, true);
+
+  const rawAudit = JSON.parse(
+    await readFile(
+      join(secondDir, GATEWAY_REQUEST_AUDIT_ARTIFACT_FILENAME),
+      "utf8",
+    ),
+  ) as { requestCount: number; imageInputCounts: number[] };
+  assert.equal(rawAudit.requestCount, 0);
+  assert.deepEqual(rawAudit.imageInputCounts, []);
+});
+
+// ----------------------------------------------------------------------
+// Issue #2030 follow-up — synthesizer risk-tag calibration for the
+// banking and insurance regulatory vocabulary surfaced by the
+// Eingabemasken K1 measurement (see `scripts/measure-eingabemasken.ts`).
+// ----------------------------------------------------------------------
+
+test("validation-harness: synthesizer derives banking/insurance regulatory riskCategory from field labels (Issue #2030)", () => {
+  const intent: BusinessTestIntentIr = {
+    version: BUSINESS_TEST_INTENT_IR_SCHEMA_VERSION,
+    source: { kind: "figma_local_json", contentHash: "2".repeat(64) },
+    screens: [
+      { screenId: "s-2030", screenName: "Risk Calibration", trace: {} },
+    ],
+    detectedFields: [
+      // financial_transaction matches (PR-N+2 additions)
+      { id: "f-isin", screenId: "s-2030", trace: { nodeId: "n-isin" }, provenance: "figma_node", confidence: 0.9, label: "ISIN", type: "text" },
+      { id: "f-betrag", screenId: "s-2030", trace: { nodeId: "n-betrag" }, provenance: "figma_node", confidence: 0.9, label: "Betrag in EUR", type: "text" },
+      { id: "f-kreditbetrag", screenId: "s-2030", trace: { nodeId: "n-kb" }, provenance: "figma_node", confidence: 0.9, label: "Kreditbetrag", type: "text" },
+      { id: "f-effektivzins", screenId: "s-2030", trace: { nodeId: "n-eff" }, provenance: "figma_node", confidence: 0.9, label: "Effektivzins p.a.", type: "text" },
+      { id: "f-praemie", screenId: "s-2030", trace: { nodeId: "n-pr" }, provenance: "figma_node", confidence: 0.9, label: "Praemienprognose", type: "text" },
+      // regulated_data matches (PR-N+2 additions)
+      { id: "f-mifid", screenId: "s-2030", trace: { nodeId: "n-mifid" }, provenance: "figma_node", confidence: 0.9, label: "MiFID-Risikoklasse", type: "informative_label" },
+      { id: "f-schufa", screenId: "s-2030", trace: { nodeId: "n-schufa" }, provenance: "figma_node", confidence: 0.9, label: "SCHUFA-Einwilligung", type: "radio_option" },
+      { id: "f-pep", screenId: "s-2030", trace: { nodeId: "n-pep" }, provenance: "figma_node", confidence: 0.9, label: "PEP-Status", type: "radio_option" },
+      { id: "f-fatca", screenId: "s-2030", trace: { nodeId: "n-fatca" }, provenance: "figma_node", confidence: 0.9, label: "FATCA US-Person", type: "radio_option" },
+      { id: "f-vorerk", screenId: "s-2030", trace: { nodeId: "n-vorerk" }, provenance: "figma_node", confidence: 0.9, label: "Vorerkrankungen", type: "radio_option" },
+      { id: "f-isms", screenId: "s-2030", trace: { nodeId: "n-isms" }, provenance: "figma_node", confidence: 0.9, label: "ISMS implementiert", type: "radio_option" },
+      { id: "f-mfa", screenId: "s-2030", trace: { nodeId: "n-mfa" }, provenance: "figma_node", confidence: 0.9, label: "MFA fuer alle Mitarbeiter", type: "radio_option" },
+      { id: "f-edr", screenId: "s-2030", trace: { nodeId: "n-edr" }, provenance: "figma_node", confidence: 0.9, label: "EDR auf Endgeraeten", type: "radio_option" },
+      { id: "f-gwg", screenId: "s-2030", trace: { nodeId: "n-gwg" }, provenance: "figma_node", confidence: 0.9, label: "GwG Verdachtskategorie", type: "select_field" },
+      { id: "f-wcag", screenId: "s-2030", trace: { nodeId: "n-wcag" }, provenance: "figma_node", confidence: 0.9, label: "WCAG-2.2-AA Kontrast-Hinweis", type: "informative_label" },
+      // low default — must NOT trigger any keyword
+      { id: "f-control-low", screenId: "s-2030", trace: { nodeId: "n-c" }, provenance: "figma_node", confidence: 0.9, label: "Generic Reference Field", type: "text" },
+    ],
+    detectedActions: [],
+    detectedValidations: [],
+    detectedNavigation: [],
+    inferredBusinessObjects: [],
+    risks: [],
+    assumptions: [],
+    openQuestions: [],
+    piiIndicators: [],
+    redactions: [],
+  };
+
+  const list = synthesizeGeneratedTestCases({
+    jobId: audit.jobId,
+    generatedAt: GENERATED_AT,
+    intent,
+    audit,
+  });
+
+  // Every synthesized case ends up with a `riskCategory`. We anchor the
+  // assertion on the deterministic per-field functional case
+  // (`tc-field-functional-...`) since that is the one whose
+  // riskCategory is derived from `field.label` directly.
+  const findFunctionalCaseRisk = (fieldId: string): string | undefined => {
+    const tc = list.testCases.find(
+      (c) =>
+        c.id.startsWith("tc-field-functional-") &&
+        c.qualitySignals.coveredFieldIds.includes(fieldId),
+    );
+    return tc?.riskCategory;
+  };
+
+  // financial_transaction
+  for (const fid of [
+    "f-isin",
+    "f-betrag",
+    "f-kreditbetrag",
+    "f-effektivzins",
+    "f-praemie",
+  ]) {
+    assert.equal(
+      findFunctionalCaseRisk(fid),
+      "financial_transaction",
+      `field ${fid} must elevate to financial_transaction`,
+    );
+  }
+
+  // regulated_data
+  for (const fid of [
+    "f-mifid",
+    "f-schufa",
+    "f-pep",
+    "f-fatca",
+    "f-vorerk",
+    "f-isms",
+    "f-mfa",
+    "f-edr",
+    "f-gwg",
+    "f-wcag",
+  ]) {
+    assert.equal(
+      findFunctionalCaseRisk(fid),
+      "regulated_data",
+      `field ${fid} must elevate to regulated_data`,
+    );
+  }
+
+  // low control: a label that contains NONE of the keywords stays low.
+  assert.equal(
+    findFunctionalCaseRisk("f-control-low"),
+    "low",
+    "control field with no keyword match must stay low (no over-classification)",
+  );
+});
+
+test("validation-harness: synthesizer keyword list does NOT collide with MA-0 baseline labels (Issue #2030)", () => {
+  // Ground truth: every label in any MA-0 baseline-fixture must keep
+  // its pre-#2030 `riskCategory` derivation. This test pins the
+  // contract that the new keyword arrays do NOT change the seven
+  // checked-in eval-baseline snapshots.
+  const baselineLabelsAndExpectedRisk: ReadonlyArray<[string, string]> = [
+    // baseline-simple-form
+    ["Display Name", "regulated_data"],
+    ["Email", "regulated_data"],
+    ["Age", "low"],
+    // baseline-calculation
+    ["Principal", "low"],
+    ["Annual Rate %", "low"],
+    ["Term (Years)", "low"],
+    ["Monthly Payment", "low"],
+    // baseline-optional-fields
+    ["Mobile Phone", "regulated_data"],
+    ["Company (optional)", "low"],
+    ["Job Title", "low"],
+    ["Country", "low"],
+    // baseline-multi-context / baseline-complex-mask
+    ["Family Name", "regulated_data"],
+    ["Date of Birth", "low"],
+    ["Tax ID", "regulated_data"],
+    ["Postcode", "regulated_data"],
+    ["Passport Number (visible if Country is non-EU)", "low"],
+    ["Line Description (repeating)", "low"],
+    ["Quantity (repeating)", "low"],
+    ["Unit Price (repeating)", "low"],
+    ["Grand Total", "low"],
+    // baseline-ambiguous-rules
+    ["Policy Number", "low"],
+    ["Incident Date", "low"],
+    ["Loss Amount", "financial_transaction"],
+    ["Description", "low"],
+    // baseline-validation-heavy
+    ["IBAN", "financial_transaction"],
+    ["BIC", "financial_transaction"],
+    ["Amount", "financial_transaction"],
+    ["Confirm Amount", "financial_transaction"],
+    ["Reference", "low"],
+  ];
+
+  for (const [label, expected] of baselineLabelsAndExpectedRisk) {
+    const intent: BusinessTestIntentIr = {
+      version: BUSINESS_TEST_INTENT_IR_SCHEMA_VERSION,
+      source: { kind: "figma_local_json", contentHash: "3".repeat(64) },
+      screens: [{ screenId: "s-baseline", screenName: "Baseline", trace: {} }],
+      detectedFields: [
+        {
+          id: "f-baseline",
+          screenId: "s-baseline",
+          trace: { nodeId: "n-b" },
+          provenance: "figma_node",
+          confidence: 0.9,
+          label,
+          type: "text",
+        },
+      ],
+      detectedActions: [],
+      detectedValidations: [],
+      detectedNavigation: [],
+      inferredBusinessObjects: [],
+      risks: [],
+      assumptions: [],
+      openQuestions: [],
+      piiIndicators: [],
+      redactions: [],
+    };
+    const list = synthesizeGeneratedTestCases({
+      jobId: audit.jobId,
+      generatedAt: GENERATED_AT,
+      intent,
+      audit,
+    });
+    const tc = list.testCases.find((c) => c.id.startsWith("tc-field-functional-"));
+    assert.equal(
+      tc?.riskCategory,
+      expected,
+      `baseline label "${label}" must preserve riskCategory="${expected}"`,
+    );
+  }
+});
+
+// ----------------------------------------------------------------------
+// Issue #2030 follow-up — synthesizer compliance-sidecar fallback
+// (PR-N+3, K1-measurement-driven). When a `complianceOverrides` array
+// is supplied to `synthesizeGeneratedTestCases`, every per-case risk
+// derivation that would otherwise return `low` (label has no
+// regulatory keyword) instead returns the override category. Action,
+// navigation and accessibility cases — which historically hardcoded
+// `riskCategory: "low"` — also pick up the override but DO NOT consult
+// `deriveRiskCategoryForLabel` on the action label, so they stay at
+// `low` whenever no override applies (preserves baseline-eval snapshots).
+// ----------------------------------------------------------------------
+
+test("validation-harness: complianceOverrides elevate label-less fields to the sidecar category (Issue #2030)", () => {
+  const intent: BusinessTestIntentIr = {
+    version: BUSINESS_TEST_INTENT_IR_SCHEMA_VERSION,
+    source: { kind: "figma_local_json", contentHash: "5".repeat(64) },
+    screens: [{ screenId: "s-mifid", screenName: "MiFID", trace: {} }],
+    detectedFields: [
+      { id: "f-isin", screenId: "s-mifid", trace: { nodeId: "n-isin" }, provenance: "figma_node", confidence: 0.9, label: "ISIN", type: "text" },
+      // Label has NO regulatory keyword — would default to `low` without override.
+      { id: "f-termin", screenId: "s-mifid", trace: { nodeId: "n-termin" }, provenance: "figma_node", confidence: 0.9, label: "Wunschtermin", type: "text" },
+    ],
+    detectedActions: [],
+    detectedValidations: [],
+    detectedNavigation: [],
+    inferredBusinessObjects: [],
+    risks: [],
+    assumptions: [],
+    openQuestions: [],
+    piiIndicators: [],
+    redactions: [],
+  };
+
+  // Without overrides: label-less field defaults to `low`.
+  const withoutOverrides = synthesizeGeneratedTestCases({
+    jobId: audit.jobId,
+    generatedAt: GENERATED_AT,
+    intent,
+    audit,
+  });
+  const labelless1 = withoutOverrides.testCases.find(
+    (tc) =>
+      tc.id.startsWith("tc-field-functional-") &&
+      tc.qualitySignals.coveredFieldIds.includes("f-termin"),
+  );
+  assert.equal(
+    labelless1?.riskCategory,
+    "low",
+    "label-less field defaults to low when no override is supplied",
+  );
+
+  // With overrides: label-less field inherits the sidecar category.
+  const withOverrides = synthesizeGeneratedTestCases({
+    jobId: audit.jobId,
+    generatedAt: GENERATED_AT,
+    intent,
+    audit,
+    complianceOverrides: [
+      { riskCategory: "regulated_data", rationale: "MiFID II suitability" },
+    ],
+  });
+  const labelless2 = withOverrides.testCases.find(
+    (tc) =>
+      tc.id.startsWith("tc-field-functional-") &&
+      tc.qualitySignals.coveredFieldIds.includes("f-termin"),
+  );
+  assert.equal(
+    labelless2?.riskCategory,
+    "regulated_data",
+    "label-less field inherits the override category from the sidecar",
+  );
+
+  // Field with a regulatory keyword keeps its keyword-derived classification
+  // (override never weakens or replaces a strong label match).
+  const withKeyword = withOverrides.testCases.find(
+    (tc) =>
+      tc.id.startsWith("tc-field-functional-") &&
+      tc.qualitySignals.coveredFieldIds.includes("f-isin"),
+  );
+  assert.equal(
+    withKeyword?.riskCategory,
+    "financial_transaction",
+    "ISIN keeps financial_transaction even when override declares regulated_data",
+  );
+});
+
+test("validation-harness: complianceOverrides elevate action/nav/a11y cases on regulated screens (Issue #2030)", () => {
+  const intent: BusinessTestIntentIr = {
+    version: BUSINESS_TEST_INTENT_IR_SCHEMA_VERSION,
+    source: { kind: "figma_local_json", contentHash: "6".repeat(64) },
+    screens: [
+      { screenId: "s-mifid", screenName: "MiFID", trace: {} },
+      { screenId: "s-confirm", screenName: "Confirm", trace: {} },
+    ],
+    detectedFields: [
+      { id: "f-isin", screenId: "s-mifid", trace: {}, provenance: "figma_node", confidence: 0.9, label: "ISIN", type: "text" },
+    ],
+    detectedActions: [
+      { id: "a-submit", screenId: "s-mifid", trace: {}, provenance: "figma_node", confidence: 0.9, label: "Order pruefen", intent: "submit" },
+    ],
+    detectedValidations: [],
+    detectedNavigation: [
+      { id: "n-go", screenId: "s-mifid", targetScreenId: "s-confirm", trigger: "submit", trace: {}, confidence: 0.8 },
+    ],
+    inferredBusinessObjects: [],
+    risks: [],
+    assumptions: [],
+    openQuestions: [],
+    piiIndicators: [],
+    redactions: [],
+  };
+
+  const list = synthesizeGeneratedTestCases({
+    jobId: audit.jobId,
+    generatedAt: GENERATED_AT,
+    intent,
+    audit,
+    complianceOverrides: [
+      { riskCategory: "regulated_data", rationale: "MiFID II Order screen" },
+    ],
+  });
+
+  const actionCase = list.testCases.find((tc) => tc.id.startsWith("tc-action-"));
+  const navCase = list.testCases.find((tc) => tc.id.startsWith("tc-navigation-"));
+  const a11yCase = list.testCases.find((tc) => tc.id.startsWith("tc-a11y-"));
+
+  assert.equal(
+    actionCase?.riskCategory,
+    "regulated_data",
+    "action case inherits override category on regulated screens",
+  );
+  assert.equal(
+    navCase?.riskCategory,
+    "regulated_data",
+    "navigation case inherits override category on regulated screens",
+  );
+  assert.equal(
+    a11yCase?.riskCategory,
+    "regulated_data",
+    "accessibility case inherits override category on regulated screens",
+  );
+});
+
+test("validation-harness: complianceOverrides preserve hardcoded `low` when no override applies (Issue #2030 / baseline immunity)", () => {
+  // Empty overrides + no-keyword labels: every action/nav/a11y case
+  // must stay at `low` so the seven checked-in eval-baseline-*.json
+  // snapshots remain byte-stable. This is the regression test that
+  // pinned the bug in PR-N+3 round 1 (which routed action labels
+  // through deriveRiskCategoryForLabel and accidentally elevated
+  // `Loss Amount` -> financial_transaction in baseline-ambiguous-rules).
+  const intent: BusinessTestIntentIr = {
+    version: BUSINESS_TEST_INTENT_IR_SCHEMA_VERSION,
+    source: { kind: "figma_local_json", contentHash: "7".repeat(64) },
+    screens: [
+      { screenId: "s-claim", screenName: "Claim", trace: {} },
+      { screenId: "s-next", screenName: "Next", trace: {} },
+    ],
+    detectedFields: [
+      { id: "f-policy", screenId: "s-claim", trace: {}, provenance: "figma_node", confidence: 0.9, label: "Policy Number", type: "text" },
+    ],
+    detectedActions: [
+      { id: "a-loss", screenId: "s-claim", trace: {}, provenance: "figma_node", confidence: 0.9, label: "Submit Loss Amount", intent: "submit" },
+    ],
+    detectedValidations: [],
+    detectedNavigation: [
+      { id: "n-go", screenId: "s-claim", targetScreenId: "s-next", trigger: "submit", trace: {}, confidence: 0.8 },
+    ],
+    inferredBusinessObjects: [],
+    risks: [],
+    assumptions: [],
+    openQuestions: [],
+    piiIndicators: [],
+    redactions: [],
+  };
+
+  const list = synthesizeGeneratedTestCases({
+    jobId: audit.jobId,
+    generatedAt: GENERATED_AT,
+    intent,
+    audit,
+  });
+
+  const actionCase = list.testCases.find((tc) => tc.id.startsWith("tc-action-"));
+  const navCase = list.testCases.find((tc) => tc.id.startsWith("tc-navigation-"));
+  const a11yCase = list.testCases.find((tc) => tc.id.startsWith("tc-a11y-"));
+
+  assert.equal(
+    actionCase?.riskCategory,
+    "low",
+    "action case stays at low when no override applies, even with `Submit Loss Amount` keyword in label",
+  );
+  assert.equal(
+    navCase?.riskCategory,
+    "low",
+    "navigation case stays at low when no override applies",
+  );
+  assert.equal(
+    a11yCase?.riskCategory,
+    "low",
+    "accessibility case stays at low when no override applies",
+  );
+});

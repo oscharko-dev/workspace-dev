@@ -1,0 +1,149 @@
+{
+  "schemaVersion": "1.0.0",
+  "pipelineId": "default",
+  "screens": [
+    {
+      "screenId": "screen-splash",
+      "screenName": "Splash",
+      "components": [],
+      "diagnostics": []
+    },
+    {
+      "screenId": "screen-onboarding",
+      "screenName": "Onboarding",
+      "components": [],
+      "diagnostics": []
+    },
+    {
+      "screenId": "screen-login",
+      "screenName": "Login",
+      "components": [],
+      "diagnostics": [
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "login-email",
+          "nodeName": "Text Field",
+          "message": "Default semantic synthesis kept 'Text Field' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "login-password",
+          "nodeName": "Text Field",
+          "message": "Default semantic synthesis kept 'Text Field' inline because no matching reusable semantic structure was found."
+        }
+      ]
+    },
+    {
+      "screenId": "screen-register",
+      "screenName": "Register",
+      "components": [],
+      "diagnostics": [
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "reg-name",
+          "nodeName": "Text Field",
+          "message": "Default semantic synthesis kept 'Text Field' inline because no matching reusable semantic structure was found."
+        }
+      ]
+    },
+    {
+      "screenId": "screen-home",
+      "screenName": "Home",
+      "components": [],
+      "diagnostics": []
+    },
+    {
+      "screenId": "screen-feed",
+      "screenName": "Feed",
+      "components": [],
+      "diagnostics": []
+    },
+    {
+      "screenId": "screen-search",
+      "screenName": "Search",
+      "components": [],
+      "diagnostics": [
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "search-field",
+          "nodeName": "Text Field",
+          "message": "Default semantic synthesis kept 'Text Field' inline because no matching reusable semantic structure was found."
+        }
+      ]
+    },
+    {
+      "screenId": "screen-profile",
+      "screenName": "Profile",
+      "components": [],
+      "diagnostics": [
+        {
+          "code": "W_SEMANTIC_COMPONENT_STRUCTURAL_FALLBACK",
+          "nodeId": "prof-avatar",
+          "nodeName": "Avatar",
+          "message": "Default semantic synthesis rendered 'Avatar' with structural HTML because 'avatar' does not have a dedicated default Tailwind primitive yet."
+        }
+      ]
+    },
+    {
+      "screenId": "screen-settings",
+      "screenName": "Settings",
+      "components": [],
+      "diagnostics": []
+    },
+    {
+      "screenId": "screen-notifications",
+      "screenName": "Notifications",
+      "components": [],
+      "diagnostics": []
+    },
+    {
+      "screenId": "screen-about",
+      "screenName": "About",
+      "components": [],
+      "diagnostics": []
+    }
+  ],
+  "components": [],
+  "diagnostics": [
+    {
+      "screenId": "screen-login",
+      "screenName": "Login",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "login-email",
+      "nodeName": "Text Field",
+      "message": "Default semantic synthesis kept 'Text Field' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-login",
+      "screenName": "Login",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "login-password",
+      "nodeName": "Text Field",
+      "message": "Default semantic synthesis kept 'Text Field' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-register",
+      "screenName": "Register",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "reg-name",
+      "nodeName": "Text Field",
+      "message": "Default semantic synthesis kept 'Text Field' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-search",
+      "screenName": "Search",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "search-field",
+      "nodeName": "Text Field",
+      "message": "Default semantic synthesis kept 'Text Field' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-profile",
+      "screenName": "Profile",
+      "code": "W_SEMANTIC_COMPONENT_STRUCTURAL_FALLBACK",
+      "nodeId": "prof-avatar",
+      "nodeName": "Avatar",
+      "message": "Default semantic synthesis rendered 'Avatar' with structural HTML because 'avatar' does not have a dedicated default Tailwind primitive yet."
+    }
+  ]
+}

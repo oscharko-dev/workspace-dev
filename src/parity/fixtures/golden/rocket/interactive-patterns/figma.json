@@ -1,0 +1,279 @@
+{
+  "name": "Interactive Patterns Board",
+  "document": {
+    "id": "0:0",
+    "type": "DOCUMENT",
+    "children": [
+      {
+        "id": "0:1",
+        "type": "CANVAS",
+        "name": "Page 1",
+        "children": [
+          {
+            "id": "screen-settings",
+            "type": "FRAME",
+            "name": "Settings",
+            "layoutMode": "VERTICAL",
+            "itemSpacing": 16,
+            "paddingTop": 16,
+            "paddingRight": 16,
+            "paddingBottom": 16,
+            "paddingLeft": 16,
+            "absoluteBoundingBox": { "x": 0, "y": 0, "width": 800, "height": 1000 },
+            "fills": [
+              {
+                "type": "SOLID",
+                "visible": true,
+                "color": { "r": 0.98, "g": 0.98, "b": 0.99, "a": 1 }
+              }
+            ],
+            "children": [
+              {
+                "id": "settings-title",
+                "type": "TEXT",
+                "name": "Title",
+                "characters": "Settings",
+                "style": { "fontSize": 28, "fontWeight": 700, "fontFamily": "Inter", "lineHeightPx": 36, "textAlignHorizontal": "LEFT" },
+                "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }],
+                "absoluteBoundingBox": { "x": 16, "y": 16, "width": 200, "height": 36 }
+              },
+              {
+                "id": "tabs-container",
+                "type": "FRAME",
+                "name": "MuiTabsRoot",
+                "layoutMode": "HORIZONTAL",
+                "itemSpacing": 0,
+                "absoluteBoundingBox": { "x": 16, "y": 68, "width": 768, "height": 48 },
+                "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }],
+                "children": [
+                  {
+                    "id": "tab-general",
+                    "type": "FRAME",
+                    "name": "MuiTabRoot",
+                    "absoluteBoundingBox": { "x": 16, "y": 68, "width": 256, "height": 48 },
+                    "fills": [],
+                    "children": [
+                      {
+                        "id": "tab-general-label",
+                        "type": "TEXT",
+                        "name": "Label",
+                        "characters": "General",
+                        "style": { "fontSize": 14, "fontWeight": 600, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "CENTER" },
+                        "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.24, "g": 0.47, "b": 0.96, "a": 1 } }],
+                        "absoluteBoundingBox": { "x": 108, "y": 82, "width": 72, "height": 20 }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "tab-notifications",
+                    "type": "FRAME",
+                    "name": "MuiTabRoot",
+                    "absoluteBoundingBox": { "x": 272, "y": 68, "width": 256, "height": 48 },
+                    "fills": [],
+                    "children": [
+                      {
+                        "id": "tab-notif-label",
+                        "type": "TEXT",
+                        "name": "Label",
+                        "characters": "Notifications",
+                        "style": { "fontSize": 14, "fontWeight": 500, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "CENTER" },
+                        "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }],
+                        "absoluteBoundingBox": { "x": 349, "y": 82, "width": 102, "height": 20 }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "tab-security",
+                    "type": "FRAME",
+                    "name": "MuiTabRoot",
+                    "absoluteBoundingBox": { "x": 528, "y": 68, "width": 256, "height": 48 },
+                    "fills": [],
+                    "children": [
+                      {
+                        "id": "tab-sec-label",
+                        "type": "TEXT",
+                        "name": "Label",
+                        "characters": "Security",
+                        "style": { "fontSize": 14, "fontWeight": 500, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "CENTER" },
+                        "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }],
+                        "absoluteBoundingBox": { "x": 620, "y": 82, "width": 72, "height": 20 }
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "accordion-section",
+                "type": "FRAME",
+                "name": "MuiAccordionRoot",
+                "layoutMode": "VERTICAL",
+                "itemSpacing": 0,
+                "absoluteBoundingBox": { "x": 16, "y": 132, "width": 768, "height": 300 },
+                "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }],
+                "cornerRadius": 8,
+                "children": [
+                  {
+                    "id": "accordion-header-1",
+                    "type": "FRAME",
+                    "name": "Accordion Header",
+                    "layoutMode": "HORIZONTAL",
+                    "itemSpacing": 8,
+                    "primaryAxisAlignItems": "SPACE_BETWEEN",
+                    "counterAxisAlignItems": "CENTER",
+                    "absoluteBoundingBox": { "x": 16, "y": 132, "width": 768, "height": 56 },
+                    "children": [
+                      {
+                        "id": "acc-title-1",
+                        "type": "TEXT",
+                        "name": "Title",
+                        "characters": "Profile Information",
+                        "style": { "fontSize": 16, "fontWeight": 600, "fontFamily": "Inter", "lineHeightPx": 24, "textAlignHorizontal": "LEFT" },
+                        "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }],
+                        "absoluteBoundingBox": { "x": 32, "y": 148, "width": 200, "height": 24 }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "accordion-content-1",
+                    "type": "FRAME",
+                    "name": "Accordion Content",
+                    "layoutMode": "VERTICAL",
+                    "itemSpacing": 12,
+                    "absoluteBoundingBox": { "x": 16, "y": 188, "width": 768, "height": 120 },
+                    "children": [
+                      {
+                        "id": "acc-body-1",
+                        "type": "TEXT",
+                        "name": "Body",
+                        "characters": "Update your personal details and contact information.",
+                        "style": { "fontSize": 14, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 22, "textAlignHorizontal": "LEFT" },
+                        "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }],
+                        "absoluteBoundingBox": { "x": 32, "y": 200, "width": 700, "height": 22 }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "accordion-header-2",
+                    "type": "FRAME",
+                    "name": "Accordion Header",
+                    "layoutMode": "HORIZONTAL",
+                    "itemSpacing": 8,
+                    "primaryAxisAlignItems": "SPACE_BETWEEN",
+                    "counterAxisAlignItems": "CENTER",
+                    "absoluteBoundingBox": { "x": 16, "y": 308, "width": 768, "height": 56 },
+                    "children": [
+                      {
+                        "id": "acc-title-2",
+                        "type": "TEXT",
+                        "name": "Title",
+                        "characters": "Preferences",
+                        "style": { "fontSize": 16, "fontWeight": 600, "fontFamily": "Inter", "lineHeightPx": 24, "textAlignHorizontal": "LEFT" },
+                        "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }],
+                        "absoluteBoundingBox": { "x": 32, "y": 324, "width": 150, "height": 24 }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "accordion-header-3",
+                    "type": "FRAME",
+                    "name": "Accordion Header",
+                    "layoutMode": "HORIZONTAL",
+                    "itemSpacing": 8,
+                    "primaryAxisAlignItems": "SPACE_BETWEEN",
+                    "counterAxisAlignItems": "CENTER",
+                    "absoluteBoundingBox": { "x": 16, "y": 364, "width": 768, "height": 56 },
+                    "children": [
+                      {
+                        "id": "acc-title-3",
+                        "type": "TEXT",
+                        "name": "Title",
+                        "characters": "Privacy Settings",
+                        "style": { "fontSize": 16, "fontWeight": 600, "fontFamily": "Inter", "lineHeightPx": 24, "textAlignHorizontal": "LEFT" },
+                        "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }],
+                        "absoluteBoundingBox": { "x": 32, "y": 380, "width": 180, "height": 24 }
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "dialog-trigger",
+                "type": "FRAME",
+                "name": "MuiDialogRoot",
+                "absoluteBoundingBox": { "x": 200, "y": 500, "width": 400, "height": 300 },
+                "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }],
+                "cornerRadius": 12,
+                "children": [
+                  {
+                    "id": "dialog-title",
+                    "type": "TEXT",
+                    "name": "Dialog Title",
+                    "characters": "Confirm Changes",
+                    "style": { "fontSize": 20, "fontWeight": 700, "fontFamily": "Inter", "lineHeightPx": 28, "textAlignHorizontal": "LEFT" },
+                    "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }],
+                    "absoluteBoundingBox": { "x": 224, "y": 524, "width": 350, "height": 28 }
+                  },
+                  {
+                    "id": "dialog-body",
+                    "type": "TEXT",
+                    "name": "Dialog Body",
+                    "characters": "Are you sure you want to save these changes? This action cannot be undone.",
+                    "style": { "fontSize": 14, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 22, "textAlignHorizontal": "LEFT" },
+                    "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }],
+                    "absoluteBoundingBox": { "x": 224, "y": 568, "width": 350, "height": 66 }
+                  },
+                  {
+                    "id": "dialog-actions",
+                    "type": "FRAME",
+                    "name": "Actions",
+                    "layoutMode": "HORIZONTAL",
+                    "itemSpacing": 12,
+                    "absoluteBoundingBox": { "x": 224, "y": 720, "width": 350, "height": 48 },
+                    "children": [
+                      {
+                        "id": "dialog-cancel",
+                        "type": "FRAME",
+                        "name": "Cancel Button",
+                        "absoluteBoundingBox": { "x": 394, "y": 720, "width": 80, "height": 40 },
+                        "children": [
+                          {
+                            "id": "cancel-label",
+                            "type": "TEXT",
+                            "name": "Label",
+                            "characters": "Cancel",
+                            "style": { "fontSize": 14, "fontWeight": 500, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "CENTER" },
+                            "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }],
+                            "absoluteBoundingBox": { "x": 408, "y": 730, "width": 52, "height": 20 }
+                          }
+                        ]
+                      },
+                      {
+                        "id": "dialog-confirm",
+                        "type": "FRAME",
+                        "name": "Confirm Button",
+                        "absoluteBoundingBox": { "x": 486, "y": 720, "width": 88, "height": 40 },
+                        "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.24, "g": 0.47, "b": 0.96, "a": 1 } }],
+                        "cornerRadius": 8,
+                        "children": [
+                          {
+                            "id": "confirm-label",
+                            "type": "TEXT",
+                            "name": "Label",
+                            "characters": "Confirm",
+                            "style": { "fontSize": 14, "fontWeight": 600, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "CENTER" },
+                            "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }],
+                            "absoluteBoundingBox": { "x": 504, "y": 730, "width": 52, "height": 20 }
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

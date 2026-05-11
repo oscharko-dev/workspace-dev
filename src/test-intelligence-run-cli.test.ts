@@ -1,0 +1,3725 @@
+/**
+ * Unit tests for the `workspace-dev test-intelligence run` flag parser
+ * and dispatcher (Issue #1736). The CLI's actual `runTestIntelligenceCommand`
+ * orchestration is covered by injection-seam tests below; the live
+ * production-runner end-to-end path is exercised by the official
+ * `pnpm exec workspace-dev start --enable-test-intelligence` route in
+ * `cli.contract.test.ts` and the live PR verification.
+ */
+
+import assert from "node:assert/strict";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import test from "node:test";
+import { fileURLToPath } from "node:url";
+
+import {
+  parseTestIntelligenceAuditDossierArgs,
+  parseTestIntelligenceAuditVerifyArgs,
+  parseTestIntelligenceVerifyProvenanceArgs,
+  buildLiveVisualSidecarBundle,
+  parseTestIntelligenceDoctorArgs,
+  parseTestIntelligenceRunArgs,
+  runTestIntelligenceAuditVerifyCommand,
+  runTestIntelligenceDoctorCommand,
+  runTestIntelligenceCommand,
+  runTestIntelligenceVerifyProvenanceCommand,
+  TestIntelligenceRunOperatorError,
+  type TestIntelligenceDoctorOptions,
+  type TestIntelligenceRunOptions,
+  type TestIntelligenceRunSink,
+} from "./test-intelligence-run-cli.js";
+import {
+  canonicalJson,
+  computeProvenanceMerkleSeal,
+  type RunFigmaToQcTestCasesResult,
+} from "./test-intelligence/index.js";
+
+const collectingSink = (): {
+  sink: TestIntelligenceRunSink;
+  stdout: string[];
+  stderr: string[];
+} => {
+  const stdout: string[] = [];
+  const stderr: string[] = [];
+  return {
+    sink: {
+      stdout: (m) => stdout.push(m),
+      stderr: (m) => stderr.push(m),
+    },
+    stdout,
+    stderr,
+  };
+};
+
+const GATE_ON: NodeJS.ProcessEnv = {
+  FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE: "1",
+};
+
+const baseOptions = (): TestIntelligenceRunOptions => ({
+  figmaUrl: "https://figma.com/design/abc/Foo?node-id=1-2",
+  figmaJsonFile: undefined,
+  output: "/tmp/dry-run-output",
+  modelEndpoint: undefined,
+  modelDeployment: "gpt-oss-120b",
+  logicJudgeDeployment: undefined,
+  coveragePlannerDeployment: undefined,
+  riskRankerDeployment: undefined,
+  visualPrimaryDeployment: undefined,
+  visualFallbackDeployment: undefined,
+  modelApiKey: undefined,
+  figmaToken: "figd_xxx",
+  policyProfile: undefined,
+  mode: "dry_run",
+  enableVisualSidecar: false,
+  noVisualSidecar: false,
+  finopsBudgetPath: undefined,
+  harnessMode: "off",
+  harnessTestDepth: "standard",
+  harnessRoleStepId: undefined,
+  harnessMaxRepairIterations: undefined,
+  customContextMarkdownPath: undefined,
+  customerProfilePath: undefined,
+  a11yJudgeDeployment: undefined,
+  diversityPasses: 1,
+});
+
+const baseDoctorOptions = (): TestIntelligenceDoctorOptions => ({
+  modelDeployment: "mistral-large-3",
+  logicJudgeDeployment: "gpt-oss-120b",
+  coveragePlannerDeployment: "phi-4-mini-instruct",
+  riskRankerDeployment: "phi-4",
+  visualPrimaryDeployment: "llama-4-maverick-vision",
+  visualFallbackDeployment: "phi-4-multimodal-instruct",
+  a11yJudgeDeployment: "phi-4-multimodal-instruct",
+  topologyInputSources: {
+    modelDeployment: "env",
+    logicJudgeDeployment: "env",
+    coveragePlannerDeployment: "env",
+    riskRankerDeployment: "env",
+    visualPrimaryDeployment: "env",
+    visualFallbackDeployment: "env",
+    a11yJudgeDeployment: "env",
+  },
+});
+
+type Issue1993TopologyRunOptions = TestIntelligenceRunOptions & {
+  requireMultiAgentTopology?: boolean;
+  riskRankerDeployment?: string | undefined;
+  topologyReportPath?: string | undefined;
+};
+
+const parseIssue1993TopologyRunArgs = (
+  args: ReadonlyArray<string>,
+  env: NodeJS.ProcessEnv = {},
+): Issue1993TopologyRunOptions =>
+  parseTestIntelligenceRunArgs(args, env) as Issue1993TopologyRunOptions;
+
+const issue1993TopologyPreflightSupported = (() => {
+  try {
+    const opts = parseIssue1993TopologyRunArgs(
+      [
+        "--figma-url",
+        "https://figma.com/design/abc/foo",
+        "--output",
+        "/tmp/x",
+        "--require-multi-agent-topology",
+      ],
+      {
+        WORKSPACE_TEST_SPACE_REQUIRE_MULTI_AGENT_TOPOLOGY: "1",
+      },
+    );
+    return opts.requireMultiAgentTopology === true;
+  } catch {
+    return false;
+  }
+})();
+
+const issue1993RiskRankerPlumbingSupported = (() => {
+  try {
+    const opts = parseIssue1993TopologyRunArgs(
+      [
+        "--figma-url",
+        "https://figma.com/design/abc/foo",
+        "--output",
+        "/tmp/x",
+        "--risk-ranker-deployment",
+        "phi-4-mini-instruct",
+      ],
+      {
+        WORKSPACE_TEST_SPACE_RISK_RANKER_DEPLOYMENT: "mistral-large-3",
+      },
+    );
+    return opts.riskRankerDeployment === "phi-4-mini-instruct";
+  } catch {
+    return false;
+  }
+})();
+
+const buildIssue1993RunResult = (
+  artifactDir: string,
+  artifactPaths: Record<string, string> = {},
+  extras: Partial<RunFigmaToQcTestCasesResult> = {},
+): RunFigmaToQcTestCasesResult =>
+  ({
+    jobId: "ti-cli-topology",
+    generatedAt: "2026-05-02T12:00:00.000Z",
+    fileKey: "abc",
+    generatedTestCases: {
+      testCases: [],
+    } as unknown as RunFigmaToQcTestCasesResult["generatedTestCases"],
+    intent: {} as unknown as RunFigmaToQcTestCasesResult["intent"],
+    validation: {} as unknown as RunFigmaToQcTestCasesResult["validation"],
+    policy: {} as unknown as RunFigmaToQcTestCasesResult["policy"],
+    coverage: {} as unknown as RunFigmaToQcTestCasesResult["coverage"],
+    blocked: false,
+    finopsBudget: {} as unknown as RunFigmaToQcTestCasesResult["finopsBudget"],
+    artifactDir,
+    artifactPaths: {
+      intent: "/tmp/intent.json",
+      compiledPrompt: "/tmp/compiled-prompt.json",
+      untrustedContentNormalizationReport: "/tmp/ucnr.json",
+      evidenceSeal: "/tmp/evidence-seal.json",
+      agentRoleRun: "/tmp/agent-role-run.json",
+      genealogy: "/tmp/genealogy.json",
+      generatedTestCases: "/tmp/generated.json",
+      validationReport: "/tmp/validation.json",
+      policyReport: "/tmp/policy.json",
+      coverageReport: "/tmp/coverage.json",
+      provenance: "/tmp/provenance.jsonld",
+      finopsReport: "/tmp/finops.json",
+      ...artifactPaths,
+    } as RunFigmaToQcTestCasesResult["artifactPaths"],
+    customerMarkdownPaths: {
+      combined: "/tmp/customer-markdown/testfaelle.md",
+      perCase: [],
+    },
+    ...extras,
+  }) as RunFigmaToQcTestCasesResult;
+
+const emptyRunnerResult = (input: {
+  jobId: string;
+  outputRoot: string;
+  artifactDir?: string;
+}): RunFigmaToQcTestCasesResult => {
+  const artifactDir =
+    input.artifactDir ??
+    `${input.outputRoot}/jobs/${input.jobId}/test-intelligence`;
+  return {
+    jobId: input.jobId,
+    generatedAt: "2026-05-06T12:00:00.000Z",
+    fileKey: "abc",
+    generatedTestCases: {
+      testCases: [],
+    } as unknown as RunFigmaToQcTestCasesResult["generatedTestCases"],
+    intent: {} as unknown as RunFigmaToQcTestCasesResult["intent"],
+    validation: {} as unknown as RunFigmaToQcTestCasesResult["validation"],
+    policy: {} as unknown as RunFigmaToQcTestCasesResult["policy"],
+    coverage: {} as unknown as RunFigmaToQcTestCasesResult["coverage"],
+    blocked: false,
+    finopsBudget: {} as unknown as RunFigmaToQcTestCasesResult["finopsBudget"],
+    artifactDir,
+    artifactPaths: {
+      intent: "/tmp/intent.json",
+      compiledPrompt: "/tmp/compiled-prompt.json",
+      untrustedContentNormalizationReport: "/tmp/ucnr.json",
+      evidenceSeal: "/tmp/evidence-seal.json",
+      agentRoleRun: "/tmp/agent-role-run.json",
+      genealogy: "/tmp/genealogy.json",
+      generatedTestCases: "/tmp/generated.json",
+      validationReport: "/tmp/validation.json",
+      policyReport: "/tmp/policy.json",
+      coverageReport: "/tmp/coverage.json",
+      finopsReport: "/tmp/finops.json",
+    },
+    customerMarkdownPaths: {
+      combined: `${artifactDir}/customer-markdown/testfaelle.md`,
+      perCase: [],
+    },
+  };
+};
+// ---------------------------------------------------------------------------
+// parseTestIntelligenceRunArgs
+// ---------------------------------------------------------------------------
+
+test("parseTestIntelligenceRunArgs: requires exactly one source", () => {
+  assert.throws(
+    () => parseTestIntelligenceRunArgs(["--output", "/tmp/x"], {}),
+    TestIntelligenceRunOperatorError,
+  );
+  assert.throws(
+    () =>
+      parseTestIntelligenceRunArgs(
+        [
+          "--figma-url",
+          "https://x",
+          "--figma-json-file",
+          "/tmp/y.json",
+          "--output",
+          "/tmp/x",
+        ],
+        {},
+      ),
+    TestIntelligenceRunOperatorError,
+  );
+});
+
+test("parseTestIntelligenceRunArgs: output is optional — no error when absent", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    ["--figma-url", "https://figma.com/design/abc/foo?node-id=1-2"],
+    {},
+  );
+  assert.equal(opts.output, undefined);
+});
+
+test("parseTestIntelligenceRunArgs: env defaults flow into options when flags absent", () => {
+  const options = parseTestIntelligenceRunArgs(
+    ["--figma-url", "https://figma.com/design/abc/foo", "--output", "/tmp/x"],
+    {
+      WORKSPACE_TEST_SPACE_MODEL_ENDPOINT: "https://aoai.example/openai/v1",
+      WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT: "gpt-oss-120b",
+      WORKSPACE_TEST_SPACE_LLM_API_KEY: "k-key",
+      FIGMA_ACCESS_TOKEN: "figd_xxx",
+    },
+  );
+  assert.equal(options.modelEndpoint, "https://aoai.example/openai/v1");
+  assert.equal(options.modelDeployment, "gpt-oss-120b");
+  assert.equal(options.modelApiKey, "k-key");
+  assert.equal(options.figmaToken, "figd_xxx");
+  assert.equal(options.mode, "deterministic_llm");
+  assert.equal(options.visualPrimaryDeployment, "llama-4-maverick-vision");
+  assert.equal(options.visualFallbackDeployment, "phi-4-multimodal-instruct");
+  assert.equal(options.topologyInputSources.visualPrimaryDeployment, "default");
+  assert.equal(
+    options.topologyInputSources.visualFallbackDeployment,
+    "default",
+  );
+  assert.equal(options.noVisualSidecar, false);
+  assert.equal(options.finopsBudgetPath, undefined);
+});
+
+test("parseTestIntelligenceRunArgs: allow-policy-blocked defaults to true", () => {
+  const options = parseTestIntelligenceRunArgs(
+    ["--figma-url", "https://figma.com/design/abc/foo", "--output", "/tmp/x"],
+    {},
+  );
+  assert.equal(options.allowPolicyBlocked, true);
+});
+
+test("parseTestIntelligenceRunArgs: WORKSPACE_TEST_SPACE_ALLOW_POLICY_BLOCKED enables policy bypass", () => {
+  const options = parseTestIntelligenceRunArgs(
+    ["--figma-url", "https://figma.com/design/abc/foo", "--output", "/tmp/x"],
+    {
+      WORKSPACE_TEST_SPACE_ALLOW_POLICY_BLOCKED: "1",
+    },
+  );
+  assert.equal(options.allowPolicyBlocked, true);
+});
+
+test("parseTestIntelligenceRunArgs: --allow-policy-blocked sets allowPolicyBlocked", () => {
+  const options = parseTestIntelligenceRunArgs(
+    [
+      "--figma-url",
+      "https://figma.com/design/abc/foo",
+      "--output",
+      "/tmp/x",
+      "--allow-policy-blocked",
+    ],
+    {},
+  );
+  assert.equal(options.allowPolicyBlocked, true);
+});
+
+test("parseTestIntelligenceRunArgs: WORKSPACE_TEST_SPACE_ALLOW_POLICY_BLOCKED can disable the bypass", () => {
+  const options = parseTestIntelligenceRunArgs(
+    ["--figma-url", "https://figma.com/design/abc/foo", "--output", "/tmp/x"],
+    {
+      WORKSPACE_TEST_SPACE_ALLOW_POLICY_BLOCKED: "0",
+    },
+  );
+  assert.equal(options.allowPolicyBlocked, false);
+});
+
+test("parseTestIntelligenceRunArgs: --mode default is deterministic_llm", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    ["--figma-url", "https://figma.com/design/abc/foo", "--output", "/tmp/x"],
+    {},
+  );
+  assert.equal(opts.mode, "deterministic_llm");
+});
+
+test("parseTestIntelligenceRunArgs: rejects unknown flags", () => {
+  assert.throws(
+    () =>
+      parseTestIntelligenceRunArgs(
+        [
+          "--figma-url",
+          "https://figma.com/design/abc",
+          "--output",
+          "/tmp/x",
+          "--bogus",
+          "1",
+        ],
+        {},
+      ),
+    /Unknown flag/u,
+  );
+});
+
+test("parseTestIntelligenceRunArgs: rejects unknown --mode value", () => {
+  assert.throws(
+    () =>
+      parseTestIntelligenceRunArgs(
+        [
+          "--figma-url",
+          "https://figma.com/design/abc",
+          "--output",
+          "/tmp/x",
+          "--mode",
+          "unknown_mode",
+        ],
+        {},
+      ),
+    /--mode must be one of/u,
+  );
+});
+
+test("parseTestIntelligenceRunArgs: empty value for required string flags fails", () => {
+  for (const flag of [
+    "--figma-url",
+    "--output",
+    "--model-endpoint",
+    "--model-deployment",
+    "--policy-profile",
+    "--finops-budget",
+  ]) {
+    assert.throws(
+      () => parseTestIntelligenceRunArgs([flag, "   "], {}),
+      TestIntelligenceRunOperatorError,
+    );
+  }
+});
+
+test("parseTestIntelligenceRunArgs: --no-visual-sidecar sets noVisualSidecar", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    [
+      "--figma-url",
+      "https://figma.com/design/abc",
+      "--output",
+      "/tmp/x",
+      "--no-visual-sidecar",
+    ],
+    {},
+  );
+  assert.equal(opts.noVisualSidecar, true);
+});
+
+test("parseTestIntelligenceRunArgs: --enable-visual-sidecar sets enableVisualSidecar", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    [
+      "--figma-url",
+      "https://figma.com/design/abc",
+      "--output",
+      "/tmp/x",
+      "--enable-visual-sidecar",
+    ],
+    {},
+  );
+  assert.equal(opts.enableVisualSidecar, true);
+  assert.equal(opts.noVisualSidecar, false);
+});
+
+test("parseTestIntelligenceRunArgs: env override enables visual sidecar", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    ["--figma-url", "https://figma.com/design/abc", "--output", "/tmp/x"],
+    { FIGMAPIPE_WORKSPACE_TI_ENABLE_VISUAL_SIDECAR: "1" },
+  );
+  assert.equal(opts.enableVisualSidecar, true);
+  assert.equal(opts.noVisualSidecar, false);
+});
+
+test("parseTestIntelligenceRunArgs: --enable-visual-sidecar conflicts with --no-visual-sidecar", () => {
+  assert.throws(
+    () =>
+      parseTestIntelligenceRunArgs(
+        [
+          "--figma-url",
+          "https://figma.com/design/abc",
+          "--output",
+          "/tmp/x",
+          "--enable-visual-sidecar",
+          "--no-visual-sidecar",
+        ],
+        {},
+      ),
+    /--enable-visual-sidecar and --no-visual-sidecar are mutually exclusive/u,
+  );
+});
+
+test("parseTestIntelligenceRunArgs: --logic-judge-deployment captures the cross-model judge deployment (Issue #1932)", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    [
+      "--figma-url",
+      "https://figma.com/design/abc",
+      "--output",
+      "/tmp/x",
+      "--logic-judge-deployment",
+      "gpt-oss-120b",
+    ],
+    {},
+  );
+  assert.equal(opts.logicJudgeDeployment, "gpt-oss-120b");
+});
+
+test("parseTestIntelligenceRunArgs: WORKSPACE_TEST_SPACE_LOGIC_JUDGE_DEPLOYMENT env var hydrates the option (Issue #1932)", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    ["--figma-url", "https://figma.com/design/abc", "--output", "/tmp/x"],
+    {
+      WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT: "mistral-large-3",
+      WORKSPACE_TEST_SPACE_LOGIC_JUDGE_DEPLOYMENT: "gpt-oss-120b",
+    },
+  );
+  assert.equal(opts.modelDeployment, "mistral-large-3");
+  assert.equal(opts.logicJudgeDeployment, "gpt-oss-120b");
+});
+
+test("parseTestIntelligenceRunArgs: --logic-judge-deployment overrides the env default (Issue #1932)", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    [
+      "--figma-url",
+      "https://figma.com/design/abc",
+      "--output",
+      "/tmp/x",
+      "--logic-judge-deployment",
+      "gpt-oss-120b",
+    ],
+    {
+      WORKSPACE_TEST_SPACE_LOGIC_JUDGE_DEPLOYMENT: "phi-4",
+    },
+  );
+  assert.equal(opts.logicJudgeDeployment, "gpt-oss-120b");
+});
+
+test("parseTestIntelligenceRunArgs: --logic-judge-deployment rejects empty value (Issue #1932)", () => {
+  assert.throws(
+    () =>
+      parseTestIntelligenceRunArgs(
+        [
+          "--figma-url",
+          "https://figma.com/design/abc",
+          "--output",
+          "/tmp/x",
+          "--logic-judge-deployment",
+          "   ",
+        ],
+        {},
+      ),
+    /--logic-judge-deployment requires a non-empty deployment name/u,
+  );
+});
+
+test("parseTestIntelligenceRunArgs: WORKSPACE_TEST_SPACE_COVERAGE_PLANNER_DEPLOYMENT env var hydrates the option (Issue #1934)", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    ["--figma-url", "https://figma.com/design/abc", "--output", "/tmp/x"],
+    {
+      WORKSPACE_TEST_SPACE_COVERAGE_PLANNER_DEPLOYMENT: "phi-4-mini-instruct",
+    },
+  );
+  assert.equal(opts.coveragePlannerDeployment, "phi-4-mini-instruct");
+});
+
+test("parseTestIntelligenceRunArgs: --coverage-planner-deployment overrides the env default (Issue #1934)", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    [
+      "--figma-url",
+      "https://figma.com/design/abc",
+      "--output",
+      "/tmp/x",
+      "--coverage-planner-deployment",
+      "phi-4-mini-instruct",
+    ],
+    {
+      WORKSPACE_TEST_SPACE_COVERAGE_PLANNER_DEPLOYMENT: "gpt-oss-120b",
+    },
+  );
+  assert.equal(opts.coveragePlannerDeployment, "phi-4-mini-instruct");
+});
+
+test("parseTestIntelligenceRunArgs: visual and a11y deployment flags override env defaults (Issue #1996)", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    [
+      "--figma-url",
+      "https://figma.com/design/abc",
+      "--output",
+      "/tmp/x",
+      "--visual-primary-deployment",
+      "llama-4-maverick-vision",
+      "--visual-fallback-deployment",
+      "phi-4-multimodal-instruct",
+      "--a11y-judge-deployment",
+      "phi-4-multimodal-instruct",
+    ],
+    {
+      WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT: "stale-primary",
+      WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT: "stale-fallback",
+      WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT: "stale-a11y",
+    },
+  );
+
+  assert.equal(opts.visualPrimaryDeployment, "llama-4-maverick-vision");
+  assert.equal(opts.visualFallbackDeployment, "phi-4-multimodal-instruct");
+  assert.equal(opts.a11yJudgeDeployment, "phi-4-multimodal-instruct");
+  assert.equal(opts.topologyInputSources.visualPrimaryDeployment, "cli");
+  assert.equal(opts.topologyInputSources.visualFallbackDeployment, "cli");
+  assert.equal(opts.topologyInputSources.a11yJudgeDeployment, "cli");
+});
+
+// ---------------------------------------------------------------------------
+// parseTestIntelligenceRunArgs — topology preflight wiring (Issue #1993)
+// ---------------------------------------------------------------------------
+
+test("parseTestIntelligenceRunArgs: --require-multi-agent-topology and env WORKSPACE_TEST_SPACE_REQUIRE_MULTI_AGENT_TOPOLOGY=1 hydrate strict mode (Issue #1993)", (t) => {
+  if (!issue1993TopologyPreflightSupported) {
+    t.skip("Issue #1993 topology strict-mode support is not present in this CLI");
+    return;
+  }
+
+  const fromEnv = parseIssue1993TopologyRunArgs(
+    ["--figma-url", "https://figma.com/design/abc", "--output", "/tmp/x"],
+    {
+      WORKSPACE_TEST_SPACE_REQUIRE_MULTI_AGENT_TOPOLOGY: "1",
+    },
+  );
+  assert.equal(fromEnv.requireMultiAgentTopology, true);
+
+  const fromFlag = parseIssue1993TopologyRunArgs(
+    [
+      "--figma-url",
+      "https://figma.com/design/abc",
+      "--output",
+      "/tmp/x",
+      "--require-multi-agent-topology",
+    ],
+    {},
+  );
+  assert.equal(fromFlag.requireMultiAgentTopology, true);
+});
+
+test("parseTestIntelligenceRunArgs: risk-ranker env and flag hydrate topology planning when present (Issue #1993)", (t) => {
+  if (!issue1993RiskRankerPlumbingSupported) {
+    t.skip("Issue #1993 risk-ranker plumbing is not present in this CLI");
+    return;
+  }
+
+  const fromEnv = parseIssue1993TopologyRunArgs(
+    ["--figma-url", "https://figma.com/design/abc", "--output", "/tmp/x"],
+    {
+      WORKSPACE_TEST_SPACE_RISK_RANKER_DEPLOYMENT: "phi-4",
+    },
+  );
+  assert.equal(fromEnv.riskRankerDeployment, "phi-4");
+
+  const fromFlag = parseIssue1993TopologyRunArgs(
+    [
+      "--figma-url",
+      "https://figma.com/design/abc",
+      "--output",
+      "/tmp/x",
+      "--risk-ranker-deployment",
+      "phi-4-mini-instruct",
+    ],
+    {
+      WORKSPACE_TEST_SPACE_RISK_RANKER_DEPLOYMENT: "gpt-oss-120b",
+    },
+  );
+  assert.equal(fromFlag.riskRankerDeployment, "phi-4-mini-instruct");
+});
+
+test("parseTestIntelligenceRunArgs: --finops-budget captures path", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    [
+      "--figma-url",
+      "https://figma.com/design/abc",
+      "--output",
+      "/tmp/x",
+      "--finops-budget",
+      "/tmp/budget.json",
+    ],
+    {},
+  );
+  assert.equal(opts.finopsBudgetPath, "/tmp/budget.json");
+});
+
+// ---------------------------------------------------------------------------
+// parseTestIntelligenceDoctorArgs / runTestIntelligenceDoctorCommand
+// ---------------------------------------------------------------------------
+
+test("parseTestIntelligenceDoctorArgs: env defaults flow into doctor options", () => {
+  const options = parseTestIntelligenceDoctorArgs([], {
+    WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT: "mistral-large-3",
+    WORKSPACE_TEST_SPACE_LOGIC_JUDGE_DEPLOYMENT: "gpt-oss-120b",
+    WORKSPACE_TEST_SPACE_COVERAGE_PLANNER_DEPLOYMENT: "phi-4-mini-instruct",
+    WORKSPACE_TEST_SPACE_RISK_RANKER_DEPLOYMENT: "phi-4",
+    WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT:
+      "llama-4-maverick-vision",
+    WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT:
+      "phi-4-multimodal-instruct",
+    WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT:
+      "phi-4-multimodal-instruct",
+  });
+  assert.equal(options.modelDeployment, "mistral-large-3");
+  assert.equal(options.logicJudgeDeployment, "gpt-oss-120b");
+  assert.equal(options.coveragePlannerDeployment, "phi-4-mini-instruct");
+  assert.equal(options.riskRankerDeployment, "phi-4");
+  assert.equal(options.visualPrimaryDeployment, "llama-4-maverick-vision");
+  assert.equal(options.visualFallbackDeployment, "phi-4-multimodal-instruct");
+  assert.equal(options.a11yJudgeDeployment, "phi-4-multimodal-instruct");
+  assert.equal(options.topologyInputSources.modelDeployment, "env");
+});
+
+test("parseTestIntelligenceDoctorArgs: visual sidecar defaults stay aligned with the production runner", () => {
+  const options = parseTestIntelligenceDoctorArgs([], {
+    WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT: "mistral-large-3",
+  });
+  assert.equal(options.visualPrimaryDeployment, "llama-4-maverick-vision");
+  assert.equal(options.visualFallbackDeployment, "phi-4-multimodal-instruct");
+  assert.equal(options.topologyInputSources.visualPrimaryDeployment, "default");
+  assert.equal(
+    options.topologyInputSources.visualFallbackDeployment,
+    "default",
+  );
+});
+
+test("parseTestIntelligenceDoctorArgs: CLI overrides doctor deployment defaults", () => {
+  const options = parseTestIntelligenceDoctorArgs(
+    [
+      "--model-deployment",
+      "mistral-large-3",
+      "--logic-judge-deployment",
+      "gpt-oss-120b",
+      "--coverage-planner-deployment",
+      "phi-4-mini-instruct",
+      "--risk-ranker-deployment",
+      "phi-4",
+      "--visual-primary-deployment",
+      "llama-4-maverick-vision",
+      "--visual-fallback-deployment",
+      "phi-4-multimodal-instruct",
+      "--a11y-judge-deployment",
+      "phi-4-multimodal-instruct",
+    ],
+    {
+      WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT: "gpt-oss-120b",
+      WORKSPACE_TEST_SPACE_LOGIC_JUDGE_DEPLOYMENT: "phi-4",
+      WORKSPACE_TEST_SPACE_COVERAGE_PLANNER_DEPLOYMENT: "gpt-oss-120b",
+      WORKSPACE_TEST_SPACE_RISK_RANKER_DEPLOYMENT: "gpt-oss-120b",
+      WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT: "stale-primary",
+      WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT: "stale-fallback",
+      WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT: "stale-a11y",
+    },
+  );
+  assert.equal(options.modelDeployment, "mistral-large-3");
+  assert.equal(options.logicJudgeDeployment, "gpt-oss-120b");
+  assert.equal(options.coveragePlannerDeployment, "phi-4-mini-instruct");
+  assert.equal(options.riskRankerDeployment, "phi-4");
+  assert.equal(options.visualPrimaryDeployment, "llama-4-maverick-vision");
+  assert.equal(options.visualFallbackDeployment, "phi-4-multimodal-instruct");
+  assert.equal(options.a11yJudgeDeployment, "phi-4-multimodal-instruct");
+  assert.equal(options.topologyInputSources.modelDeployment, "cli");
+  assert.equal(options.topologyInputSources.logicJudgeDeployment, "cli");
+  assert.equal(options.topologyInputSources.visualPrimaryDeployment, "cli");
+});
+
+test("runTestIntelligenceDoctorCommand: intended topology exits 0 with only ok statuses", async () => {
+  const { sink, stdout, stderr } = collectingSink();
+  const exitCode = await runTestIntelligenceDoctorCommand(baseDoctorOptions(), sink, {
+    env: {
+      WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT:
+        "llama-4-maverick-vision",
+      WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT:
+        "phi-4-multimodal-instruct",
+      WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT:
+        "phi-4-multimodal-instruct",
+      WORKSPACE_TEST_SPACE_MODEL_ENDPOINT: "https://aoai.example/openai/v1",
+      WORKSPACE_TEST_SPACE_LLM_API_KEY: "secret-key",
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  assert.equal(stderr.join(""), "");
+  assert.match(stdout.join(""), /overall status: ok/u);
+  assert.doesNotMatch(stdout.join(""), /https:\/\/aoai\.example/u);
+  assert.doesNotMatch(stdout.join(""), /secret-key/u);
+});
+
+test("runTestIntelligenceDoctorCommand: bad topology flags all affected roles and exits non-zero on invalid contracts", async () => {
+  const { sink, stdout } = collectingSink();
+  const exitCode = await runTestIntelligenceDoctorCommand(
+    {
+      modelDeployment: "gpt-oss-120b",
+      logicJudgeDeployment: undefined,
+      coveragePlannerDeployment: undefined,
+      riskRankerDeployment: undefined,
+      visualPrimaryDeployment: "mistral-document-ai-2512",
+      visualFallbackDeployment: "llama-4-maverick-vision",
+      a11yJudgeDeployment: undefined,
+      topologyInputSources: {
+        modelDeployment: "env",
+        logicJudgeDeployment: "default",
+        coveragePlannerDeployment: "default",
+        riskRankerDeployment: "default",
+        visualPrimaryDeployment: "env",
+        visualFallbackDeployment: "env",
+        a11yJudgeDeployment: "default",
+      },
+    },
+    sink,
+    {},
+  );
+
+  const output = stdout.join("");
+  assert.equal(exitCode, 1);
+  assert.match(output, /overall status: error/u);
+  for (const role of [
+    "generator",
+    "logic-judge",
+    "visual-primary",
+    "visual-fallback",
+    "coverage-planner",
+    "risk-ranker",
+    "a11y-judge",
+  ]) {
+    assert.match(output, new RegExp(`${role}:`, "u"));
+  }
+  assert.match(output, /visual-primary: error/u);
+  assert.match(
+    output,
+    /WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT=llama-4-maverick-vision/u,
+  );
+});
+
+// ---------------------------------------------------------------------------
+// parseTestIntelligenceRunArgs — multi-agent harness flags (Issue #1791)
+// ---------------------------------------------------------------------------
+
+test("parseTestIntelligenceRunArgs: harness defaults are off/standard/undefined", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    ["--figma-url", "https://figma.com/design/abc", "--output", "/tmp/x"],
+    {},
+  );
+  assert.equal(opts.harnessMode, "off");
+  assert.equal(opts.harnessTestDepth, "standard");
+  assert.equal(opts.harnessRoleStepId, undefined);
+});
+
+test("parseTestIntelligenceRunArgs: --harness-mode accepts shadow_eval and enforced", () => {
+  for (const mode of ["off", "shadow_eval", "enforced"] as const) {
+    const opts = parseTestIntelligenceRunArgs(
+      [
+        "--figma-url",
+        "https://figma.com/design/abc",
+        "--output",
+        "/tmp/x",
+        "--harness-mode",
+        mode,
+      ],
+      {},
+    );
+    assert.equal(opts.harnessMode, mode);
+  }
+});
+
+test("parseTestIntelligenceRunArgs: --harness-mode rejects unknown value", () => {
+  assert.throws(
+    () =>
+      parseTestIntelligenceRunArgs(
+        [
+          "--figma-url",
+          "https://figma.com/design/abc",
+          "--output",
+          "/tmp/x",
+          "--harness-mode",
+          "yolo",
+        ],
+        {},
+      ),
+    /--harness-mode must be one of/u,
+  );
+});
+
+test("parseTestIntelligenceRunArgs: --harness-test-depth accepts standard and exhaustive", () => {
+  for (const depth of ["standard", "exhaustive"] as const) {
+    const opts = parseTestIntelligenceRunArgs(
+      [
+        "--figma-url",
+        "https://figma.com/design/abc",
+        "--output",
+        "/tmp/x",
+        "--harness-test-depth",
+        depth,
+      ],
+      {},
+    );
+    assert.equal(opts.harnessTestDepth, depth);
+  }
+});
+
+test("parseTestIntelligenceRunArgs: --harness-test-depth rejects unknown value", () => {
+  assert.throws(
+    () =>
+      parseTestIntelligenceRunArgs(
+        [
+          "--figma-url",
+          "https://figma.com/design/abc",
+          "--output",
+          "/tmp/x",
+          "--harness-test-depth",
+          "shallow",
+        ],
+        {},
+      ),
+    /--harness-test-depth must be one of/u,
+  );
+});
+
+test("parseTestIntelligenceRunArgs: --harness-role-step-id captures non-empty id", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    [
+      "--figma-url",
+      "https://figma.com/design/abc",
+      "--output",
+      "/tmp/x",
+      "--harness-role-step-id",
+      "test_generation_alt",
+    ],
+    {},
+  );
+  assert.equal(opts.harnessRoleStepId, "test_generation_alt");
+});
+
+test("parseTestIntelligenceRunArgs: --harness-role-step-id rejects empty/whitespace", () => {
+  assert.throws(
+    () =>
+      parseTestIntelligenceRunArgs(
+        [
+          "--figma-url",
+          "https://figma.com/design/abc",
+          "--output",
+          "/tmp/x",
+          "--harness-role-step-id",
+          "   ",
+        ],
+        {},
+      ),
+    TestIntelligenceRunOperatorError,
+  );
+});
+
+test("parseTestIntelligenceRunArgs: --harness-max-repair-iterations captures a non-negative integer", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    [
+      "--figma-url",
+      "https://figma.com/design/abc",
+      "--output",
+      "/tmp/x",
+      "--harness-max-repair-iterations",
+      "2",
+    ],
+    {},
+  );
+  assert.equal(opts.harnessMaxRepairIterations, 2);
+});
+
+test("parseTestIntelligenceRunArgs: --harness-max-repair-iterations rejects non-integers and negatives", () => {
+  for (const value of ["-1", "1.5", "abc", "  "]) {
+    assert.throws(
+      () =>
+        parseTestIntelligenceRunArgs(
+          [
+            "--figma-url",
+            "https://figma.com/design/abc",
+            "--output",
+            "/tmp/x",
+            "--harness-max-repair-iterations",
+            value,
+          ],
+          {},
+        ),
+      TestIntelligenceRunOperatorError,
+      `value ${value} should have been rejected`,
+    );
+  }
+});
+
+// ---------------------------------------------------------------------------
+// --max-figma-payload-bytes (Issue #2172)
+// ---------------------------------------------------------------------------
+
+const FIGMA_PAYLOAD_CEILING_BYTES = 64 * 1024 * 1024;
+const FIGMA_PAYLOAD_DEFAULT_BYTES = 10 * 1024 * 1024;
+
+test("parseTestIntelligenceRunArgs: --max-figma-payload-bytes is undefined when omitted (soft default)", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    [
+      "--figma-url",
+      "https://figma.com/design/abc",
+      "--output",
+      "/tmp/x",
+    ],
+    {},
+  );
+  assert.equal(opts.maxFigmaPayloadBytes, undefined);
+});
+
+test("parseTestIntelligenceRunArgs: --max-figma-payload-bytes accepts the soft default explicitly", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    [
+      "--figma-url",
+      "https://figma.com/design/abc",
+      "--output",
+      "/tmp/x",
+      "--max-figma-payload-bytes",
+      String(FIGMA_PAYLOAD_DEFAULT_BYTES),
+    ],
+    {},
+  );
+  assert.equal(opts.maxFigmaPayloadBytes, FIGMA_PAYLOAD_DEFAULT_BYTES);
+});
+
+test("parseTestIntelligenceRunArgs: --max-figma-payload-bytes accepts a 32 MiB tier-1 override (Issue #2172 Test-View-03)", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    [
+      "--figma-url",
+      "https://figma.com/design/abc",
+      "--output",
+      "/tmp/x",
+      "--max-figma-payload-bytes",
+      "33554432",
+    ],
+    {},
+  );
+  assert.equal(opts.maxFigmaPayloadBytes, 33554432);
+});
+
+test("parseTestIntelligenceRunArgs: --max-figma-payload-bytes accepts the 64 MiB ceiling exactly", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    [
+      "--figma-url",
+      "https://figma.com/design/abc",
+      "--output",
+      "/tmp/x",
+      "--max-figma-payload-bytes",
+      String(FIGMA_PAYLOAD_CEILING_BYTES),
+    ],
+    {},
+  );
+  assert.equal(opts.maxFigmaPayloadBytes, FIGMA_PAYLOAD_CEILING_BYTES);
+});
+
+test("parseTestIntelligenceRunArgs: --max-figma-payload-bytes rejects 1 byte above the ceiling", () => {
+  assert.throws(
+    () =>
+      parseTestIntelligenceRunArgs(
+        [
+          "--figma-url",
+          "https://figma.com/design/abc",
+          "--output",
+          "/tmp/x",
+          "--max-figma-payload-bytes",
+          String(FIGMA_PAYLOAD_CEILING_BYTES + 1),
+        ],
+        {},
+      ),
+    (err: unknown) =>
+      err instanceof TestIntelligenceRunOperatorError &&
+      /security hard ceiling/u.test(err.message) &&
+      /67108864/u.test(err.message),
+  );
+});
+
+test("parseTestIntelligenceRunArgs: --max-figma-payload-bytes rejects negative / zero / non-integer / blank", () => {
+  for (const value of ["-1", "0", "1.5", "abc", "  "]) {
+    assert.throws(
+      () =>
+        parseTestIntelligenceRunArgs(
+          [
+            "--figma-url",
+            "https://figma.com/design/abc",
+            "--output",
+            "/tmp/x",
+            "--max-figma-payload-bytes",
+            value,
+          ],
+          {},
+        ),
+      TestIntelligenceRunOperatorError,
+      `value ${value} should have been rejected`,
+    );
+  }
+});
+
+test("parseTestIntelligenceRunArgs: WORKSPACE_TEST_SPACE_MAX_FIGMA_PAYLOAD_BYTES env override above ceiling is rejected", () => {
+  assert.throws(
+    () =>
+      parseTestIntelligenceRunArgs(
+        [
+          "--figma-url",
+          "https://figma.com/design/abc",
+          "--output",
+          "/tmp/x",
+        ],
+        {
+          WORKSPACE_TEST_SPACE_MAX_FIGMA_PAYLOAD_BYTES: String(
+            FIGMA_PAYLOAD_CEILING_BYTES + 1,
+          ),
+        },
+      ),
+    (err: unknown) =>
+      err instanceof TestIntelligenceRunOperatorError &&
+      /security hard ceiling/u.test(err.message),
+  );
+});
+
+test("parseTestIntelligenceRunArgs: WORKSPACE_TEST_SPACE_MAX_FIGMA_PAYLOAD_BYTES env override at ceiling is accepted", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    [
+      "--figma-url",
+      "https://figma.com/design/abc",
+      "--output",
+      "/tmp/x",
+    ],
+    {
+      WORKSPACE_TEST_SPACE_MAX_FIGMA_PAYLOAD_BYTES: String(
+        FIGMA_PAYLOAD_CEILING_BYTES,
+      ),
+    },
+  );
+  assert.equal(opts.maxFigmaPayloadBytes, FIGMA_PAYLOAD_CEILING_BYTES);
+});
+
+test("parseTestIntelligenceRunArgs: --max-figma-payload-bytes overrides the env value", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    [
+      "--figma-url",
+      "https://figma.com/design/abc",
+      "--output",
+      "/tmp/x",
+      "--max-figma-payload-bytes",
+      "20971520",
+    ],
+    {
+      WORKSPACE_TEST_SPACE_MAX_FIGMA_PAYLOAD_BYTES: "10485760",
+    },
+  );
+  assert.equal(opts.maxFigmaPayloadBytes, 20971520);
+});
+
+// ---------------------------------------------------------------------------
+// runTestIntelligenceCommand — feature gate
+// ---------------------------------------------------------------------------
+
+test("runTestIntelligenceCommand: missing FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE gate → exit 1", async () => {
+  const { sink, stdout, stderr } = collectingSink();
+  const exitCode = await runTestIntelligenceCommand(baseOptions(), sink, {
+    env: {},
+    now: () => 1700000000000,
+  });
+  assert.equal(exitCode, 1);
+  assert.match(stderr.join(""), /FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE/u);
+  assert.equal(stdout.join(""), "");
+});
+
+test("runTestIntelligenceCommand: gate set to '0' is still off → exit 1", async () => {
+  const { sink, stderr } = collectingSink();
+  const exitCode = await runTestIntelligenceCommand(baseOptions(), sink, {
+    env: { FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE: "0" },
+    now: () => 1700000000000,
+  });
+  assert.equal(exitCode, 1);
+  assert.match(stderr.join(""), /FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE/u);
+});
+
+// ---------------------------------------------------------------------------
+// runTestIntelligenceCommand — dry_run
+// ---------------------------------------------------------------------------
+
+test("runTestIntelligenceCommand: dry_run skips runner and exits 0", async () => {
+  const { sink, stdout, stderr } = collectingSink();
+  const exitCode = await runTestIntelligenceCommand(baseOptions(), sink, {
+    env: GATE_ON,
+    now: () => 1700000000000,
+  });
+  assert.equal(exitCode, 0, stderr.join(""));
+  assert.match(stdout.join(""), /dry_run/u);
+});
+
+test("runTestIntelligenceCommand: dry_run output includes visual sidecar note", async () => {
+  const { sink, stdout } = collectingSink();
+  await runTestIntelligenceCommand(
+    { ...baseOptions(), noVisualSidecar: true },
+    sink,
+    { env: GATE_ON, now: () => 1700000000000 },
+  );
+  assert.match(stdout.join(""), /--no-visual-sidecar/u);
+});
+
+test("runTestIntelligenceCommand: dry_run prints the resolved role matrix for every role (Issue #1996)", async () => {
+  const { sink, stdout, stderr } = collectingSink();
+  const exitCode = await runTestIntelligenceCommand(
+    {
+      ...baseOptions(),
+      enableVisualSidecar: true,
+      visualPrimaryDeployment: "llama-4-maverick-vision",
+      visualFallbackDeployment: "phi-4-multimodal-instruct",
+      a11yJudgeDeployment: "phi-4-multimodal-instruct",
+      topologyInputSources: {
+        modelDeployment: "default",
+        logicJudgeDeployment: "default",
+        coveragePlannerDeployment: "default",
+        riskRankerDeployment: "default",
+        visualPrimaryDeployment: "cli",
+        visualFallbackDeployment: "cli",
+        a11yJudgeDeployment: "cli",
+      },
+    },
+    sink,
+    {
+      env: {
+        ...GATE_ON,
+        WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT:
+          "https://aoai.example/openai/vision",
+        WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT: "stale-primary",
+        WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT: "stale-fallback",
+        WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT: "stale-a11y",
+      },
+      now: () => 1700000000000,
+    },
+  );
+
+  assert.equal(exitCode, 0, stderr.join(""));
+  const output = stdout.join("");
+  for (const role of [
+    "generator",
+    "logic-judge",
+    "coverage-planner",
+    "risk-ranker",
+    "visual-primary",
+    "visual-fallback",
+    "a11y-judge",
+  ]) {
+    assert.match(output, new RegExp(`${role}:`, "u"));
+  }
+  assert.match(output, /visual-primary: llama-4-maverick-vision \[cli\]/u);
+  assert.match(output, /visual-fallback: phi-4-multimodal-instruct \[cli\]/u);
+  assert.match(output, /a11y-judge: phi-4-multimodal-instruct \[cli\]/u);
+});
+
+test("runTestIntelligenceCommand: dry_run output includes finops budget note when path given", async () => {
+  const { sink, stdout } = collectingSink();
+  await runTestIntelligenceCommand(
+    { ...baseOptions(), finopsBudgetPath: "/tmp/budget.json" },
+    sink,
+    {
+      env: GATE_ON,
+      now: () => 1700000000000,
+      loadJsonFile: async () => ({
+        budgetId: "test",
+        budgetVersion: "1.0.0",
+        roles: {},
+      }),
+    },
+  );
+  assert.match(stdout.join(""), /\/tmp\/budget\.json/u);
+});
+
+// ---------------------------------------------------------------------------
+// runTestIntelligenceCommand — offline_eval
+// ---------------------------------------------------------------------------
+
+test("runTestIntelligenceCommand: offline_eval routes to deterministic_llm", async () => {
+  const { sink, stdout, stderr } = collectingSink();
+  const exitCode = await runTestIntelligenceCommand(
+    { ...baseOptions(), mode: "offline_eval" },
+    sink,
+    {
+      env: GATE_ON,
+      now: () => 1700000000000,
+      runner: async () => ({
+        jobId: "ti-cli-offline",
+        generatedAt: "2026-05-02T12:00:00.000Z",
+        fileKey: "abc",
+        generatedTestCases: {
+          testCases: [],
+        } as unknown as RunFigmaToQcTestCasesResult["generatedTestCases"],
+        intent: {} as unknown as RunFigmaToQcTestCasesResult["intent"],
+        validation: {} as unknown as RunFigmaToQcTestCasesResult["validation"],
+        policy: {} as unknown as RunFigmaToQcTestCasesResult["policy"],
+        coverage: {} as unknown as RunFigmaToQcTestCasesResult["coverage"],
+        blocked: false,
+        finopsBudget:
+          {} as unknown as RunFigmaToQcTestCasesResult["finopsBudget"],
+        artifactDir: "/tmp/offline-output/_runner-output/jobs/ti-cli-offline",
+        artifactPaths: {
+          intent: "/tmp/intent.json",
+          compiledPrompt: "/tmp/compiled-prompt.json",
+          untrustedContentNormalizationReport: "/tmp/ucnr.json",
+          evidenceSeal: "/tmp/evidence-seal.json",
+          agentRoleRun: "/tmp/agent-role-run.json",
+          genealogy: "/tmp/genealogy.json",
+          generatedTestCases: "/tmp/generated.json",
+          validationReport: "/tmp/validation.json",
+          policyReport: "/tmp/policy.json",
+          coverageReport: "/tmp/coverage.json",
+          provenance: "/tmp/provenance.jsonld",
+          finopsReport: "/tmp/finops.json",
+        },
+        customerMarkdownPaths: {
+          combined: "/tmp/customer-markdown/testfaelle.md",
+          perCase: [],
+        },
+      }),
+      buildLlmClient: () =>
+        ({}) as unknown as ReturnType<
+          Required<
+            Parameters<typeof runTestIntelligenceCommand>[2]
+          >["buildLlmClient"]
+        >,
+      loadFigmaJsonFile: async () => ({
+        fileKey: "abc",
+        name: "Foo",
+        document: { id: "0:0", type: "DOCUMENT" },
+      }),
+      loadJsonFile: async () => ({}),
+    },
+  );
+  assert.equal(exitCode, 0);
+  assert.match(stderr.join(""), /offline_eval/);
+  assert.match(stdout.join(""), /completed/u);
+});
+
+// ---------------------------------------------------------------------------
+// runTestIntelligenceCommand — finops-budget validation
+// ---------------------------------------------------------------------------
+
+test("runTestIntelligenceCommand: invalid finops-budget file → exit 1 with validation error", async () => {
+  const { sink, stderr } = collectingSink();
+  const exitCode = await runTestIntelligenceCommand(
+    { ...baseOptions(), finopsBudgetPath: "/tmp/bad-budget.json" },
+    sink,
+    {
+      env: GATE_ON,
+      now: () => 1700000000000,
+      loadJsonFile: async () => ({ notAValidEnvelope: true }),
+    },
+  );
+  assert.equal(exitCode, 1);
+  assert.match(stderr.join(""), /invalid/u);
+});
+
+test("runTestIntelligenceCommand: finops-budget file read error → exit 1", async () => {
+  const { sink, stderr } = collectingSink();
+  const exitCode = await runTestIntelligenceCommand(
+    { ...baseOptions(), finopsBudgetPath: "/tmp/missing.json" },
+    sink,
+    {
+      env: GATE_ON,
+      now: () => 1700000000000,
+      loadJsonFile: async () => {
+        throw new Error("ENOENT: no such file or directory");
+      },
+    },
+  );
+  assert.equal(exitCode, 1);
+  assert.match(stderr.join(""), /finops-budget/u);
+});
+
+// ---------------------------------------------------------------------------
+// runTestIntelligenceCommand — deterministic_llm with injected runner
+// ---------------------------------------------------------------------------
+
+test("runTestIntelligenceCommand: deterministic_llm with injected runner returns 0 and reports runner Markdown path", async () => {
+  const { sink, stdout, stderr } = collectingSink();
+  const options: TestIntelligenceRunOptions = {
+    figmaUrl: undefined,
+    figmaJsonFile: "/tmp/figma.json",
+    output: "/tmp/det-output",
+    modelEndpoint: "https://aoai.example/openai/v1",
+    modelDeployment: "gpt-oss-120b",
+    logicJudgeDeployment: undefined,
+    modelApiKey: "k-key",
+    figmaToken: undefined,
+    policyProfile: undefined,
+    mode: "deterministic_llm",
+    enableVisualSidecar: false,
+    noVisualSidecar: false,
+    finopsBudgetPath: undefined,
+    harnessMode: "off",
+    harnessTestDepth: "standard",
+    harnessRoleStepId: undefined,
+    harnessMaxRepairIterations: undefined,
+    customContextMarkdownPath: undefined,
+    customerProfilePath: undefined,
+  };
+
+  const runner = async (): Promise<RunFigmaToQcTestCasesResult> => ({
+    jobId: "ti-cli-1",
+    generatedAt: "2026-05-02T12:00:00.000Z",
+    fileKey: "abc",
+    generatedTestCases: {
+      caseListVersion: "1.0.0" as never,
+      generatedAt: "2026-05-02T12:00:00.000Z",
+      jobId: "ti-cli-1",
+      sourceTrace: { fileKey: "abc", screens: [] },
+      testCases: [],
+    } as unknown as RunFigmaToQcTestCasesResult["generatedTestCases"],
+    intent: {} as unknown as RunFigmaToQcTestCasesResult["intent"],
+    validation: {} as unknown as RunFigmaToQcTestCasesResult["validation"],
+    policy: {} as unknown as RunFigmaToQcTestCasesResult["policy"],
+    coverage: {} as unknown as RunFigmaToQcTestCasesResult["coverage"],
+    blocked: false,
+    finopsBudget: {} as unknown as RunFigmaToQcTestCasesResult["finopsBudget"],
+    artifactDir:
+      "/tmp/det-output/_runner-output/jobs/ti-cli-1/test-intelligence",
+    artifactPaths: {
+      intent: "/tmp/intent.json",
+      compiledPrompt: "/tmp/compiled-prompt.json",
+      untrustedContentNormalizationReport: "/tmp/ucnr.json",
+      evidenceSeal: "/tmp/evidence-seal.json",
+      agentRoleRun: "/tmp/agent-role-run.json",
+      genealogy: "/tmp/genealogy.json",
+      generatedTestCases: "/tmp/generated.json",
+      validationReport: "/tmp/validation.json",
+      policyReport: "/tmp/policy.json",
+      coverageReport: "/tmp/coverage.json",
+      finopsReport: "/tmp/finops.json",
+    },
+    customerMarkdownPaths: {
+      combined: "/tmp/customer-markdown/testfaelle.md",
+      perCase: ["/tmp/customer-markdown/case-1.md"],
+    },
+  });
+
+  const exitCode = await runTestIntelligenceCommand(options, sink, {
+    env: GATE_ON,
+    runner,
+    buildLlmClient: () =>
+      ({}) as unknown as ReturnType<
+        Required<
+          Parameters<typeof runTestIntelligenceCommand>[2]
+        >["buildLlmClient"]
+      >,
+    loadFigmaJsonFile: async () => ({
+      fileKey: "abc",
+      name: "Foo",
+      document: { id: "0:0", type: "DOCUMENT" },
+    }),
+    loadJsonFile: async (p: string) => {
+      if (p.includes("finops")) {
+        return {
+          totals: {
+            inputTokens: 1234,
+            outputTokens: 567,
+            estimatedCost: 0.042,
+          },
+        };
+      }
+      if (p.includes("evidence")) {
+        return {
+          predicate: {
+            manifestSha256:
+              "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+          },
+        };
+      }
+      return {};
+    },
+    now: () => 1700000000000,
+  });
+  assert.equal(exitCode, 0, stderr.join(""));
+  const out = stdout.join("");
+  assert.match(out, /completed/u);
+  assert.match(out, /customer md files\s*:\s*2/u);
+  assert.match(out, /\/tmp\/customer-markdown\/testfaelle\.md/u);
+  assert.match(out, /finops tokens in\/out/u);
+  assert.match(out, /evidence manifest digest/u);
+});
+
+test("runTestIntelligenceCommand: deterministic_llm blocked + allowPolicyBlocked=false → exit 3", async () => {
+  const { sink, stderr } = collectingSink();
+  const options: TestIntelligenceRunOptions = {
+    figmaUrl: undefined,
+    figmaJsonFile: "/tmp/figma.json",
+    output: "/tmp/blocked-output",
+    modelEndpoint: "https://aoai.example/openai/v1",
+    modelDeployment: "gpt-oss-120b",
+    logicJudgeDeployment: undefined,
+    modelApiKey: "k-key",
+    figmaToken: undefined,
+    policyProfile: undefined,
+    mode: "deterministic_llm",
+    enableVisualSidecar: false,
+    noVisualSidecar: false,
+    finopsBudgetPath: undefined,
+    harnessMode: "off",
+    harnessTestDepth: "standard",
+    harnessRoleStepId: undefined,
+    harnessMaxRepairIterations: undefined,
+    customContextMarkdownPath: undefined,
+    customerProfilePath: undefined,
+    allowPolicyBlocked: false,
+  };
+
+  const runner = async (): Promise<RunFigmaToQcTestCasesResult> => ({
+    jobId: "ti-cli-blocked",
+    generatedAt: "2026-05-02T12:00:00.000Z",
+    fileKey: "abc",
+    generatedTestCases: {
+      testCases: [],
+    } as unknown as RunFigmaToQcTestCasesResult["generatedTestCases"],
+    intent: {} as unknown as RunFigmaToQcTestCasesResult["intent"],
+    validation: {} as unknown as RunFigmaToQcTestCasesResult["validation"],
+    policy: {} as unknown as RunFigmaToQcTestCasesResult["policy"],
+    coverage: {} as unknown as RunFigmaToQcTestCasesResult["coverage"],
+    blocked: true,
+    finopsBudget: {} as unknown as RunFigmaToQcTestCasesResult["finopsBudget"],
+    artifactDir: "/tmp/blocked-output/_runner-output/jobs/ti-cli-blocked",
+    artifactPaths: {
+      intent: "/tmp/intent.json",
+      compiledPrompt: "/tmp/compiled-prompt.json",
+      untrustedContentNormalizationReport: "/tmp/ucnr.json",
+      evidenceSeal: "/tmp/evidence-seal.json",
+      agentRoleRun: "/tmp/agent-role-run.json",
+      genealogy: "/tmp/genealogy.json",
+      generatedTestCases: "/tmp/generated.json",
+      validationReport: "/tmp/validation.json",
+      policyReport: "/tmp/policy-report.json",
+      coverageReport: "/tmp/coverage.json",
+      finopsReport: "/tmp/finops.json",
+    },
+    customerMarkdownPaths: {
+      combined: "/tmp/customer-markdown/testfaelle.md",
+      perCase: [],
+    },
+  });
+
+  const exitCode = await runTestIntelligenceCommand(options, sink, {
+    env: GATE_ON,
+    runner,
+    buildLlmClient: () =>
+      ({}) as unknown as ReturnType<
+        Required<
+          Parameters<typeof runTestIntelligenceCommand>[2]
+        >["buildLlmClient"]
+      >,
+    loadFigmaJsonFile: async () => ({
+      fileKey: "abc",
+      name: "Foo",
+      document: { id: "0:0", type: "DOCUMENT" },
+    }),
+    loadJsonFile: async () => ({}),
+    now: () => 1700000000000,
+  });
+
+  assert.equal(exitCode, 3);
+  assert.match(stderr.join(""), /blocked by policy/u);
+});
+
+test("runTestIntelligenceCommand: deterministic_llm blocked + --allow-policy-blocked → exit 0", async () => {
+  const { sink, stdout, stderr } = collectingSink();
+  const options: TestIntelligenceRunOptions = {
+    figmaUrl: undefined,
+    figmaJsonFile: "/tmp/figma.json",
+    output: "/tmp/blocked-output",
+    modelEndpoint: "https://aoai.example/openai/v1",
+    modelDeployment: "gpt-oss-120b",
+    logicJudgeDeployment: undefined,
+    modelApiKey: "k-key",
+    figmaToken: undefined,
+    policyProfile: undefined,
+    mode: "deterministic_llm",
+    enableVisualSidecar: false,
+    noVisualSidecar: false,
+    finopsBudgetPath: undefined,
+    harnessMode: "off",
+    harnessTestDepth: "standard",
+    harnessRoleStepId: undefined,
+    harnessMaxRepairIterations: undefined,
+    customContextMarkdownPath: undefined,
+    customerProfilePath: undefined,
+    allowPolicyBlocked: true,
+  };
+
+  const runner = async (): Promise<RunFigmaToQcTestCasesResult> => ({
+    jobId: "ti-cli-blocked",
+    generatedAt: "2026-05-02T12:00:00.000Z",
+    fileKey: "abc",
+    generatedTestCases: {
+      testCases: [],
+    } as unknown as RunFigmaToQcTestCasesResult["generatedTestCases"],
+    intent: {} as unknown as RunFigmaToQcTestCasesResult["intent"],
+    validation: {} as unknown as RunFigmaToQcTestCasesResult["validation"],
+    policy: {} as unknown as RunFigmaToQcTestCasesResult["policy"],
+    coverage: {} as unknown as RunFigmaToQcTestCasesResult["coverage"],
+    blocked: true,
+    finopsBudget: {} as unknown as RunFigmaToQcTestCasesResult["finopsBudget"],
+    artifactDir: "/tmp/blocked-output/_runner-output/jobs/ti-cli-blocked",
+    artifactPaths: {
+      intent: "/tmp/intent.json",
+      compiledPrompt: "/tmp/compiled-prompt.json",
+      untrustedContentNormalizationReport: "/tmp/ucnr.json",
+      evidenceSeal: "/tmp/evidence-seal.json",
+      agentRoleRun: "/tmp/agent-role-run.json",
+      genealogy: "/tmp/genealogy.json",
+      generatedTestCases: "/tmp/generated.json",
+      validationReport: "/tmp/validation.json",
+      policyReport: "/tmp/policy-report.json",
+      coverageReport: "/tmp/coverage.json",
+      finopsReport: "/tmp/finops.json",
+    },
+    customerMarkdownPaths: {
+      combined: "/tmp/customer-markdown/testfaelle.md",
+      perCase: [],
+    },
+  });
+
+  const exitCode = await runTestIntelligenceCommand(options, sink, {
+    env: GATE_ON,
+    runner,
+    buildLlmClient: () =>
+      ({}) as unknown as ReturnType<
+        Required<
+          Parameters<typeof runTestIntelligenceCommand>[2]
+      >["buildLlmClient"]
+      >,
+    loadFigmaJsonFile: async () => ({
+      fileKey: "abc",
+      name: "Foo",
+      document: { id: "0:0", type: "DOCUMENT" },
+    }),
+    loadJsonFile: async () => ({}),
+    now: () => 1700000000000,
+  });
+
+  assert.equal(exitCode, 0);
+  assert.match(stderr.join(""), /blocked by policy/u);
+  const out = stdout.join("");
+  assert.match(out, /policy status\s*:\s*blocked/u);
+});
+
+// ---------------------------------------------------------------------------
+// runTestIntelligenceCommand — default output path
+// ---------------------------------------------------------------------------
+
+test("runTestIntelligenceCommand: computes default output from job id when --output omitted", async () => {
+  const { sink, stdout } = collectingSink();
+  const opts = { ...baseOptions(), output: undefined };
+  await runTestIntelligenceCommand(opts, sink, {
+    env: GATE_ON,
+    now: () => 1700000000000,
+  });
+  assert.match(stdout.join(""), /jobs\/ti-cli-1700000000000/u);
+});
+
+// ---------------------------------------------------------------------------
+// runTestIntelligenceCommand — multi-agent harness wiring (Issue #1791)
+// ---------------------------------------------------------------------------
+
+test("runTestIntelligenceCommand: dry_run + harness-mode != off → exit 1 cross-flag error", async () => {
+  const { sink, stderr } = collectingSink();
+  const exitCode = await runTestIntelligenceCommand(
+    { ...baseOptions(), harnessMode: "enforced" },
+    sink,
+    { env: GATE_ON, now: () => 1700000000000 },
+  );
+  assert.equal(exitCode, 1);
+  assert.match(
+    stderr.join(""),
+    /--harness-mode enforced requires --mode deterministic_llm/u,
+  );
+});
+
+test("runTestIntelligenceCommand: deterministic_llm + harness-mode shadow_eval forwards harness config to runner and surfaces summary", async () => {
+  const { sink, stdout, stderr } = collectingSink();
+  const options: TestIntelligenceRunOptions = {
+    figmaUrl: undefined,
+    figmaJsonFile: "/tmp/figma.json",
+    output: "/tmp/harness-output",
+    modelEndpoint: "https://aoai.example/openai/v1",
+    modelDeployment: "gpt-oss-120b",
+    logicJudgeDeployment: undefined,
+    modelApiKey: "k-key",
+    figmaToken: undefined,
+    policyProfile: undefined,
+    mode: "deterministic_llm",
+    enableVisualSidecar: false,
+    noVisualSidecar: false,
+    finopsBudgetPath: undefined,
+    harnessMode: "shadow_eval",
+    harnessTestDepth: "exhaustive",
+    harnessRoleStepId: "test_generation_alt",
+    harnessMaxRepairIterations: undefined,
+    customContextMarkdownPath: undefined,
+    customerProfilePath: undefined,
+  };
+
+  let capturedHarness: unknown;
+  const runner = async (
+    input: Parameters<
+      Required<Parameters<typeof runTestIntelligenceCommand>[2]>["runner"]
+    >[0],
+  ): Promise<RunFigmaToQcTestCasesResult> => {
+    capturedHarness = (input as unknown as { harness?: unknown }).harness;
+    return {
+      jobId: "ti-cli-2",
+      generatedAt: "2026-05-02T12:00:00.000Z",
+      fileKey: "abc",
+      generatedTestCases: {
+        testCases: [],
+      } as unknown as RunFigmaToQcTestCasesResult["generatedTestCases"],
+      intent: {} as unknown as RunFigmaToQcTestCasesResult["intent"],
+      validation: {} as unknown as RunFigmaToQcTestCasesResult["validation"],
+      policy: {} as unknown as RunFigmaToQcTestCasesResult["policy"],
+      coverage: {} as unknown as RunFigmaToQcTestCasesResult["coverage"],
+      blocked: false,
+      finopsBudget:
+        {} as unknown as RunFigmaToQcTestCasesResult["finopsBudget"],
+      artifactDir: "/tmp/harness-output/_runner-output",
+      artifactPaths: {
+        intent: "/tmp/intent.json",
+        compiledPrompt: "/tmp/compiled-prompt.json",
+        untrustedContentNormalizationReport: "/tmp/ucnr.json",
+        evidenceSeal: "/tmp/evidence-seal.json",
+        agentRoleRun: "/tmp/agent-role-run.json",
+        genealogy: "/tmp/genealogy.json",
+        generatedTestCases: "/tmp/generated.json",
+        validationReport: "/tmp/validation.json",
+        policyReport: "/tmp/policy.json",
+        coverageReport: "/tmp/coverage.json",
+        provenance: "/tmp/provenance.jsonld",
+        finopsReport: "/tmp/finops.json",
+        harnessStep: "/tmp/harness-step.json",
+      },
+      customerMarkdownPaths: {
+        combined: "/tmp/customer-markdown/testfaelle.md",
+        perCase: [],
+      },
+      harness: {
+        mode: "shadow_eval",
+        outcome: "accepted",
+        mappedJobStatus: "succeeded",
+        errorClass: "none",
+        attemptsConsumed: 1,
+        maxAttemptsAllowed: 3,
+        artifactPath: "/tmp/harness-step.json",
+      },
+    } as unknown as RunFigmaToQcTestCasesResult;
+  };
+
+  const exitCode = await runTestIntelligenceCommand(options, sink, {
+    env: GATE_ON,
+    runner,
+    buildLlmClient: () =>
+      ({}) as unknown as ReturnType<
+        Required<
+          Parameters<typeof runTestIntelligenceCommand>[2]
+        >["buildLlmClient"]
+      >,
+    loadFigmaJsonFile: async () => ({
+      fileKey: "abc",
+      name: "Foo",
+      document: { id: "0:0", type: "DOCUMENT" },
+    }),
+    loadJsonFile: async () => ({}),
+    now: () => 1700000000000,
+  });
+
+  assert.equal(exitCode, 0, stderr.join(""));
+  assert.deepEqual(capturedHarness, {
+    mode: "shadow_eval",
+    testDepth: "exhaustive",
+    roleStepId: "test_generation_alt",
+  });
+  const out = stdout.join("");
+  assert.match(out, /multi-agent harness/u);
+  assert.match(out, /mode=shadow_eval/u);
+  assert.match(out, /outcome=accepted/u);
+  assert.match(out, /attempts=1\/3/u);
+  assert.match(out, /\/tmp\/harness-step\.json/u);
+});
+
+test("runTestIntelligenceCommand: deterministic_llm + harness-mode off omits harness key from runner input", async () => {
+  const { sink } = collectingSink();
+  const options: TestIntelligenceRunOptions = {
+    ...baseOptions(),
+    figmaUrl: undefined,
+    figmaJsonFile: "/tmp/figma.json",
+    figmaToken: undefined,
+    modelEndpoint: "https://aoai.example/openai/v1",
+    modelApiKey: "k-key",
+    mode: "deterministic_llm",
+    enableVisualSidecar: false,
+    harnessMode: "off",
+  };
+
+  let capturedHarness: unknown = "untouched";
+  const runner = async (
+    input: Parameters<
+      Required<Parameters<typeof runTestIntelligenceCommand>[2]>["runner"]
+    >[0],
+  ): Promise<RunFigmaToQcTestCasesResult> => {
+    capturedHarness = (input as unknown as { harness?: unknown }).harness;
+    return {
+      jobId: "ti-cli-3",
+      generatedAt: "2026-05-02T12:00:00.000Z",
+      fileKey: "abc",
+      generatedTestCases: {
+        testCases: [],
+      } as unknown as RunFigmaToQcTestCasesResult["generatedTestCases"],
+      intent: {} as unknown as RunFigmaToQcTestCasesResult["intent"],
+      validation: {} as unknown as RunFigmaToQcTestCasesResult["validation"],
+      policy: {} as unknown as RunFigmaToQcTestCasesResult["policy"],
+      coverage: {} as unknown as RunFigmaToQcTestCasesResult["coverage"],
+      blocked: false,
+      finopsBudget:
+        {} as unknown as RunFigmaToQcTestCasesResult["finopsBudget"],
+      artifactDir: "/tmp/off-output/_runner-output",
+      artifactPaths: {
+        intent: "/tmp/intent.json",
+        compiledPrompt: "/tmp/compiled-prompt.json",
+        untrustedContentNormalizationReport: "/tmp/ucnr.json",
+        evidenceSeal: "/tmp/evidence-seal.json",
+        agentRoleRun: "/tmp/agent-role-run.json",
+        genealogy: "/tmp/genealogy.json",
+        generatedTestCases: "/tmp/generated.json",
+        validationReport: "/tmp/validation.json",
+        policyReport: "/tmp/policy.json",
+        coverageReport: "/tmp/coverage.json",
+        finopsReport: "/tmp/finops.json",
+      },
+      customerMarkdownPaths: {
+        combined: "/tmp/customer-markdown/testfaelle.md",
+        perCase: [],
+      },
+    } as unknown as RunFigmaToQcTestCasesResult;
+  };
+
+  const exitCode = await runTestIntelligenceCommand(options, sink, {
+    env: GATE_ON,
+    runner,
+    buildLlmClient: () =>
+      ({}) as unknown as ReturnType<
+        Required<
+          Parameters<typeof runTestIntelligenceCommand>[2]
+        >["buildLlmClient"]
+      >,
+    loadFigmaJsonFile: async () => ({
+      fileKey: "abc",
+      name: "Foo",
+      document: { id: "0:0", type: "DOCUMENT" },
+    }),
+    loadJsonFile: async () => ({}),
+    now: () => 1700000000000,
+  });
+
+  assert.equal(exitCode, 0);
+  assert.equal(capturedHarness, undefined);
+});
+
+test("runTestIntelligenceCommand: enable-visual-sidecar builds and forwards runner bundle", async () => {
+  const { sink, stderr } = collectingSink();
+  const options: TestIntelligenceRunOptions = {
+    ...baseOptions(),
+    figmaUrl: undefined,
+    figmaJsonFile: "/tmp/figma.json",
+    figmaToken: undefined,
+    modelEndpoint: "https://aoai.example/openai/v1",
+    modelApiKey: "k-key",
+    mode: "deterministic_llm",
+    enableVisualSidecar: true,
+    harnessMode: "off",
+  };
+
+  const bundle = {
+    testGeneration: { kind: "test-generation-client" },
+    visualPrimary: { kind: "visual-primary-client" },
+    visualFallback: { kind: "visual-fallback-client" },
+  };
+
+  let buildBundleCalls = 0;
+  let capturedBundle: unknown;
+  const runner = async (
+    input: Parameters<
+      Required<Parameters<typeof runTestIntelligenceCommand>[2]>["runner"]
+    >[0],
+  ): Promise<RunFigmaToQcTestCasesResult> => {
+    capturedBundle = (input as unknown as { llm: { bundle?: unknown } }).llm
+      .bundle;
+    return {
+      jobId: "ti-cli-visual",
+      generatedAt: "2026-05-02T12:00:00.000Z",
+      fileKey: "abc",
+      generatedTestCases: {
+        testCases: [],
+      } as unknown as RunFigmaToQcTestCasesResult["generatedTestCases"],
+      intent: {} as unknown as RunFigmaToQcTestCasesResult["intent"],
+      validation: {} as unknown as RunFigmaToQcTestCasesResult["validation"],
+      policy: {} as unknown as RunFigmaToQcTestCasesResult["policy"],
+      coverage: {} as unknown as RunFigmaToQcTestCasesResult["coverage"],
+      blocked: false,
+      finopsBudget:
+        {} as unknown as RunFigmaToQcTestCasesResult["finopsBudget"],
+      artifactDir: "/tmp/visual-output/_runner-output",
+      artifactPaths: {
+        intent: "/tmp/intent.json",
+        compiledPrompt: "/tmp/compiled-prompt.json",
+        untrustedContentNormalizationReport: "/tmp/ucnr.json",
+        evidenceSeal: "/tmp/evidence-seal.json",
+        agentRoleRun: "/tmp/agent-role-run.json",
+        genealogy: "/tmp/genealogy.json",
+        generatedTestCases: "/tmp/generated.json",
+        validationReport: "/tmp/validation.json",
+        policyReport: "/tmp/policy.json",
+        coverageReport: "/tmp/coverage.json",
+        finopsReport: "/tmp/finops.json",
+      },
+      customerMarkdownPaths: {
+        combined: "/tmp/customer-markdown/testfaelle.md",
+        perCase: [],
+      },
+    } as unknown as RunFigmaToQcTestCasesResult;
+  };
+
+  const exitCode = await runTestIntelligenceCommand(options, sink, {
+    env: {
+      ...GATE_ON,
+      WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT:
+        "https://aoai.example/openai/vision",
+      WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT: "llama-4-maverick-vision",
+      WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT:
+        "phi-4-multimodal-instruct",
+    },
+    runner,
+    buildLlmClient: () =>
+      ({}) as unknown as ReturnType<
+        Required<
+          Parameters<typeof runTestIntelligenceCommand>[2]
+        >["buildLlmClient"]
+      >,
+    buildLlmBundle: () => {
+      buildBundleCalls += 1;
+      return bundle as unknown as ReturnType<
+        Required<
+          Parameters<typeof runTestIntelligenceCommand>[2]
+        >["buildLlmBundle"]
+      >;
+    },
+    loadFigmaJsonFile: async () => ({
+      fileKey: "abc",
+      name: "Foo",
+      document: { id: "0:0", type: "DOCUMENT" },
+    }),
+    loadJsonFile: async () => ({}),
+    now: () => 1700000000000,
+  });
+
+  assert.equal(exitCode, 0, stderr.join(""));
+  assert.equal(buildBundleCalls, 1);
+  assert.strictEqual(capturedBundle, bundle);
+});
+
+test("buildLiveVisualSidecarBundle: CLI deployment overrides beat env defaults (Issue #1996)", () => {
+  const bundle = buildLiveVisualSidecarBundle(
+    {
+      ...baseOptions(),
+      modelEndpoint: "https://aoai.example/openai/v1",
+      modelApiKey: "k-key",
+      mode: "deterministic_llm",
+      enableVisualSidecar: true,
+      visualPrimaryDeployment: "llama-4-maverick-vision",
+      visualFallbackDeployment: "phi-4-multimodal-instruct",
+      a11yJudgeDeployment: "phi-4-multimodal-instruct",
+    },
+    {
+      WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT:
+        "https://aoai.example/openai/vision",
+      WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT: "stale-primary",
+      WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT: "stale-fallback",
+      WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT: "stale-a11y",
+    },
+  );
+
+  assert.equal(bundle.visualPrimary.deployment, "llama-4-maverick-vision");
+  assert.equal(
+    bundle.visualFallback.deployment,
+    "phi-4-multimodal-instruct",
+  );
+  assert.equal(bundle.a11yJudge?.deployment, "phi-4-multimodal-instruct");
+});
+
+test("buildLiveVisualSidecarBundle: configured logic judge is included in the live bundle", () => {
+  const bundle = buildLiveVisualSidecarBundle(
+    {
+      ...baseOptions(),
+      modelEndpoint: "https://aoai.example/openai/v1",
+      modelApiKey: "k-key",
+      mode: "deterministic_llm",
+      enableVisualSidecar: true,
+      logicJudgeDeployment: "gpt-oss-120b",
+      visualPrimaryDeployment: "llama-4-maverick-vision",
+      visualFallbackDeployment: "phi-4-multimodal-instruct",
+    },
+    {
+      WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT:
+        "https://aoai.example/openai/vision",
+    },
+  );
+
+  assert.equal(bundle.logicJudge?.deployment, "gpt-oss-120b");
+});
+
+test("runTestIntelligenceCommand: strict preflight fails before runner when logic judge would reuse generator (Issue #1993)", async () => {
+  const { sink, stderr, stdout } = collectingSink();
+  let runnerCalled = false;
+  const exitCode = await runTestIntelligenceCommand(
+    {
+      ...baseOptions(),
+      figmaUrl: undefined,
+      figmaJsonFile: "/tmp/figma.json",
+      mode: "deterministic_llm",
+      modelEndpoint: "https://aoai.example/openai/v1",
+      modelApiKey: "k-key",
+      modelDeployment: "mistral-large-3",
+      requireMultiAgentTopology: true,
+    },
+    sink,
+    {
+      env: GATE_ON,
+      runner: async () => {
+        runnerCalled = true;
+        throw new Error("runner should not be reached");
+      },
+      loadFigmaJsonFile: async () => ({
+        fileKey: "abc",
+        name: "Foo",
+        document: { id: "0:0", type: "DOCUMENT" },
+      }),
+      now: () => 1700000000000,
+    },
+  );
+
+  assert.equal(exitCode, 1);
+  assert.equal(runnerCalled, false);
+  assert.match(
+    stderr.join(""),
+    /logic-judge deployment must be configured and differ from the generator/u,
+  );
+  assert.doesNotMatch(stdout.join(""), /topology preflight passed/u);
+});
+
+test("runTestIntelligenceCommand: strict preflight rejects mistral-document-ai-2512 for visual primary (Issue #1993)", async () => {
+  const { sink, stderr } = collectingSink();
+  let runnerCalled = false;
+  const exitCode = await runTestIntelligenceCommand(
+    {
+      ...baseOptions(),
+      figmaUrl: undefined,
+      figmaJsonFile: "/tmp/figma.json",
+      mode: "deterministic_llm",
+      modelEndpoint: "https://aoai.example/openai/v1",
+      modelApiKey: "k-key",
+      enableVisualSidecar: true,
+      requireMultiAgentTopology: true,
+      logicJudgeDeployment: "gpt-oss-120b",
+      visualPrimaryDeployment: "mistral-document-ai-2512",
+      visualFallbackDeployment: "phi-4-multimodal-instruct",
+      topologyInputSources: {
+        modelDeployment: "default",
+        logicJudgeDeployment: "default",
+        coveragePlannerDeployment: "default",
+        riskRankerDeployment: "default",
+        visualPrimaryDeployment: "env",
+        visualFallbackDeployment: "env",
+        a11yJudgeDeployment: "default",
+      },
+    },
+    sink,
+    {
+      env: {
+        ...GATE_ON,
+        WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT:
+          "https://aoai.example/openai/vision",
+        WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT:
+          "mistral-document-ai-2512",
+        WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT:
+          "phi-4-multimodal-instruct",
+      },
+      runner: async () => {
+        runnerCalled = true;
+        throw new Error("runner should not be reached");
+      },
+      loadFigmaJsonFile: async () => ({
+        fileKey: "abc",
+        name: "Foo",
+        document: { id: "0:0", type: "DOCUMENT" },
+      }),
+      now: () => 1700000000000,
+    },
+  );
+
+  assert.equal(exitCode, 1);
+  assert.equal(runnerCalled, false);
+  assert.match(
+    stderr.join(""),
+    /visual-primary deployment "mistral-document-ai-2512" is incompatible/u,
+  );
+});
+
+test("runTestIntelligenceCommand: strict preflight requires the full sidecar topology", async () => {
+  const { sink, stderr } = collectingSink();
+  const exitCode = await runTestIntelligenceCommand(
+    {
+      ...baseOptions(),
+      figmaUrl: undefined,
+      figmaJsonFile: "/tmp/figma.json",
+      mode: "deterministic_llm",
+      modelEndpoint: "https://aoai.example/openai/v1",
+      modelApiKey: "k-key",
+      modelDeployment: "mistral-large-3",
+      logicJudgeDeployment: "gpt-oss-120b",
+      requireMultiAgentTopology: true,
+      enableVisualSidecar: false,
+    },
+    sink,
+    {
+      env: GATE_ON,
+      loadFigmaJsonFile: async () => ({
+        fileKey: "abc",
+        name: "Foo",
+        document: { id: "0:0", type: "DOCUMENT" },
+      }),
+      now: () => 1700000000000,
+    },
+  );
+
+  assert.equal(exitCode, 1);
+  assert.match(
+    stderr.join(""),
+    /visual sidecar must be enabled when strict multi-agent topology is required/u,
+  );
+  assert.match(
+    stderr.join(""),
+    /coverage-planner deployment must be configured when strict multi-agent topology is required/u,
+  );
+  assert.match(
+    stderr.join(""),
+    /risk-ranker deployment must be configured when strict multi-agent topology is required/u,
+  );
+});
+
+test("runTestIntelligenceCommand: strict preflight rejects deprecated deployment env aliases", async () => {
+  const { sink, stderr } = collectingSink();
+  const exitCode = await runTestIntelligenceCommand(
+    {
+      ...baseOptions(),
+      figmaUrl: undefined,
+      figmaJsonFile: "/tmp/figma.json",
+      mode: "deterministic_llm",
+      modelEndpoint: "https://aoai.example/openai/v1",
+      modelApiKey: "k-key",
+      modelDeployment: "mistral-large-3",
+      logicJudgeDeployment: "gpt-oss-120b",
+      coveragePlannerDeployment: "phi-4-mini-instruct",
+      riskRankerDeployment: "phi-4",
+      enableVisualSidecar: true,
+      visualPrimaryDeployment: "llama-4-maverick-vision",
+      visualFallbackDeployment: "phi-4-multimodal-instruct",
+      a11yJudgeDeployment: "phi-4-multimodal-instruct",
+      requireMultiAgentTopology: true,
+    },
+    sink,
+    {
+      env: {
+        ...GATE_ON,
+        WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT:
+          "https://aoai.example/openai/vision",
+        WORKSPACE_AZURE_AI_FOUNDRY_VISUAL_PRIMARY_DEPLOYMENT: "legacy-primary",
+      },
+      loadFigmaJsonFile: async () => ({
+        fileKey: "abc",
+        name: "Foo",
+        document: { id: "0:0", type: "DOCUMENT" },
+      }),
+      now: () => 1700000000000,
+    },
+  );
+
+  assert.equal(exitCode, 1);
+  assert.match(
+    stderr.join(""),
+    /uses deprecated env alias WORKSPACE_AZURE_AI_FOUNDRY_VISUAL_PRIMARY_DEPLOYMENT/u,
+  );
+});
+
+test("runTestIntelligenceCommand: enable-visual-sidecar fails closed when visual envs are missing", async () => {
+  const { sink, stderr } = collectingSink();
+  const exitCode = await runTestIntelligenceCommand(
+    {
+      ...baseOptions(),
+      figmaUrl: undefined,
+      figmaJsonFile: "/tmp/figma.json",
+      figmaToken: undefined,
+      modelEndpoint: "https://aoai.example/openai/v1",
+      modelApiKey: "k-key",
+      mode: "deterministic_llm",
+      enableVisualSidecar: true,
+      harnessMode: "off",
+    },
+    sink,
+    {
+      env: GATE_ON,
+      buildLlmClient: () =>
+        ({}) as unknown as ReturnType<
+          Required<
+            Parameters<typeof runTestIntelligenceCommand>[2]
+          >["buildLlmClient"]
+        >,
+      loadFigmaJsonFile: async () => ({
+        fileKey: "abc",
+        name: "Foo",
+        document: { id: "0:0", type: "DOCUMENT" },
+      }),
+      now: () => 1700000000000,
+    },
+  );
+
+  assert.equal(exitCode, 1);
+  assert.match(
+    stderr.join(""),
+    /requires WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT, WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT, WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT/u,
+  );
+});
+
+test("runTestIntelligenceCommand: legacy behavior stays unchanged when strict topology mode is absent (Issue #1993)", async () => {
+  const { sink, stdout, stderr } = collectingSink();
+  let runnerInput: unknown;
+  const exitCode = await runTestIntelligenceCommand(
+    {
+      ...baseOptions(),
+      figmaUrl: undefined,
+      figmaJsonFile: "/tmp/figma.json",
+      figmaToken: undefined,
+      modelEndpoint: "https://aoai.example/openai/v1",
+      modelDeployment: "mistral-large-3",
+      modelApiKey: "k-key",
+      mode: "deterministic_llm",
+      requireMultiAgentTopology: false,
+      logicJudgeDeployment: undefined,
+      enableVisualSidecar: false,
+    } as Issue1993TopologyRunOptions,
+    sink,
+    {
+      env: GATE_ON,
+      runner: async (input) => {
+        runnerInput = input;
+        return buildIssue1993RunResult("/tmp/legacy-output/_runner-output");
+      },
+      buildLlmClient: () =>
+        ({}) as unknown as ReturnType<
+          Required<Parameters<typeof runTestIntelligenceCommand>[2]>["buildLlmClient"]
+        >,
+      loadFigmaJsonFile: async () => ({
+        fileKey: "abc",
+        name: "Foo",
+        document: { id: "0:0", type: "DOCUMENT" },
+      }),
+      loadJsonFile: async () => ({}),
+      copyArtifactsToOutput: async () => 0,
+      now: () => 1700000000000,
+    },
+  );
+
+  assert.equal(exitCode, 0, stderr.join(""));
+  assert.ok(runnerInput);
+  assert.equal(
+    (runnerInput as { topology?: unknown; topologyReport?: unknown }).topology,
+    undefined,
+  );
+  assert.equal(
+    (runnerInput as { topology?: unknown; topologyReport?: unknown })
+      .topologyReport,
+    undefined,
+  );
+  assert.match(stdout.join(""), /completed/u);
+  assert.doesNotMatch(stdout.join(""), /topology report/u);
+});
+
+test("runTestIntelligenceCommand: dry_run output mentions harness mode line", async () => {
+  const { sink, stdout } = collectingSink();
+  await runTestIntelligenceCommand(baseOptions(), sink, {
+    env: GATE_ON,
+    now: () => 1700000000000,
+  });
+  assert.match(stdout.join(""), /harness mode/u);
+});
+
+test("runTestIntelligenceCommand: strict preflight writes sanitized topology report and forwards risk ranker (Issue #1993)", async () => {
+  const tmpDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-ti-topology-"),
+  );
+  const { sink, stderr, stdout } = collectingSink();
+  let capturedRiskRanker: unknown;
+  let capturedRoleConfigurationSources:
+    | Record<string, string>
+    | undefined;
+  const exitCode = await runTestIntelligenceCommand(
+    {
+      ...baseOptions(),
+      output: tmpDir,
+      figmaUrl: undefined,
+      figmaJsonFile: "/tmp/figma.json",
+      mode: "deterministic_llm",
+      modelEndpoint: "https://aoai.example/openai/v1",
+      modelApiKey: "k-key",
+      modelDeployment: "mistral-large-3",
+      logicJudgeDeployment: "gpt-oss-120b",
+      coveragePlannerDeployment: "phi-4-mini-instruct",
+      riskRankerDeployment: "phi-4",
+      enableVisualSidecar: true,
+      visualPrimaryDeployment: "llama-4-maverick-vision",
+      visualFallbackDeployment: "phi-4-multimodal-instruct",
+      a11yJudgeDeployment: "phi-4-multimodal-instruct",
+      requireMultiAgentTopology: true,
+      topologyInputSources: {
+        modelDeployment: "cli",
+        logicJudgeDeployment: "cli",
+        coveragePlannerDeployment: "cli",
+        riskRankerDeployment: "cli",
+        visualPrimaryDeployment: "cli",
+        visualFallbackDeployment: "cli",
+        a11yJudgeDeployment: "cli",
+      },
+    },
+    sink,
+    {
+      env: {
+        ...GATE_ON,
+        WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT:
+          "https://aoai.example/openai/vision",
+      },
+      runner: async (input) => {
+        capturedRiskRanker = (
+          input as unknown as { llm: { riskRanker?: unknown } }
+        ).llm.riskRanker;
+        capturedRoleConfigurationSources = (
+          input as unknown as {
+            roleConfigurationSources?: Record<string, string>;
+          }
+        ).roleConfigurationSources;
+        return {
+          jobId: "ti-cli-topology",
+          generatedAt: "2026-05-07T12:00:00.000Z",
+          fileKey: "abc",
+          generatedTestCases: {
+            testCases: [],
+          } as unknown as RunFigmaToQcTestCasesResult["generatedTestCases"],
+          intent: {} as unknown as RunFigmaToQcTestCasesResult["intent"],
+          validation:
+            {} as unknown as RunFigmaToQcTestCasesResult["validation"],
+          policy: {} as unknown as RunFigmaToQcTestCasesResult["policy"],
+          coverage: {} as unknown as RunFigmaToQcTestCasesResult["coverage"],
+          blocked: false,
+          finopsBudget:
+            {} as unknown as RunFigmaToQcTestCasesResult["finopsBudget"],
+          artifactDir: "/tmp/ti-cli-topology",
+          artifactPaths: {
+            intent: "/tmp/intent.json",
+            compiledPrompt: "/tmp/compiled-prompt.json",
+            untrustedContentNormalizationReport: "/tmp/ucnr.json",
+            evidenceSeal: "/tmp/evidence-seal.json",
+            agentParticipation: "/tmp/agent-participation.json",
+            agentRoleRun: "/tmp/agent-role-run.json",
+            genealogy: "/tmp/genealogy.json",
+            generatedTestCases: "/tmp/generated.json",
+            validationReport: "/tmp/validation.json",
+            policyReport: "/tmp/policy.json",
+            coverageReport: "/tmp/coverage.json",
+            finopsReport: "/tmp/finops.json",
+          },
+          customerMarkdownPaths: {
+            combined: "/tmp/customer-markdown/testfaelle.md",
+            perCase: [],
+          },
+        } as unknown as RunFigmaToQcTestCasesResult;
+      },
+      buildLlmClient: () => ({}) as never,
+      buildLogicJudgeClient: () => ({ kind: "judge" }) as never,
+      buildRiskRankerClient: () => ({ kind: "ranker" }) as never,
+      loadFigmaJsonFile: async () => ({
+        fileKey: "abc",
+        name: "Foo",
+        document: { id: "0:0", type: "DOCUMENT" },
+      }),
+      loadJsonFile: async () => ({}),
+      copyArtifactsToOutput: async () => 0,
+      now: () => 1700000000000,
+    },
+  );
+
+  assert.equal(exitCode, 0, stderr.join(""));
+  assert.deepEqual(capturedRiskRanker, { kind: "ranker" });
+  assert.deepEqual(capturedRoleConfigurationSources, {
+    generator: "cli",
+    logic_judge: "cli",
+    judge_secondary: "cli",
+    coverage_planner: "cli",
+    risk_ranker: "cli",
+    visual_primary: "cli",
+    visual_fallback: "cli",
+    a11y_judge: "cli",
+  });
+  assert.match(stdout.join(""), /topology preflight passed/u);
+
+  const reportPath = path.join(tmpDir, "topology-preflight-report.json");
+  const report = JSON.parse(await readFile(reportPath, "utf8")) as {
+    roles: Array<{
+      role: string;
+      deployment?: string;
+      source: string;
+      status: string;
+      skipReason?: string;
+    }>;
+  };
+  assert.ok(Array.isArray(report.roles));
+  assert.ok(
+    report.roles.some(
+      (role) =>
+        role.role === "generator" &&
+        role.deployment === "mistral-large-3" &&
+        role.source === "cli" &&
+        role.status === "configured",
+    ),
+  );
+  assert.ok(
+    report.roles.some(
+      (role) =>
+        role.role === "logic_judge" &&
+        role.deployment === "gpt-oss-120b" &&
+        role.source === "cli" &&
+        role.status === "configured",
+    ),
+  );
+  assert.ok(
+    report.roles.some(
+      (role) =>
+        role.role === "coverage_planner" &&
+        role.deployment === "phi-4-mini-instruct" &&
+        role.source === "cli" &&
+        role.status === "configured",
+    ),
+  );
+  assert.ok(
+    report.roles.some(
+      (role) =>
+        role.role === "visual_primary" &&
+        role.deployment === "llama-4-maverick-vision" &&
+        role.status === "configured",
+    ),
+  );
+  assert.equal(JSON.stringify(report).includes("https://aoai.example"), false);
+  assert.equal(JSON.stringify(report).includes("k-key"), false);
+});
+
+test("runTestIntelligenceCommand: legacy topology remains allowed when strict mode is absent", async () => {
+  const { sink, stderr } = collectingSink();
+  let runnerCalled = false;
+  const exitCode = await runTestIntelligenceCommand(
+    {
+      ...baseOptions(),
+      figmaUrl: undefined,
+      figmaJsonFile: "/tmp/figma.json",
+      mode: "deterministic_llm",
+      modelEndpoint: "https://aoai.example/openai/v1",
+      modelApiKey: "k-key",
+      modelDeployment: "mistral-large-3",
+    },
+    sink,
+    {
+      env: GATE_ON,
+      runner: async () => {
+        runnerCalled = true;
+        return {
+          jobId: "ti-cli-legacy",
+          generatedAt: "2026-05-07T12:00:00.000Z",
+          fileKey: "abc",
+          generatedTestCases: {
+            testCases: [],
+          } as unknown as RunFigmaToQcTestCasesResult["generatedTestCases"],
+          intent: {} as unknown as RunFigmaToQcTestCasesResult["intent"],
+          validation:
+            {} as unknown as RunFigmaToQcTestCasesResult["validation"],
+          policy: {} as unknown as RunFigmaToQcTestCasesResult["policy"],
+          coverage: {} as unknown as RunFigmaToQcTestCasesResult["coverage"],
+          blocked: false,
+          finopsBudget:
+            {} as unknown as RunFigmaToQcTestCasesResult["finopsBudget"],
+          artifactDir: "/tmp/ti-cli-legacy",
+          artifactPaths: {
+            intent: "/tmp/intent.json",
+            compiledPrompt: "/tmp/compiled-prompt.json",
+            untrustedContentNormalizationReport: "/tmp/ucnr.json",
+            evidenceSeal: "/tmp/evidence-seal.json",
+            agentRoleRun: "/tmp/agent-role-run.json",
+            genealogy: "/tmp/genealogy.json",
+            generatedTestCases: "/tmp/generated.json",
+            validationReport: "/tmp/validation.json",
+            policyReport: "/tmp/policy.json",
+            coverageReport: "/tmp/coverage.json",
+            finopsReport: "/tmp/finops.json",
+          },
+          customerMarkdownPaths: {
+            combined: "/tmp/customer-markdown/testfaelle.md",
+            perCase: [],
+          },
+        } as unknown as RunFigmaToQcTestCasesResult;
+      },
+      buildLlmClient: () => ({}) as never,
+      loadFigmaJsonFile: async () => ({
+        fileKey: "abc",
+        name: "Foo",
+        document: { id: "0:0", type: "DOCUMENT" },
+      }),
+      loadJsonFile: async () => ({}),
+      copyArtifactsToOutput: async () => 0,
+      now: () => 1700000000000,
+    },
+  );
+
+  assert.equal(exitCode, 0, stderr.join(""));
+  assert.equal(runnerCalled, true);
+});
+
+// ---------------------------------------------------------------------------
+// runTestIntelligenceCommand — --custom-context-markdown wiring (Issue #1894)
+// ---------------------------------------------------------------------------
+
+test("parseTestIntelligenceRunArgs: --custom-context-markdown captures path", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    [
+      "--figma-url",
+      "https://figma.com/design/abc/foo",
+      "--custom-context-markdown",
+      "./demo-context.md",
+    ],
+    {},
+  );
+  assert.equal(opts.customContextMarkdownPath, "./demo-context.md");
+});
+
+test("parseTestIntelligenceRunArgs: --custom-context-markdown rejects empty value", () => {
+  assert.throws(
+    () =>
+      parseTestIntelligenceRunArgs(
+        [
+          "--figma-url",
+          "https://figma.com/design/abc/foo",
+          "--custom-context-markdown",
+          "   ",
+        ],
+        {},
+      ),
+    TestIntelligenceRunOperatorError,
+  );
+});
+
+test("parseTestIntelligenceRunArgs: --custom-context-markdown rejects duplicate flag", () => {
+  assert.throws(
+    () =>
+      parseTestIntelligenceRunArgs(
+        [
+          "--figma-url",
+          "https://figma.com/design/abc/foo",
+          "--custom-context-markdown",
+          "./a.md",
+          "--custom-context-markdown",
+          "./b.md",
+        ],
+        {},
+      ),
+    TestIntelligenceRunOperatorError,
+  );
+});
+
+test("parseTestIntelligenceRunArgs: captures customer eval, ICT ref, and timestamp output subdir", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    [
+      "--figma-url",
+      "https://figma.com/design/abc/foo",
+      "--customer-eval-markdown",
+      "./eval.md",
+      "--ict-register-ref",
+      "workspace-dev-local-test-intelligence",
+      "--output-run-subdir",
+      "timestamp",
+    ],
+    {},
+  );
+  assert.equal(opts.customerEvalMarkdownPath, "./eval.md");
+  assert.equal(opts.ictRegisterRef, "workspace-dev-local-test-intelligence");
+  assert.equal(opts.outputRunSubdir, "timestamp");
+});
+
+test("parseTestIntelligenceRunArgs: --show-confidence enables customer markdown confidence output", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    [
+      "--figma-json-file",
+      "./fixture.json",
+      "--output",
+      "./out",
+      "--show-confidence",
+    ],
+    {},
+  );
+  assert.equal(opts.showConfidence, true);
+});
+
+test("parseTestIntelligenceRunArgs: customer eval and output subdir reject invalid values", () => {
+  assert.throws(
+    () =>
+      parseTestIntelligenceRunArgs(
+        [
+          "--figma-url",
+          "https://figma.com/design/abc/foo",
+          "--customer-eval-markdown",
+          "",
+        ],
+        {},
+      ),
+    /--customer-eval-markdown requires a non-empty file path/u,
+  );
+  assert.throws(
+    () =>
+      parseTestIntelligenceRunArgs(
+        [
+          "--figma-url",
+          "https://figma.com/design/abc/foo",
+          "--output-run-subdir",
+          "none",
+        ],
+        {},
+      ),
+    /--output-run-subdir must be "timestamp" or "job-id"/u,
+  );
+});
+
+test("parseTestIntelligenceRunArgs: WORKSPACE_TEST_SPACE_ICT_REGISTER_REF hydrates default", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    ["--figma-url", "https://figma.com/design/abc/foo"],
+    { WORKSPACE_TEST_SPACE_ICT_REGISTER_REF: " env-ref " },
+  );
+  assert.equal(opts.ictRegisterRef, "env-ref");
+});
+
+test("parseTestIntelligenceRunArgs: --diversity-passes accepts 1, 2, and 3", () => {
+  for (const value of ["1", "2", "3"] as const) {
+    const opts = parseTestIntelligenceRunArgs(
+      [
+        "--figma-url",
+        "https://figma.com/design/abc/foo",
+        "--custom-context-markdown",
+        "./demo-context.md",
+        "--diversity-passes",
+        value,
+      ],
+      {},
+    );
+    assert.equal(opts.diversityPasses, Number(value));
+  }
+});
+
+test("parseTestIntelligenceRunArgs: --diversity-passes rejects unsupported values", () => {
+  assert.throws(
+    () =>
+      parseTestIntelligenceRunArgs(
+        [
+          "--figma-url",
+          "https://figma.com/design/abc/foo",
+          "--diversity-passes",
+          "4",
+        ],
+        {},
+      ),
+    /--diversity-passes must be 1, 2, or 3/u,
+  );
+});
+
+test("runTestIntelligenceCommand: dry_run with --custom-context-markdown reports loaded byte count", async () => {
+  const { sink, stdout, stderr } = collectingSink();
+  let observedPath: string | undefined;
+  const exitCode = await runTestIntelligenceCommand(
+    {
+      ...baseOptions(),
+      customContextMarkdownPath: "/operator/context.md",
+    },
+    sink,
+    {
+      env: GATE_ON,
+      now: () => 1700000000000,
+      loadCustomContextMarkdownFile: async (path) => {
+        observedPath = path;
+        return "# Demo\nNon-PII supporting evidence.";
+      },
+    },
+  );
+  assert.equal(exitCode, 0, stderr.join(""));
+  assert.match(observedPath ?? "", /context\.md$/u);
+  assert.match(stdout.join(""), /custom md ctx\s*: loaded \(\d+ bytes\)/u);
+});
+
+test("runTestIntelligenceCommand: dry_run with --customer-eval-markdown reports loaded byte count", async () => {
+  const { sink, stdout, stderr } = collectingSink();
+  let observedPath: string | undefined;
+  const exitCode = await runTestIntelligenceCommand(
+    {
+      ...baseOptions(),
+      customerEvalMarkdownPath: "/operator/eval.md",
+      ictRegisterRef: "workspace-dev-local-test-intelligence",
+      outputRunSubdir: "job-id",
+    },
+    sink,
+    {
+      env: GATE_ON,
+      now: () => 1700000000000,
+      loadCustomerEvalMarkdownFile: async (path) => {
+        observedPath = path;
+        return "# Testfall eines Anwendungstests\n- Schritte fortlaufend.";
+      },
+    },
+  );
+  assert.equal(exitCode, 0, stderr.join(""));
+  assert.match(observedPath ?? "", /eval\.md$/u);
+  const out = stdout.join("");
+  assert.match(out, /customer eval\s*: loaded \(\d+ bytes\)/u);
+  assert.match(out, /ict ref\s*: workspace-dev-local-test-intelligence/u);
+  assert.match(out, /output subdir\s*: job-id/u);
+});
+
+test("runTestIntelligenceCommand: --custom-context-markdown loader failure surfaces operator error and exits 1", async () => {
+  const { sink, stderr } = collectingSink();
+  const exitCode = await runTestIntelligenceCommand(
+    {
+      ...baseOptions(),
+      customContextMarkdownPath: "/missing/context.md",
+    },
+    sink,
+    {
+      env: GATE_ON,
+      now: () => 1700000000000,
+      loadCustomContextMarkdownFile: async () => {
+        throw new TestIntelligenceRunOperatorError(
+          "--custom-context-markdown file not found: /missing/context.md",
+        );
+      },
+    },
+  );
+  assert.equal(exitCode, 1);
+  assert.match(stderr.join(""), /file not found/u);
+});
+
+test("runTestIntelligenceCommand: --custom-context-markdown unexpected loader failure exits 1 with sanitised message", async () => {
+  const { sink, stderr } = collectingSink();
+  const exitCode = await runTestIntelligenceCommand(
+    {
+      ...baseOptions(),
+      customContextMarkdownPath: "/locked/context.md",
+    },
+    sink,
+    {
+      env: GATE_ON,
+      now: () => 1700000000000,
+      loadCustomContextMarkdownFile: async () => {
+        throw new Error("EACCES: permission denied");
+      },
+    },
+  );
+  assert.equal(exitCode, 1);
+  assert.match(
+    stderr.join(""),
+    /failed to read --custom-context-markdown file/u,
+  );
+});
+
+test("runTestIntelligenceCommand: deterministic_llm forwards customContextMarkdown to runner input", async () => {
+  const { sink, stderr } = collectingSink();
+  const options: TestIntelligenceRunOptions = {
+    figmaUrl: undefined,
+    figmaJsonFile: "/tmp/figma.json",
+    output: "/tmp/cli-md-output",
+    modelEndpoint: "https://aoai.example/openai/v1",
+    modelDeployment: "gpt-oss-120b",
+    logicJudgeDeployment: undefined,
+    modelApiKey: "k-key",
+    figmaToken: undefined,
+    policyProfile: undefined,
+    mode: "deterministic_llm",
+    noVisualSidecar: false,
+    finopsBudgetPath: undefined,
+    harnessMode: "off",
+    harnessTestDepth: "standard",
+    harnessRoleStepId: undefined,
+    harnessMaxRepairIterations: undefined,
+    customContextMarkdownPath: "/operator/forwarded.md",
+    customerProfilePath: undefined,
+  };
+  let capturedMarkdown: string | undefined;
+  const runner = async (
+    input: Parameters<
+      Required<Parameters<typeof runTestIntelligenceCommand>[2]>["runner"]
+    >[0],
+  ): Promise<RunFigmaToQcTestCasesResult> => {
+    capturedMarkdown = (input as unknown as { customContextMarkdown?: string })
+      .customContextMarkdown;
+    return {
+      jobId: "ti-cli-md",
+      generatedAt: "2026-05-05T12:00:00.000Z",
+      fileKey: "abc",
+      generatedTestCases: {
+        testCases: [],
+      } as unknown as RunFigmaToQcTestCasesResult["generatedTestCases"],
+      intent: {} as unknown as RunFigmaToQcTestCasesResult["intent"],
+      validation: {} as unknown as RunFigmaToQcTestCasesResult["validation"],
+      policy: {} as unknown as RunFigmaToQcTestCasesResult["policy"],
+      coverage: {} as unknown as RunFigmaToQcTestCasesResult["coverage"],
+      blocked: false,
+      finopsBudget:
+        {} as unknown as RunFigmaToQcTestCasesResult["finopsBudget"],
+      artifactDir:
+        "/tmp/cli-md-output/_runner-output/jobs/ti-cli-md/test-intelligence",
+      artifactPaths: {
+        intent: "/tmp/intent.json",
+        compiledPrompt: "/tmp/compiled-prompt.json",
+        untrustedContentNormalizationReport: "/tmp/ucnr.json",
+        evidenceSeal: "/tmp/evidence-seal.json",
+        agentRoleRun: "/tmp/agent-role-run.json",
+        genealogy: "/tmp/genealogy.json",
+        generatedTestCases: "/tmp/generated.json",
+        validationReport: "/tmp/validation.json",
+        policyReport: "/tmp/policy.json",
+        coverageReport: "/tmp/coverage.json",
+        finopsReport: "/tmp/finops.json",
+      },
+      customerMarkdownPaths: {
+        combined: "/tmp/customer-markdown/testfaelle.md",
+        perCase: [],
+      },
+    };
+  };
+  const exitCode = await runTestIntelligenceCommand(options, sink, {
+    env: GATE_ON,
+    runner,
+    buildLlmClient: () =>
+      ({}) as unknown as ReturnType<
+        Required<
+          Parameters<typeof runTestIntelligenceCommand>[2]
+        >["buildLlmClient"]
+      >,
+    loadFigmaJsonFile: async () => ({
+      fileKey: "abc",
+      name: "Foo",
+      document: { id: "0:0", type: "DOCUMENT" },
+    }),
+    loadJsonFile: async () => ({}),
+    loadCustomContextMarkdownFile: async () =>
+      "# Risk Profile\n- Limit: 10000 EUR.",
+    now: () => 1700000000000,
+  });
+  assert.equal(exitCode, 0, stderr.join(""));
+  assert.equal(capturedMarkdown, "# Risk Profile\n- Limit: 10000 EUR.");
+});
+
+test("runTestIntelligenceCommand: forwards customerEvalMarkdown and writes explicit output into timestamp run subdir", async () => {
+  const { sink, stderr } = collectingSink();
+  const options: TestIntelligenceRunOptions = {
+    ...baseOptions(),
+    figmaUrl: undefined,
+    figmaJsonFile: "/tmp/figma.json",
+    output: "/tmp/cli-eval-output",
+    modelEndpoint: "https://aoai.example/openai/v1",
+    modelApiKey: "k-key",
+    mode: "deterministic_llm",
+    customerEvalMarkdownPath: "/operator/eval.md",
+  };
+  let capturedEval: string | undefined;
+  let capturedOutputRoot: string | undefined;
+  let capturedArtifactDir: string | undefined;
+  const runner = async (
+    input: Parameters<
+      Required<Parameters<typeof runTestIntelligenceCommand>[2]>["runner"]
+    >[0],
+  ): Promise<RunFigmaToQcTestCasesResult> => {
+    capturedEval = (input as unknown as { customerEvalMarkdown?: string })
+      .customerEvalMarkdown;
+    capturedOutputRoot = input.outputRoot;
+    capturedArtifactDir = input.artifactDir;
+    return emptyRunnerResult({
+      jobId: input.jobId,
+      outputRoot: input.outputRoot,
+      ...(input.artifactDir !== undefined
+        ? { artifactDir: input.artifactDir }
+        : {}),
+    });
+  };
+  const exitCode = await runTestIntelligenceCommand(options, sink, {
+    env: GATE_ON,
+    runner,
+    buildLlmClient: () =>
+      ({}) as unknown as ReturnType<
+        Required<
+          Parameters<typeof runTestIntelligenceCommand>[2]
+        >["buildLlmClient"]
+      >,
+    loadFigmaJsonFile: async () => ({
+      fileKey: "abc",
+      name: "Foo",
+      document: { id: "0:0", type: "DOCUMENT" },
+    }),
+    loadJsonFile: async () => ({}),
+    loadCustomerEvalMarkdownFile: async () => "# Kunden-Eval\n- Format.",
+    now: () => 1700000000000,
+  });
+  assert.equal(exitCode, 0, stderr.join(""));
+  assert.equal(capturedEval, "# Kunden-Eval\n- Format.");
+  const expectedRunDir = "/tmp/cli-eval-output/2023-11-14T22-13-20-000Z";
+  assert.equal(capturedOutputRoot, expectedRunDir);
+  assert.equal(capturedArtifactDir, expectedRunDir);
+});
+
+test("runTestIntelligenceCommand: deterministic_llm forwards diversityPasses to runner input", async () => {
+  const { sink, stderr } = collectingSink();
+  const options: TestIntelligenceRunOptions = {
+    ...baseOptions(),
+    figmaUrl: undefined,
+    figmaJsonFile: "/tmp/figma.json",
+    output: "/tmp/cli-diversity-output",
+    modelEndpoint: "https://aoai.example/openai/v1",
+    modelApiKey: "k-key",
+    mode: "deterministic_llm",
+    diversityPasses: 2,
+  };
+  let capturedDiversityPasses: number | undefined;
+  const runner = async (
+    input: Parameters<
+      Required<Parameters<typeof runTestIntelligenceCommand>[2]>["runner"]
+    >[0],
+  ): Promise<RunFigmaToQcTestCasesResult> => {
+    capturedDiversityPasses = (
+      input as unknown as {
+        generation?: { diversityPasses?: number };
+      }
+    ).generation?.diversityPasses;
+    return {
+      jobId: "ti-cli-diversity",
+      generatedAt: "2026-05-06T12:00:00.000Z",
+      fileKey: "abc",
+      generatedTestCases: {
+        testCases: [],
+      } as unknown as RunFigmaToQcTestCasesResult["generatedTestCases"],
+      intent: {} as unknown as RunFigmaToQcTestCasesResult["intent"],
+      validation: {} as unknown as RunFigmaToQcTestCasesResult["validation"],
+      policy: {} as unknown as RunFigmaToQcTestCasesResult["policy"],
+      coverage: {} as unknown as RunFigmaToQcTestCasesResult["coverage"],
+      blocked: false,
+      finopsBudget:
+        {} as unknown as RunFigmaToQcTestCasesResult["finopsBudget"],
+      artifactDir:
+        "/tmp/cli-diversity-output/_runner-output/jobs/ti-cli-diversity/test-intelligence",
+      artifactPaths: {
+        intent: "/tmp/intent.json",
+        compiledPrompt: "/tmp/compiled-prompt.json",
+        untrustedContentNormalizationReport: "/tmp/ucnr.json",
+        evidenceSeal: "/tmp/evidence-seal.json",
+        agentRoleRun: "/tmp/agent-role-run.json",
+        genealogy: "/tmp/genealogy.json",
+        generatedTestCases: "/tmp/generated.json",
+        validationReport: "/tmp/validation.json",
+        policyReport: "/tmp/policy.json",
+        coverageReport: "/tmp/coverage.json",
+        finopsReport: "/tmp/finops.json",
+      },
+      customerMarkdownPaths: {
+        combined: "/tmp/customer-markdown/testfaelle.md",
+        perCase: [],
+      },
+    };
+  };
+  const exitCode = await runTestIntelligenceCommand(options, sink, {
+    env: GATE_ON,
+    runner,
+    buildLlmClient: () =>
+      ({}) as unknown as ReturnType<
+        Required<
+          Parameters<typeof runTestIntelligenceCommand>[2]
+        >["buildLlmClient"]
+      >,
+    loadFigmaJsonFile: async () => ({
+      fileKey: "abc",
+      name: "Foo",
+      document: { id: "0:0", type: "DOCUMENT" },
+    }),
+    loadJsonFile: async () => ({}),
+    now: () => 1700000000000,
+  });
+  assert.equal(exitCode, 0, stderr.join(""));
+  assert.equal(capturedDiversityPasses, 2);
+});
+
+// ---------------------------------------------------------------------------
+// parseTestIntelligenceRunArgs — --customer-profile flag (Issue #1946)
+// ---------------------------------------------------------------------------
+
+test("parseTestIntelligenceRunArgs: --customer-profile captures path", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    [
+      "--figma-url",
+      "https://figma.com/design/abc",
+      "--output",
+      "/tmp/x",
+      "--customer-profile",
+      "./profile.json",
+    ],
+    {},
+  );
+  assert.equal(opts.customerProfilePath, "./profile.json");
+});
+
+test("parseTestIntelligenceRunArgs: --customer-profile rejects empty value", () => {
+  assert.throws(
+    () =>
+      parseTestIntelligenceRunArgs(
+        [
+          "--figma-url",
+          "https://figma.com/design/abc",
+          "--customer-profile",
+          "",
+        ],
+        {},
+      ),
+    /--customer-profile requires a non-empty file path/u,
+  );
+});
+
+test("parseTestIntelligenceRunArgs: --tenant-bundle captures path (Issue #2184)", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    [
+      "--figma-url",
+      "https://figma.com/design/abc",
+      "--output",
+      "/tmp/x",
+      "--tenant-bundle",
+      "./acme.bundle.json",
+    ],
+    {},
+  );
+  assert.equal(opts.tenantBundlePath, "./acme.bundle.json");
+});
+
+test("parseTestIntelligenceRunArgs: --tenant-bundle rejects empty value", () => {
+  assert.throws(
+    () =>
+      parseTestIntelligenceRunArgs(
+        ["--figma-url", "https://figma.com/design/abc", "--tenant-bundle", ""],
+        {},
+      ),
+    /--tenant-bundle requires a non-empty file path/u,
+  );
+});
+
+test("parseTestIntelligenceRunArgs: --tenant-bundle rejects duplicate flag", () => {
+  assert.throws(
+    () =>
+      parseTestIntelligenceRunArgs(
+        [
+          "--figma-url",
+          "https://figma.com/design/abc",
+          "--tenant-bundle",
+          "a.json",
+          "--tenant-bundle",
+          "b.json",
+        ],
+        {},
+      ),
+    /--tenant-bundle may be specified at most once/u,
+  );
+});
+
+test("runTestIntelligenceCommand: dry_run with --tenant-bundle reports loaded byte count (Issue #2184)", async () => {
+  const { sink, stdout } = collectingSink();
+  const options: TestIntelligenceRunOptions = {
+    ...baseOptions(),
+    tenantBundlePath: "/operator/acme.bundle.json",
+  };
+  const bundleJson = JSON.stringify({
+    tenantId: "acme-bank",
+    bundleVersion: "1.0.0",
+  });
+  const exitCode = await runTestIntelligenceCommand(options, sink, {
+    env: GATE_ON,
+    loadTenantBundleFile: async () => bundleJson,
+    now: () => 1700000000000,
+  });
+  assert.equal(exitCode, 0);
+  const out = stdout.join("");
+  assert.match(out, /tenant bundle\s*:.*loaded/u);
+  assert.match(out, new RegExp(String(Buffer.byteLength(bundleJson, "utf8"))));
+});
+
+test("runTestIntelligenceCommand: --tenant-bundle schema error surfaces all issues and exits 1 (Issue #2184)", async () => {
+  const { sink, stderr } = collectingSink();
+  const options: TestIntelligenceRunOptions = {
+    ...baseOptions(),
+    tenantBundlePath: "/bad/bundle.json",
+  };
+  const invalidJson = JSON.stringify({ tenantId: "BAD ID", bundleVersion: "x" });
+  const exitCode = await runTestIntelligenceCommand(options, sink, {
+    env: GATE_ON,
+    loadTenantBundleFile: async () => invalidJson,
+    now: () => 1700000000000,
+  });
+  assert.equal(exitCode, 1);
+  assert.match(stderr.join(""), /--tenant-bundle file is invalid/u);
+});
+
+test("parseTestIntelligenceRunArgs: --customer-profile rejects duplicate flag", () => {
+  assert.throws(
+    () =>
+      parseTestIntelligenceRunArgs(
+        [
+          "--figma-url",
+          "https://figma.com/design/abc",
+          "--customer-profile",
+          "a.json",
+          "--customer-profile",
+          "b.json",
+        ],
+        {},
+      ),
+    /--customer-profile may be specified at most once/u,
+  );
+});
+
+test("runTestIntelligenceCommand: dry_run with --customer-profile reports loaded byte count", async () => {
+  const { sink, stdout } = collectingSink();
+  const options: TestIntelligenceRunOptions = {
+    ...baseOptions(),
+    customerProfilePath: "/operator/profile.json",
+  };
+  const profileJson = JSON.stringify({ ictRegisterRef: "ICT-REF-99" });
+  const exitCode = await runTestIntelligenceCommand(options, sink, {
+    env: GATE_ON,
+    loadCustomerProfileFile: async () => profileJson,
+    now: () => 1700000000000,
+  });
+  assert.equal(exitCode, 0);
+  const out = stdout.join("");
+  assert.match(out, /customer prof\s*:.*loaded/u);
+  assert.match(out, new RegExp(String(Buffer.byteLength(profileJson, "utf8"))));
+});
+
+test("runTestIntelligenceCommand: --customer-profile loader failure surfaces operator error and exits 1", async () => {
+  const { sink, stderr } = collectingSink();
+  const options: TestIntelligenceRunOptions = {
+    ...baseOptions(),
+    customerProfilePath: "/missing/profile.json",
+  };
+  const exitCode = await runTestIntelligenceCommand(options, sink, {
+    env: GATE_ON,
+    loadCustomerProfileFile: async () => {
+      throw new TestIntelligenceRunOperatorError(
+        "--customer-profile file not found: /missing/profile.json",
+      );
+    },
+    now: () => 1700000000000,
+  });
+  assert.equal(exitCode, 1);
+  assert.match(
+    stderr.join(""),
+    /--customer-profile file not found: \/missing\/profile\.json/u,
+  );
+});
+
+test("runTestIntelligenceCommand: --customer-profile oversize file is rejected with exit 1", async () => {
+  const { sink, stderr } = collectingSink();
+  const options: TestIntelligenceRunOptions = {
+    ...baseOptions(),
+    customerProfilePath: "/big/profile.json",
+  };
+  const exitCode = await runTestIntelligenceCommand(options, sink, {
+    env: GATE_ON,
+    loadCustomerProfileFile: async () => {
+      throw new TestIntelligenceRunOperatorError(
+        `--customer-profile file exceeds ${256 * 1024} bytes (got ${300000}); shrink the file`,
+      );
+    },
+    now: () => 1700000000000,
+  });
+  assert.equal(exitCode, 1);
+  assert.match(stderr.join(""), /exceeds.*bytes/u);
+});
+
+test("runTestIntelligenceCommand: --customer-profile schema error surfaces all issues and exits 1", async () => {
+  const { sink, stderr } = collectingSink();
+  const options: TestIntelligenceRunOptions = {
+    ...baseOptions(),
+    customerProfilePath: "/bad/profile.json",
+  };
+  const invalidJson = JSON.stringify({ ictRegisterRef: 999 }); // number not string
+  const exitCode = await runTestIntelligenceCommand(options, sink, {
+    env: GATE_ON,
+    loadCustomerProfileFile: async () => invalidJson,
+    now: () => 1700000000000,
+  });
+  assert.equal(exitCode, 1);
+  assert.match(stderr.join(""), /--customer-profile file is invalid/u);
+  assert.match(stderr.join(""), /ictRegisterRef/u);
+});
+
+test("runTestIntelligenceCommand: deterministic_llm forwards customerProfile to runner input", async () => {
+  const { sink, stderr } = collectingSink();
+  const options: TestIntelligenceRunOptions = {
+    ...baseOptions(),
+    figmaUrl: undefined,
+    figmaJsonFile: "/tmp/figma.json",
+    output: "/tmp/cli-profile-output",
+    modelEndpoint: "https://aoai.example/openai/v1",
+    modelApiKey: "k-key",
+    mode: "deterministic_llm",
+    customerProfilePath: "/operator/profile.json",
+  };
+  const profileJson = JSON.stringify({
+    ictRegisterRef: "ICT-CLI-FWDED-01",
+    glossary: [{ term: "IBAN", definition: "Bank account number" }],
+  });
+  let capturedProfile: unknown;
+  const runner = async (
+    input: Parameters<
+      Required<Parameters<typeof runTestIntelligenceCommand>[2]>["runner"]
+    >[0],
+  ): Promise<RunFigmaToQcTestCasesResult> => {
+    capturedProfile = (input as unknown as { customerProfile?: unknown })
+      .customerProfile;
+    return {
+      jobId: "ti-cli-profile",
+      generatedAt: "2026-05-06T12:00:00.000Z",
+      fileKey: "abc",
+      generatedTestCases: {
+        testCases: [],
+      } as unknown as RunFigmaToQcTestCasesResult["generatedTestCases"],
+      intent: {} as unknown as RunFigmaToQcTestCasesResult["intent"],
+      validation: {} as unknown as RunFigmaToQcTestCasesResult["validation"],
+      policy: {} as unknown as RunFigmaToQcTestCasesResult["policy"],
+      coverage: {} as unknown as RunFigmaToQcTestCasesResult["coverage"],
+      blocked: false,
+      finopsBudget:
+        {} as unknown as RunFigmaToQcTestCasesResult["finopsBudget"],
+      artifactDir:
+        "/tmp/cli-profile-output/_runner-output/jobs/ti-cli-profile/test-intelligence",
+      artifactPaths: {
+        intent: "/tmp/intent.json",
+        compiledPrompt: "/tmp/compiled-prompt.json",
+        untrustedContentNormalizationReport: "/tmp/ucnr.json",
+        evidenceSeal: "/tmp/evidence-seal.json",
+        agentRoleRun: "/tmp/agent-role-run.json",
+        genealogy: "/tmp/genealogy.json",
+        generatedTestCases: "/tmp/generated.json",
+        validationReport: "/tmp/validation.json",
+        policyReport: "/tmp/policy.json",
+        coverageReport: "/tmp/coverage.json",
+        finopsReport: "/tmp/finops.json",
+      },
+      customerMarkdownPaths: {
+        combined: "/tmp/customer-markdown/testfaelle.md",
+        perCase: [],
+      },
+    };
+  };
+  const exitCode = await runTestIntelligenceCommand(options, sink, {
+    env: GATE_ON,
+    runner,
+    buildLlmClient: () =>
+      ({}) as unknown as ReturnType<
+        Required<
+          Parameters<typeof runTestIntelligenceCommand>[2]
+        >["buildLlmClient"]
+      >,
+    loadFigmaJsonFile: async () => ({
+      fileKey: "abc",
+      name: "Foo",
+      document: { id: "0:0", type: "DOCUMENT" },
+    }),
+    loadJsonFile: async () => ({}),
+    loadCustomerProfileFile: async () => profileJson,
+    now: () => 1700000000000,
+  });
+  assert.equal(exitCode, 0, stderr.join(""));
+  assert.ok(
+    capturedProfile !== undefined,
+    "customerProfile must be forwarded to runner",
+  );
+  const profile = capturedProfile as { ictRegisterRef?: string };
+  assert.equal(profile.ictRegisterRef, "ICT-CLI-FWDED-01");
+});
+
+// -----------------------------------------------------------------------
+// Issue #1950 — coverage-baseline drift CLI flags
+// -----------------------------------------------------------------------
+
+test("parseTestIntelligenceRunArgs: coverageBaseline defaults to mode=check, undefined archetype, tenantId=default", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    ["--figma-json-file", "/tmp/x.json"],
+    {},
+  );
+  assert.equal(opts.coverageBaseline.archetype, undefined);
+  assert.equal(opts.coverageBaseline.tenantId, "default");
+  assert.equal(opts.coverageBaseline.runtimeRoot, undefined);
+  assert.equal(opts.coverageBaseline.mode, "check");
+});
+
+test("parseTestIntelligenceRunArgs: --coverage-baseline-archetype + tenant + runtime-root capture all knobs", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    [
+      "--figma-json-file",
+      "/tmp/x.json",
+      "--coverage-baseline-archetype",
+      "customer-self-service",
+      "--coverage-baseline-tenant",
+      "tenant-acme",
+      "--coverage-baseline-runtime-root",
+      "/var/lib/workspace-dev",
+    ],
+    {},
+  );
+  assert.equal(opts.coverageBaseline.archetype, "customer-self-service");
+  assert.equal(opts.coverageBaseline.tenantId, "tenant-acme");
+  assert.equal(opts.coverageBaseline.runtimeRoot, "/var/lib/workspace-dev");
+  assert.equal(opts.coverageBaseline.mode, "check");
+});
+
+test("parseTestIntelligenceRunArgs: --coverage-baseline-update flips mode to update", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    [
+      "--figma-json-file",
+      "/tmp/x.json",
+      "--coverage-baseline-archetype",
+      "customer-self-service",
+      "--coverage-baseline-update",
+    ],
+    {},
+  );
+  assert.equal(opts.coverageBaseline.mode, "update");
+  assert.equal(opts.coverageBaseline.archetype, "customer-self-service");
+});
+
+test("parseTestIntelligenceRunArgs: --coverage-baseline-update without --coverage-baseline-archetype is rejected", () => {
+  assert.throws(
+    () =>
+      parseTestIntelligenceRunArgs(
+        [
+          "--figma-json-file",
+          "/tmp/x.json",
+          "--coverage-baseline-update",
+        ],
+        {},
+      ),
+    /requires --coverage-baseline-archetype/,
+  );
+});
+
+test("parseTestIntelligenceRunArgs: --coverage-baseline-archetype rejects path-traversal segments", () => {
+  assert.throws(
+    () =>
+      parseTestIntelligenceRunArgs(
+        [
+          "--figma-json-file",
+          "/tmp/x.json",
+          "--coverage-baseline-archetype",
+          "../escape",
+        ],
+        {},
+      ),
+    /must match/,
+  );
+});
+
+test("parseTestIntelligenceRunArgs: WORKSPACE_TEST_SPACE_TENANT_ID env hydrates the default tenant", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    ["--figma-json-file", "/tmp/x.json"],
+    { WORKSPACE_TEST_SPACE_TENANT_ID: "tenant-from-env" },
+  );
+  assert.equal(opts.coverageBaseline.tenantId, "tenant-from-env");
+});
+
+test("parseTestIntelligenceVerifyProvenanceArgs: accepts explicit flag form", () => {
+  const parsed = parseTestIntelligenceVerifyProvenanceArgs([
+    "--verify-provenance",
+    "/tmp/run-dir",
+  ]);
+  assert.equal(parsed.runDir, "/tmp/run-dir");
+});
+
+test("parseTestIntelligenceAuditDossierArgs: reads run dir, output, and env signing key", () => {
+  const parsed = parseTestIntelligenceAuditDossierArgs(
+    ["--run-dir", "/tmp/run", "--output", "/tmp/out"],
+    { WORKSPACE_TEST_SPACE_AUDIT_SIGN_KEY: "/tmp/key.txt" },
+  );
+  assert.deepEqual(parsed, {
+    runDir: "/tmp/run",
+    outputDir: "/tmp/out",
+    signKeyPath: "/tmp/key.txt",
+  });
+});
+
+test("parseTestIntelligenceAuditVerifyArgs: accepts positional bundle form", () => {
+  const parsed = parseTestIntelligenceAuditVerifyArgs(["/tmp/bundle.json"]);
+  assert.equal(parsed.bundle, "/tmp/bundle.json");
+});
+
+test("runTestIntelligenceAuditVerifyCommand: returns 0 for the fixture bundle", async () => {
+  const { sink, stdout, stderr } = collectingSink();
+  const fixtureBundle = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "..",
+    "fixtures",
+    "test-intelligence",
+    "audit-dossiers",
+    "expected-bundle",
+    "ti-cli-1778405189341-audit-dossier.json",
+  );
+  const exitCode = await runTestIntelligenceAuditVerifyCommand(
+    { bundle: fixtureBundle },
+    sink,
+  );
+  assert.equal(exitCode, 0);
+  assert.match(stdout.join(""), /audit dossier verified/i);
+  assert.equal(stderr.length, 0);
+});
+
+test("runTestIntelligenceAuditVerifyCommand: invalid manifest shape returns exit 2 instead of throwing", async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "ti-audit-cli-invalid-"));
+  const { sink, stdout, stderr } = collectingSink();
+  try {
+    const bundlePath = path.join(tempDir, "bundle.json");
+    await writeFile(bundlePath, "{}\n", "utf8");
+    const exitCode = await runTestIntelligenceAuditVerifyCommand(
+      { bundle: bundlePath },
+      sink,
+    );
+    assert.equal(exitCode, 2);
+    assert.equal(stdout.length, 0);
+    assert.match(stderr.join(""), /manifest_unparseable/i);
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("runTestIntelligenceVerifyProvenanceCommand: returns 0 for a valid provenance bundle", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-prov-cli-ok-"));
+  const { sink, stdout, stderr } = collectingSink();
+  try {
+    const seal = computeProvenanceMerkleSeal([]);
+    await writeFile(
+      path.join(tempRoot, "provenance.jsonld"),
+      `${canonicalJson({
+        "@context": ["https://www.w3.org/ns/prov.jsonld", {}],
+        "@id": "urn:test:bundle",
+        "@type": "prov:Bundle",
+        "ti:schemaVersion": "1.0.0",
+        "ti:jobId": "job-prov-cli",
+        "ti:generatedAt": "2026-05-08T12:00:00.000Z",
+        "ti:sourceKind": "figma_paste_normalized",
+        "ti:merkleSeal": seal,
+        "@graph": [],
+      })}\n`,
+      "utf8",
+    );
+    await writeFile(
+      path.join(tempRoot, "policy-report.json"),
+      `${canonicalJson({
+        schemaVersion: "1.0.0",
+        contractVersion: "1.20.0",
+        generatedAt: "2026-05-08T12:00:00.000Z",
+        jobId: "job-prov-cli",
+        policyProfileId: "eu-banking-default",
+        policyProfileVersion: "1.0.0",
+        totalTestCases: 0,
+        approvedCount: 0,
+        blockedCount: 0,
+        needsReviewCount: 0,
+        blocked: false,
+        decisions: [],
+        jobLevelViolations: [],
+        provenance: {
+          artifactFilename: "provenance.jsonld",
+          merkleAlgorithm: "sha256_merkle_v1",
+          merkleRoot: seal.root,
+          leafCount: seal.leafCount,
+        },
+      })}\n`,
+      "utf8",
+    );
+    const exitCode = await runTestIntelligenceVerifyProvenanceCommand(
+      { runDir: tempRoot },
+      sink,
+    );
+    assert.equal(exitCode, 0, stderr.join(""));
+    assert.match(stdout.join(""), /provenance verified/u);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("runTestIntelligenceVerifyProvenanceCommand: returns non-zero on merkle mismatch", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-prov-cli-bad-"));
+  const { sink, stdout, stderr } = collectingSink();
+  try {
+    const seal = computeProvenanceMerkleSeal([]);
+    await writeFile(
+      path.join(tempRoot, "provenance.jsonld"),
+      `${canonicalJson({
+        "@context": ["https://www.w3.org/ns/prov.jsonld", {}],
+        "@id": "urn:test:bundle",
+        "@type": "prov:Bundle",
+        "ti:schemaVersion": "1.0.0",
+        "ti:jobId": "job-prov-cli-bad",
+        "ti:generatedAt": "2026-05-08T12:00:00.000Z",
+        "ti:sourceKind": "figma_paste_normalized",
+        "ti:merkleSeal": { ...seal, root: "0".repeat(64) },
+        "@graph": [],
+      })}\n`,
+      "utf8",
+    );
+    await writeFile(
+      path.join(tempRoot, "policy-report.json"),
+      `${canonicalJson({
+        schemaVersion: "1.0.0",
+        contractVersion: "1.20.0",
+        generatedAt: "2026-05-08T12:00:00.000Z",
+        jobId: "job-prov-cli-bad",
+        policyProfileId: "eu-banking-default",
+        policyProfileVersion: "1.0.0",
+        totalTestCases: 0,
+        approvedCount: 0,
+        blockedCount: 0,
+        needsReviewCount: 0,
+        blocked: false,
+        decisions: [],
+        jobLevelViolations: [],
+        provenance: {
+          artifactFilename: "provenance.jsonld",
+          merkleAlgorithm: "sha256_merkle_v1",
+          merkleRoot: seal.root,
+          leafCount: seal.leafCount,
+        },
+      })}\n`,
+      "utf8",
+    );
+    const exitCode = await runTestIntelligenceVerifyProvenanceCommand(
+      { runDir: tempRoot },
+      sink,
+    );
+    assert.equal(exitCode, 2);
+    assert.equal(stdout.join(""), "");
+    assert.match(stderr.join(""), /merkle/i);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("runTestIntelligenceVerifyProvenanceCommand: rejects artifact paths that escape the run directory", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-prov-cli-escape-"));
+  const { sink, stderr } = collectingSink();
+  try {
+    const graph = [
+      {
+        "@id": "urn:test:artifact:escape",
+        "@type": "prov:Entity",
+        "ti:artifactPath": "../outside.json",
+        "ti:sha256": "0".repeat(64),
+      },
+    ];
+    const seal = computeProvenanceMerkleSeal(graph);
+    await writeFile(
+      path.join(tempRoot, "provenance.jsonld"),
+      `${canonicalJson({
+        "@context": ["https://www.w3.org/ns/prov.jsonld", {}],
+        "@id": "urn:test:bundle",
+        "@type": "prov:Bundle",
+        "ti:schemaVersion": "1.0.0",
+        "ti:jobId": "job-prov-cli-escape",
+        "ti:generatedAt": "2026-05-08T12:00:00.000Z",
+        "ti:sourceKind": "figma_paste_normalized",
+        "ti:merkleSeal": seal,
+        "@graph": graph,
+      })}\n`,
+      "utf8",
+    );
+    await writeFile(
+      path.join(tempRoot, "policy-report.json"),
+      `${canonicalJson({
+        schemaVersion: "1.0.0",
+        contractVersion: "1.20.0",
+        generatedAt: "2026-05-08T12:00:00.000Z",
+        jobId: "job-prov-cli-escape",
+        policyProfileId: "eu-banking-default",
+        policyProfileVersion: "1.0.0",
+        totalTestCases: 0,
+        approvedCount: 0,
+        blockedCount: 0,
+        needsReviewCount: 0,
+        blocked: false,
+        decisions: [],
+        jobLevelViolations: [],
+        provenance: {
+          artifactFilename: "provenance.jsonld",
+          merkleAlgorithm: "sha256_merkle_v1",
+          merkleRoot: seal.root,
+          leafCount: seal.leafCount,
+        },
+      })}\n`,
+      "utf8",
+    );
+    const exitCode = await runTestIntelligenceVerifyProvenanceCommand(
+      { runDir: tempRoot },
+      sink,
+    );
+    assert.equal(exitCode, 2);
+    assert.match(stderr.join(""), /run directory/u);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+import {
+  parseTestIntelligenceVerifySealArgs,
+  runTestIntelligenceVerifySealCommand,
+} from "./test-intelligence-run-cli.js";
+
+test("parseTestIntelligenceVerifySealArgs: positional bundle form", () => {
+  const parsed = parseTestIntelligenceVerifySealArgs(["/tmp/run-2178"]);
+  assert.equal(parsed.bundle, "/tmp/run-2178");
+});
+
+test("parseTestIntelligenceVerifySealArgs: full flag form", () => {
+  const parsed = parseTestIntelligenceVerifySealArgs([
+    "--bundle",
+    "/tmp/run-2178.tar.gz",
+    "--key",
+    "/tmp/key.bin",
+    "--expected-hmac",
+    "a".repeat(64),
+    "--expected-merkle-root",
+    "b".repeat(64),
+    "--json",
+    "--output",
+    "/tmp/report.json",
+  ]);
+  assert.equal(parsed.bundle, "/tmp/run-2178.tar.gz");
+  assert.equal(parsed.keyPath, "/tmp/key.bin");
+  assert.equal(parsed.expectedHmacHex, "a".repeat(64));
+  assert.equal(parsed.expectedMerkleRootHex, "b".repeat(64));
+  assert.equal(parsed.json, true);
+  assert.equal(parsed.outputPath, "/tmp/report.json");
+});
+
+test("parseTestIntelligenceVerifySealArgs: rejects non-hex --expected-hmac", () => {
+  assert.throws(
+    () =>
+      parseTestIntelligenceVerifySealArgs([
+        "--bundle",
+        "/tmp/run",
+        "--expected-hmac",
+        "not-hex",
+      ]),
+    TestIntelligenceRunOperatorError,
+  );
+});
+
+test("parseTestIntelligenceVerifySealArgs: rejects unknown flag", () => {
+  assert.throws(
+    () =>
+      parseTestIntelligenceVerifySealArgs([
+        "--bundle",
+        "/tmp/run",
+        "--unknown",
+      ]),
+    TestIntelligenceRunOperatorError,
+  );
+});
+
+test("runTestIntelligenceVerifySealCommand: returns 1 for missing bundle path", async () => {
+  const { sink, stderr } = collectingSink();
+  const exitCode = await runTestIntelligenceVerifySealCommand(
+    { bundle: "/tmp/this-bundle-does-not-exist-2178" },
+    sink,
+  );
+  assert.equal(exitCode, 1);
+  assert.match(stderr.join(""), /not found/u);
+});
+
+test("runTestIntelligenceVerifySealCommand: returns 2 + report on tampered bundle dir", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "verify-seal-cli-"));
+  try {
+    await writeFile(
+      path.join(tempRoot, "production-runner-evidence-seal.json"),
+      "{not-json",
+      "utf8",
+    );
+    const { sink, stderr } = collectingSink();
+    const exitCode = await runTestIntelligenceVerifySealCommand(
+      { bundle: tempRoot },
+      sink,
+    );
+    assert.equal(exitCode, 2);
+    assert.match(stderr.join(""), /seal verification failed/u);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("extractSealBundleArchive: refuses tar archives that contain symlinks", async () => {
+  const { spawnSync, execSync } = await import("node:child_process");
+  const probe = spawnSync("tar", ["--version"], { stdio: "ignore" });
+  if (probe.status !== 0) return; // skip on hosts without tar
+  const stagingRoot = await mkdtemp(
+    path.join(os.tmpdir(), "verify-seal-symlink-"),
+  );
+  try {
+    const stage = path.join(stagingRoot, "stage");
+    const { mkdir, symlink, writeFile } = await import("node:fs/promises");
+    await mkdir(stage, { recursive: true });
+    await writeFile(path.join(stage, "real.txt"), "ok\n", "utf8");
+    await symlink("/etc/passwd", path.join(stage, "evil-link"));
+    const archive = path.join(stagingRoot, "evil.tar.gz");
+    execSync(
+      `tar -czf ${JSON.stringify(archive)} -C ${JSON.stringify(stage)} .`,
+      { stdio: "ignore" },
+    );
+    const { extractSealBundleArchive } = await import(
+      "./test-intelligence-run-cli.js"
+    );
+    let thrown: unknown;
+    try {
+      const ex = await extractSealBundleArchive(archive);
+      await ex.cleanup();
+    } catch (error) {
+      thrown = error;
+    }
+    assert.ok(thrown instanceof Error, "expected an error to be thrown");
+    assert.match(
+      (thrown as Error).message,
+      /symlink|hardlink/i,
+      `unexpected error: ${(thrown as Error).message}`,
+    );
+  } finally {
+    await rm(stagingRoot, { recursive: true, force: true });
+  }
+});

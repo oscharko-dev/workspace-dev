@@ -1,0 +1,317 @@
+{
+  "schemaVersion": "1.0.0",
+  "pipelineId": "default",
+  "summary": {
+    "status": "warn",
+    "message": "Generated accessibility report flagged 16 warning(s) across 1 screen(s).",
+    "screenCount": 1,
+    "warningCount": 16,
+    "semanticOutputWarningCount": 6,
+    "formLabelWarningCount": 0,
+    "buttonSemanticsWarningCount": 0,
+    "ariaLabelFallbackWarningCount": 0,
+    "altFallbackWarningCount": 0,
+    "focusOrderWarningCount": 10,
+    "lowContrastWarningCount": 0,
+    "clickDivFallbackWarningCount": 0
+  },
+  "screens": [
+    {
+      "screenId": "screen-dashboard",
+      "screenName": "Dashboard",
+      "warningCount": 16,
+      "warnings": [
+        {
+          "screenId": "screen-dashboard",
+          "screenName": "Dashboard",
+          "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+          "severity": "warning",
+          "nodeId": "rev-label",
+          "nodeName": "Card Title",
+          "message": "Absolute layout fallback for 'Card Title' can make keyboard focus order depend on implementation details."
+        },
+        {
+          "screenId": "screen-dashboard",
+          "screenName": "Dashboard",
+          "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+          "severity": "warning",
+          "nodeId": "rev-value",
+          "nodeName": "Value",
+          "message": "Absolute layout fallback for 'Value' can make keyboard focus order depend on implementation details."
+        },
+        {
+          "screenId": "screen-dashboard",
+          "screenName": "Dashboard",
+          "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+          "severity": "warning",
+          "nodeId": "chart-title",
+          "nodeName": "Card Title",
+          "message": "Absolute layout fallback for 'Card Title' can make keyboard focus order depend on implementation details."
+        },
+        {
+          "screenId": "screen-dashboard",
+          "screenName": "Dashboard",
+          "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+          "severity": "warning",
+          "nodeId": "chart-subtitle",
+          "nodeName": "Subtitle",
+          "message": "Absolute layout fallback for 'Subtitle' can make keyboard focus order depend on implementation details."
+        },
+        {
+          "screenId": "screen-dashboard",
+          "screenName": "Dashboard",
+          "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+          "severity": "warning",
+          "nodeId": "users-label",
+          "nodeName": "Card Title",
+          "message": "Absolute layout fallback for 'Card Title' can make keyboard focus order depend on implementation details."
+        },
+        {
+          "screenId": "screen-dashboard",
+          "screenName": "Dashboard",
+          "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+          "severity": "warning",
+          "nodeId": "users-value",
+          "nodeName": "Value",
+          "message": "Absolute layout fallback for 'Value' can make keyboard focus order depend on implementation details."
+        },
+        {
+          "screenId": "screen-dashboard",
+          "screenName": "Dashboard",
+          "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+          "severity": "warning",
+          "nodeId": "orders-label",
+          "nodeName": "Card Title",
+          "message": "Absolute layout fallback for 'Card Title' can make keyboard focus order depend on implementation details."
+        },
+        {
+          "screenId": "screen-dashboard",
+          "screenName": "Dashboard",
+          "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+          "severity": "warning",
+          "nodeId": "orders-value",
+          "nodeName": "Value",
+          "message": "Absolute layout fallback for 'Value' can make keyboard focus order depend on implementation details."
+        },
+        {
+          "screenId": "screen-dashboard",
+          "screenName": "Dashboard",
+          "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+          "severity": "warning",
+          "nodeId": "activity-title",
+          "nodeName": "Card Title",
+          "message": "Absolute layout fallback for 'Card Title' can make keyboard focus order depend on implementation details."
+        },
+        {
+          "screenId": "screen-dashboard",
+          "screenName": "Dashboard",
+          "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+          "severity": "warning",
+          "nodeId": "activity-subtitle",
+          "nodeName": "Subtitle",
+          "message": "Absolute layout fallback for 'Subtitle' can make keyboard focus order depend on implementation details."
+        },
+        {
+          "screenId": "screen-dashboard",
+          "screenName": "Dashboard",
+          "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+          "severity": "warning",
+          "nodeId": "cards-grid",
+          "nodeName": "Cards Grid",
+          "message": "Default semantic synthesis kept 'Cards Grid' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "screenId": "screen-dashboard",
+          "screenName": "Dashboard",
+          "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+          "severity": "warning",
+          "nodeId": "card-revenue",
+          "nodeName": "Liquidity Card",
+          "message": "Default semantic synthesis kept 'Liquidity Card' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "screenId": "screen-dashboard",
+          "screenName": "Dashboard",
+          "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+          "severity": "warning",
+          "nodeId": "card-chart",
+          "nodeName": "Payment Flow Card",
+          "message": "Default semantic synthesis kept 'Payment Flow Card' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "screenId": "screen-dashboard",
+          "screenName": "Dashboard",
+          "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+          "severity": "warning",
+          "nodeId": "card-users",
+          "nodeName": "Accounts Card",
+          "message": "Default semantic synthesis kept 'Accounts Card' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "screenId": "screen-dashboard",
+          "screenName": "Dashboard",
+          "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+          "severity": "warning",
+          "nodeId": "card-orders",
+          "nodeName": "Approvals Card",
+          "message": "Default semantic synthesis kept 'Approvals Card' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "screenId": "screen-dashboard",
+          "screenName": "Dashboard",
+          "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+          "severity": "warning",
+          "nodeId": "card-activity",
+          "nodeName": "Risk Queue Card",
+          "message": "Default semantic synthesis kept 'Risk Queue Card' inline because no matching reusable semantic structure was found."
+        }
+      ]
+    }
+  ],
+  "warnings": [
+    {
+      "screenId": "screen-dashboard",
+      "screenName": "Dashboard",
+      "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+      "severity": "warning",
+      "nodeId": "rev-label",
+      "nodeName": "Card Title",
+      "message": "Absolute layout fallback for 'Card Title' can make keyboard focus order depend on implementation details."
+    },
+    {
+      "screenId": "screen-dashboard",
+      "screenName": "Dashboard",
+      "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+      "severity": "warning",
+      "nodeId": "rev-value",
+      "nodeName": "Value",
+      "message": "Absolute layout fallback for 'Value' can make keyboard focus order depend on implementation details."
+    },
+    {
+      "screenId": "screen-dashboard",
+      "screenName": "Dashboard",
+      "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+      "severity": "warning",
+      "nodeId": "chart-title",
+      "nodeName": "Card Title",
+      "message": "Absolute layout fallback for 'Card Title' can make keyboard focus order depend on implementation details."
+    },
+    {
+      "screenId": "screen-dashboard",
+      "screenName": "Dashboard",
+      "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+      "severity": "warning",
+      "nodeId": "chart-subtitle",
+      "nodeName": "Subtitle",
+      "message": "Absolute layout fallback for 'Subtitle' can make keyboard focus order depend on implementation details."
+    },
+    {
+      "screenId": "screen-dashboard",
+      "screenName": "Dashboard",
+      "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+      "severity": "warning",
+      "nodeId": "users-label",
+      "nodeName": "Card Title",
+      "message": "Absolute layout fallback for 'Card Title' can make keyboard focus order depend on implementation details."
+    },
+    {
+      "screenId": "screen-dashboard",
+      "screenName": "Dashboard",
+      "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+      "severity": "warning",
+      "nodeId": "users-value",
+      "nodeName": "Value",
+      "message": "Absolute layout fallback for 'Value' can make keyboard focus order depend on implementation details."
+    },
+    {
+      "screenId": "screen-dashboard",
+      "screenName": "Dashboard",
+      "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+      "severity": "warning",
+      "nodeId": "orders-label",
+      "nodeName": "Card Title",
+      "message": "Absolute layout fallback for 'Card Title' can make keyboard focus order depend on implementation details."
+    },
+    {
+      "screenId": "screen-dashboard",
+      "screenName": "Dashboard",
+      "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+      "severity": "warning",
+      "nodeId": "orders-value",
+      "nodeName": "Value",
+      "message": "Absolute layout fallback for 'Value' can make keyboard focus order depend on implementation details."
+    },
+    {
+      "screenId": "screen-dashboard",
+      "screenName": "Dashboard",
+      "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+      "severity": "warning",
+      "nodeId": "activity-title",
+      "nodeName": "Card Title",
+      "message": "Absolute layout fallback for 'Card Title' can make keyboard focus order depend on implementation details."
+    },
+    {
+      "screenId": "screen-dashboard",
+      "screenName": "Dashboard",
+      "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+      "severity": "warning",
+      "nodeId": "activity-subtitle",
+      "nodeName": "Subtitle",
+      "message": "Absolute layout fallback for 'Subtitle' can make keyboard focus order depend on implementation details."
+    },
+    {
+      "screenId": "screen-dashboard",
+      "screenName": "Dashboard",
+      "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+      "severity": "warning",
+      "nodeId": "cards-grid",
+      "nodeName": "Cards Grid",
+      "message": "Default semantic synthesis kept 'Cards Grid' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-dashboard",
+      "screenName": "Dashboard",
+      "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+      "severity": "warning",
+      "nodeId": "card-revenue",
+      "nodeName": "Liquidity Card",
+      "message": "Default semantic synthesis kept 'Liquidity Card' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-dashboard",
+      "screenName": "Dashboard",
+      "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+      "severity": "warning",
+      "nodeId": "card-chart",
+      "nodeName": "Payment Flow Card",
+      "message": "Default semantic synthesis kept 'Payment Flow Card' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-dashboard",
+      "screenName": "Dashboard",
+      "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+      "severity": "warning",
+      "nodeId": "card-users",
+      "nodeName": "Accounts Card",
+      "message": "Default semantic synthesis kept 'Accounts Card' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-dashboard",
+      "screenName": "Dashboard",
+      "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+      "severity": "warning",
+      "nodeId": "card-orders",
+      "nodeName": "Approvals Card",
+      "message": "Default semantic synthesis kept 'Approvals Card' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-dashboard",
+      "screenName": "Dashboard",
+      "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+      "severity": "warning",
+      "nodeId": "card-activity",
+      "nodeName": "Risk Queue Card",
+      "message": "Default semantic synthesis kept 'Risk Queue Card' inline because no matching reusable semantic structure was found."
+    }
+  ]
+}

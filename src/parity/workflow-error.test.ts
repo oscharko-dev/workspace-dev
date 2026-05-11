@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { WorkflowError, isWorkflowError, toWorkflowError } from "./workflow-error.js";
+import {
+  PARITY_WORKFLOW_ERROR_CODES,
+  WorkflowError,
+  hasWorkflowErrorCode,
+  isWorkflowError,
+  isParityNoScreensWorkflowError,
+  toWorkflowError,
+} from "./workflow-error.js";
 
 test("WorkflowError keeps structured metadata and cause", () => {
   const cause = new Error("root cause");
@@ -9,7 +16,7 @@ test("WorkflowError keeps structured metadata and cause", () => {
     message: "failure",
     stage: "codegen.generate",
     retryable: true,
-    cause
+    cause,
   });
 
   assert.equal(error.name, "WorkflowError");
@@ -21,9 +28,46 @@ test("WorkflowError keeps structured metadata and cause", () => {
 });
 
 test("isWorkflowError detects only WorkflowError instances", () => {
-  assert.equal(isWorkflowError(new WorkflowError({ code: "E", message: "m" })), true);
+  assert.equal(
+    isWorkflowError(new WorkflowError({ code: "E", message: "m" })),
+    true,
+  );
   assert.equal(isWorkflowError(new Error("plain")), false);
   assert.equal(isWorkflowError("nope"), false);
+});
+
+test("workflow error helpers match structured parity codes", () => {
+  const noScreensError = new WorkflowError({
+    code: PARITY_WORKFLOW_ERROR_CODES.noScreens,
+    message: "No top-level frames/components found in Figma file",
+    stage: "ir.derive",
+  });
+
+  assert.equal(
+    hasWorkflowErrorCode(
+      noScreensError,
+      PARITY_WORKFLOW_ERROR_CODES.noScreens,
+    ),
+    true,
+  );
+  assert.equal(isParityNoScreensWorkflowError(noScreensError), true);
+  assert.equal(
+    isParityNoScreensWorkflowError(
+      new WorkflowError({
+        code: PARITY_WORKFLOW_ERROR_CODES.invalidFigmaPayload,
+        message: "Invalid Figma payload",
+        stage: "ir.derive",
+      }),
+    ),
+    false,
+  );
+  assert.equal(
+    hasWorkflowErrorCode(
+      noScreensError,
+      PARITY_WORKFLOW_ERROR_CODES.invalidFigmaPayload,
+    ),
+    false,
+  );
 });
 
 test("toWorkflowError returns existing WorkflowError untouched", () => {
@@ -31,15 +75,15 @@ test("toWorkflowError returns existing WorkflowError untouched", () => {
     code: "E_EXISTING",
     message: "already typed",
     stage: "figma.source",
-    retryable: false
+    retryable: false,
   });
 
   assert.equal(
     toWorkflowError(existing, {
       code: "E_FALLBACK",
-      message: "fallback message"
+      message: "fallback message",
     }),
-    existing
+    existing,
   );
 });
 
@@ -49,7 +93,7 @@ test("toWorkflowError maps generic Error to WorkflowError preserving message", (
     code: "E_NETWORK",
     message: "fallback",
     stage: "figma.source",
-    retryable: true
+    retryable: true,
   });
 
   assert.equal(output.code, "E_NETWORK");
@@ -60,16 +104,113 @@ test("toWorkflowError maps generic Error to WorkflowError preserving message", (
 });
 
 test("toWorkflowError maps non-error value to fallback message", () => {
-  const output = toWorkflowError({ context: "invalid payload" }, {
-    code: "E_FALLBACK",
-    message: "invalid payload",
-    stage: "ir.derive",
-    retryable: false
-  });
+  const output = toWorkflowError(
+    { context: "invalid payload" },
+    {
+      code: "E_FALLBACK",
+      message: "invalid payload",
+      stage: "ir.derive",
+      retryable: false,
+    },
+  );
 
   assert.equal(output.code, "E_FALLBACK");
   assert.equal(output.message, "invalid payload");
   assert.equal(output.stage, "ir.derive");
   assert.equal(output.retryable, false);
   assert.deepEqual(output.cause, { context: "invalid payload" });
+});
+
+test("WorkflowError preserves optional diagnostics", () => {
+  const diagnostics = [
+    {
+      code: "W_IR_CLASSIFICATION_FALLBACK",
+      message: "Fallback used.",
+      suggestion: "Rename node.",
+      stage: "ir.derive" as const,
+      severity: "warning" as const,
+    },
+  ];
+  const error = new WorkflowError({
+    code: "E_TEST",
+    message: "failure",
+    diagnostics,
+  });
+
+  assert.deepEqual(error.diagnostics, diagnostics);
+});
+
+test("WorkflowError redacts high-risk secrets in error messages", () => {
+  const error = new WorkflowError({
+    code: "E_API_CALL",
+    message:
+      'API returned {"error":"unauthorized","Authorization":"Bearer secret_token_123"}',
+    stage: "figma.source",
+  });
+
+  assert.equal(error.message.includes("secret_token_123"), false);
+  assert.equal(error.message.includes("[redacted-secret]"), true);
+  assert.equal(error.message.includes('{"error"'), true);
+});
+
+test("WorkflowError.toJSON() excludes cause property", () => {
+  const cause = new Error("Inner error");
+  const error = new WorkflowError({
+    code: "E_OUTER",
+    message: "Outer error",
+    stage: "figma.source",
+    cause,
+  });
+
+  const json = error.toJSON();
+  assert.equal(json.message, "Outer error");
+  assert.equal(json.code, "E_OUTER");
+  assert.equal(json.stage, "figma.source");
+  assert.equal("cause" in json, false);
+});
+
+test("WorkflowError.toJSON() includes optional properties when present", () => {
+  const error = new WorkflowError({
+    code: "E_RETRY",
+    message: "Retryable error",
+    stage: "fetch.figma",
+    retryable: true,
+    diagnostics: [
+      {
+        code: "D_RATE_LIMIT",
+        message: "Rate limited",
+        suggestion: "Wait before retrying",
+        stage: "fetch.figma" as const,
+        severity: "warning" as const,
+      },
+    ],
+  });
+
+  const json = error.toJSON();
+  assert.equal(json.stage, "fetch.figma");
+  assert.equal(json.retryable, true);
+  assert.deepEqual(json.diagnostics, [
+    {
+      code: "D_RATE_LIMIT",
+      message: "Rate limited",
+      suggestion: "Wait before retrying",
+      stage: "fetch.figma",
+      severity: "warning",
+    },
+  ]);
+});
+
+test("WorkflowError.toJSON() omits undefined optional properties", () => {
+  const error = new WorkflowError({
+    code: "E_BASIC",
+    message: "Basic error",
+    retryable: false,
+  });
+
+  const json = error.toJSON();
+  assert.equal(json.code, "E_BASIC");
+  assert.equal(json.message, "Basic error");
+  assert.equal(json.retryable, false);
+  assert.equal("stage" in json, false);
+  assert.equal("diagnostics" in json, false);
 });

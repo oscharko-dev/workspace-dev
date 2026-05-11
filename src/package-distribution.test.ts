@@ -1,0 +1,293 @@
+import assert from "node:assert/strict";
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { spawn } from "node:child_process";
+import test from "node:test";
+import { fileURLToPath } from "node:url";
+
+const MODULE_DIR =
+  typeof __dirname === "string"
+    ? __dirname
+    : path.dirname(fileURLToPath(import.meta.url));
+const packageRoot = path.resolve(MODULE_DIR, "..");
+const expectedRepositoryUrl =
+  "git+https://github.com/oscharko-dev/workspace-dev.git";
+const expectedHomepageUrl =
+  "https://github.com/oscharko-dev/workspace-dev#readme";
+const expectedBugsUrl = "https://github.com/oscharko-dev/workspace-dev/issues";
+
+const run = async ({
+  command,
+  args,
+  cwd,
+}: {
+  command: string;
+  args: string[];
+  cwd: string;
+}): Promise<string> => {
+  return await new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd,
+      env: process.env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    let stdout = "";
+    let stderr = "";
+
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+    child.once("error", reject);
+    child.once("close", (code, signal) => {
+      if (signal) {
+        reject(
+          new Error(
+            `Command '${command} ${args.join(" ")}' exited via signal '${signal}'.`,
+          ),
+        );
+        return;
+      }
+      if (code !== 0) {
+        reject(
+          new Error(
+            `Command '${command} ${args.join(" ")}' failed with exit code ${code ?? 1}.\n${stderr}`,
+          ),
+        );
+        return;
+      }
+      resolve(stdout);
+    });
+  });
+};
+
+test("profile pack distribution includes template lockfile but excludes template node_modules", async () => {
+  const packDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-pack-"));
+  const extractDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-pack-extract-"),
+  );
+
+  try {
+    await run({
+      command: "node",
+      args: [
+        "scripts/build-profile.mjs",
+        "--profile",
+        "default-rocket",
+        "--pack-destination",
+        packDir,
+      ],
+      cwd: packageRoot,
+    });
+
+    const packedFiles = await readdir(packDir);
+    const tarball = packedFiles.find((fileName) => fileName.endsWith(".tgz"));
+    assert.notEqual(
+      tarball,
+      undefined,
+      "Expected pnpm pack to produce a tarball.",
+    );
+
+    const tarballListing = await run({
+      command: "tar",
+      args: ["-tzf", path.join(packDir, tarball ?? "")],
+      cwd: packageRoot,
+    });
+
+    assert.match(tarballListing, /package\/GOVERNANCE\.md/);
+    assert.match(
+      tarballListing,
+      /package\/docs\/api\/test-intelligence-multi-source\.md/,
+    );
+    assert.match(
+      tarballListing,
+      /package\/docs\/runbooks\/jira-source-setup\.md/,
+    );
+    assert.match(
+      tarballListing,
+      /package\/docs\/runbooks\/multi-source-air-gap\.md/,
+    );
+    assert.match(tarballListing, /package\/docs\/dpia\/jira-source\.md/);
+    assert.match(
+      tarballListing,
+      /package\/docs\/dpia\/custom-context-source\.md/,
+    );
+    assert.match(tarballListing, /package\/docs\/dora\/multi-source\.md/);
+    assert.match(
+      tarballListing,
+      /package\/docs\/eu-ai-act\/human-oversight\.md/,
+    );
+    assert.match(
+      tarballListing,
+      /package\/docs\/eu-ai-act\/transparency\.md/,
+    );
+    assert.match(
+      tarballListing,
+      /package\/docs\/migration\/wave-4-additive\.md/,
+    );
+    assert.match(
+      tarballListing,
+      /package\/docs\/architecture\/multi-source-flow\.mmd/,
+    );
+    assert.match(
+      tarballListing,
+      /package\/template\/react-mui-app\/package\.json/,
+    );
+    assert.match(
+      tarballListing,
+      /package\/template\/react-mui-app\/pnpm-lock\.yaml/,
+    );
+    assert.match(
+      tarballListing,
+      /package\/template\/react-mui-app\/src\/components\/ErrorBoundary\.tsx/,
+    );
+    assert.match(
+      tarballListing,
+      /package\/template\/react-mui-app\/src\/routes\/lazy-routes\.ts/,
+    );
+    assert.match(
+      tarballListing,
+      /package\/template\/react-mui-app\/src\/performance\/report-web-vitals\.ts/,
+    );
+    assert.match(
+      tarballListing,
+      /package\/template\/react-mui-app\/src\/theme\/theme\.ts/,
+    );
+    assert.match(
+      tarballListing,
+      /package\/template\/react-tailwind-app\/package\.json/,
+    );
+    assert.match(
+      tarballListing,
+      /package\/template\/react-tailwind-app\/pnpm-lock\.yaml/,
+    );
+    assert.match(
+      tarballListing,
+      /package\/template\/react-tailwind-app\/perf-budget\.json/,
+    );
+    assert.match(
+      tarballListing,
+      /package\/template\/react-tailwind-app\/perf-baseline\.json/,
+    );
+    assert.match(
+      tarballListing,
+      /package\/template\/react-tailwind-app\/scripts\/perf-runner\.mjs/,
+    );
+    assert.match(
+      tarballListing,
+      /package\/template\/react-tailwind-app\/scripts\/validate-ui-report\.mjs/,
+    );
+    assert.match(
+      tarballListing,
+      /package\/template\/react-tailwind-app\/scripts\/validate-ui-report-lib\.mjs/,
+    );
+    assert.match(
+      tarballListing,
+      /package\/template\/react-tailwind-app\/playwright\.config\.ts/,
+    );
+    assert.match(
+      tarballListing,
+      /package\/template\/react-tailwind-app\/e2e\/template\.spec\.ts/,
+    );
+    assert.match(
+      tarballListing,
+      /package\/template\/react-tailwind-app\/tsconfig\.e2e\.json/,
+    );
+    assert.doesNotMatch(
+      tarballListing,
+      /package\/template\/react-mui-app\/node_modules\//,
+    );
+    assert.doesNotMatch(
+      tarballListing,
+      /package\/template\/react-tailwind-app\/node_modules\//,
+    );
+    assert.doesNotMatch(
+      tarballListing,
+      /package\/template\/react-tailwind-app\/dist\//,
+    );
+    assert.doesNotMatch(
+      tarballListing,
+      /package\/template\/react-tailwind-app\/artifacts\//,
+    );
+    assert.doesNotMatch(
+      tarballListing,
+      /package\/template\/react-tailwind-app\/scripts\/validate-ui-report\.test\.mjs/,
+    );
+    assert.doesNotMatch(
+      tarballListing,
+      /package\/template\/react-tailwind-app\/ui-gate-/,
+    );
+    assert.doesNotMatch(
+      tarballListing,
+      /package\/dist\/.+\.map/,
+      "Profile tarballs must exclude build sourcemaps to keep npm artifacts within size budgets.",
+    );
+
+    await run({
+      command: "tar",
+      args: [
+        "-xzf",
+        path.join(packDir, tarball),
+        "-C",
+        extractDir,
+        "package/package.json",
+      ],
+      cwd: packageRoot,
+    });
+
+    const packagedManifest = JSON.parse(
+      await readFile(path.join(extractDir, "package", "package.json"), "utf8"),
+    ) as {
+      repository: {
+        type: string;
+        url: string;
+      };
+      homepage: string;
+      bugs: {
+        url: string;
+      };
+      peerDependencies: {
+        typescript: string;
+      };
+      peerDependenciesMeta: {
+        typescript: {
+          optional: boolean;
+        };
+      };
+      devDependencies?: Record<string, string>;
+      files?: string[];
+      scripts?: Record<string, string>;
+      workspaceDev: {
+        buildProfile: string;
+        pipelineIds: string[];
+      };
+    };
+
+    assert.equal(packagedManifest.repository.type, "git");
+    assert.equal(packagedManifest.repository.url, expectedRepositoryUrl);
+    assert.equal(packagedManifest.homepage, expectedHomepageUrl);
+    assert.equal(packagedManifest.bugs.url, expectedBugsUrl);
+    assert.equal(packagedManifest.peerDependencies.typescript, ">=5.0.0");
+    assert.equal(
+      packagedManifest.peerDependenciesMeta.typescript.optional,
+      true,
+    );
+    assert.equal(packagedManifest.devDependencies, undefined);
+    assert.equal(packagedManifest.files, undefined);
+    assert.equal(packagedManifest.scripts, undefined);
+    assert.equal(packagedManifest.workspaceDev.buildProfile, "default-rocket");
+    assert.deepEqual(packagedManifest.workspaceDev.pipelineIds, [
+      "default",
+      "rocket",
+    ]);
+  } finally {
+    await rm(packDir, { recursive: true, force: true });
+    await rm(extractDir, { recursive: true, force: true });
+  }
+});

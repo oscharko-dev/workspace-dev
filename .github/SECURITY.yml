@@ -1,0 +1,7 @@
+# Repository-local pointer metadata for Issue #610.
+# GitHub recognizes SECURITY.md as the repository security policy surface.
+# See SECURITY.md for private vulnerability reporting, GHSA workflow, CVE handling, and coordinated disclosure guidance.
+security_policy:
+  canonical_policy: SECURITY.md
+  contact: mailto:security@oscharko.dev
+  private_reporting: enable in repository settings

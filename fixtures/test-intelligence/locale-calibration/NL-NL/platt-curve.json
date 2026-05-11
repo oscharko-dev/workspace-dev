@@ -1,0 +1,25 @@
+{
+  "eceByRiskCategory": {
+    "financial_transaction": 0.06,
+    "high": 0.05,
+    "regulated_data": 0.04
+  },
+  "fallbackToDefault": false,
+  "fittedAt": "2026-05-10T00:00:00.000Z",
+  "heldOutEce": 0.05,
+  "heldOutKappa": 0.78,
+  "heldOutSampleCount": 6,
+  "intercept": 0,
+  "issueRef": "Issue #2188",
+  "locale": "NL-NL",
+  "ratifiedBy": "nl-arbiter-1",
+  "reviewerPool": [
+    "nl-reviewer-1",
+    "nl-reviewer-2",
+    "nl-arbiter-1"
+  ],
+  "sampleCount": 30,
+  "schemaVersion": "1.0.0",
+  "slope": 1,
+  "trainingBrierScore": 0.04
+}

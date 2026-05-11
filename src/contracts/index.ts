@@ -4,21 +4,3020 @@
  * These types define the public API surface for workspace-dev consumers.
  * They must not import from internal services.
  *
- * Contract version: 2.1.0
- * See CONTRACT_CHANGELOG.md for change history and versioning rules.
+ * Contract version: 4.64.0
+ * See CONTRACT_CHANGELOG.md for contract change history and VERSIONING.md for
+ * package-versus-contract versioning policy.
  */
 
+export {
+  assertRoleLineageDepth,
+  isBrandedId,
+  isRoleLineageDepth,
+  MAX_ROLE_LINEAGE_DEPTH,
+  toAgentRoleProfileId,
+  toEvidenceArtifactId,
+  toJobId,
+  toLessonId,
+  toRoleStepId,
+  validateBrandedIdLabel,
+  type AgentRoleProfileId,
+  type EvidenceArtifactId,
+  type JobId,
+  type LessonId,
+  type RoleStepId,
+} from "./branded-ids.js";
+
+/**
+ * Runtime source-of-truth list of allowed Figma source modes.
+ * Keep this array and `WorkspaceFigmaSourceMode` in lockstep;
+ * `submit-mode-parity.test.ts` enforces that compile-time and
+ * runtime agree.
+ */
+export const ALLOWED_FIGMA_SOURCE_MODES = [
+  "rest",
+  "hybrid",
+  "local_json",
+  "figma_paste",
+  "figma_plugin",
+] as const;
+
 /** Allowed Figma source modes for workspace-dev. */
-export type WorkspaceFigmaSourceMode = "rest";
+export type WorkspaceFigmaSourceMode =
+  (typeof ALLOWED_FIGMA_SOURCE_MODES)[number];
+
+/** Source modes used to record replayable import sessions. */
+export type WorkspaceImportSessionSourceMode =
+  | WorkspaceFigmaSourceMode
+  | "figma_url";
+
+/** Import intent detected by the client-side paste classifier. */
+export type WorkspaceImportIntent =
+  | "FIGMA_JSON_NODE_BATCH"
+  | "FIGMA_JSON_DOC"
+  | "FIGMA_PLUGIN_ENVELOPE"
+  | "RAW_CODE_OR_TEXT"
+  | "UNKNOWN";
+
+/** Structural classification of a per-paste delta diff. */
+export type WorkspacePasteDeltaStrategy =
+  | "baseline_created"
+  | "no_changes"
+  | "delta"
+  | "structural_break";
+
+/** Import mode for a Figma paste. `"auto"` lets the server pick delta vs full based on diff threshold. */
+export type WorkspaceImportMode = "full" | "delta" | "auto";
+
+export type WorkspaceImportSessionScope = "all" | "partial";
+
+/** Summary of the per-paste delta computation. Surfaced on JobResult when Figma paste import is used. */
+export interface WorkspacePasteDeltaSummary {
+  /** Mode ultimately used by the server. `auto_*` variants are returned when the client asked for "auto". */
+  mode: "full" | "delta" | "auto_resolved_to_full" | "auto_resolved_to_delta";
+  /** Structural classification of the tree diff. */
+  strategy: WorkspacePasteDeltaStrategy;
+  /** Total nodes observed in the current paste. */
+  totalNodes: number;
+  /** Nodes whose subtree hash matched the prior manifest (eligible for reuse). */
+  nodesReused: number;
+  /** Nodes that required reprocessing (added + updated + all descendants of updated). */
+  nodesReprocessed: number;
+  /** Diff ratio used to choose mode when `auto`. 0 = identical, 1 = all new. */
+  structuralChangeRatio: number;
+  /** Stable per-component identity key (sha256 prefix). Useful for correlating future pastes. */
+  pasteIdentityKey: string;
+  /** True when the server had no prior manifest for this identity (first paste). */
+  priorManifestMissing: boolean;
+}
+
+/**
+ * Runtime source-of-truth list of allowed codegen modes.
+ * Keep this array and `WorkspaceLlmCodegenMode` in lockstep;
+ * `submit-mode-parity.test.ts` enforces that compile-time and
+ * runtime agree.
+ */
+export const ALLOWED_LLM_CODEGEN_MODES = ["deterministic"] as const;
 
 /** Allowed codegen modes for workspace-dev. */
-export type WorkspaceLlmCodegenMode = "deterministic";
+export type WorkspaceLlmCodegenMode =
+  (typeof ALLOWED_LLM_CODEGEN_MODES)[number];
+
+/**
+ * Runtime source-of-truth for allowed workspace-dev job types.
+ * Keep this array and `WorkspaceJobType` in lockstep.
+ */
+export const ALLOWED_WORKSPACE_JOB_TYPES = [
+  "figma_to_code",
+  "figma_to_qc_test_cases",
+] as const;
+
+/** Allowed job types for workspace-dev submissions. */
+export type WorkspaceJobType = (typeof ALLOWED_WORKSPACE_JOB_TYPES)[number];
+
+/**
+ * Runtime source-of-truth for allowed test-intelligence modes.
+ *
+ * Test intelligence is an opt-in, local-first feature that is SEPARATE from
+ * the `llmCodegenMode` namespace used by the deterministic code generation
+ * pipeline. The two mode namespaces are intentionally isolated: changes to
+ * this array must never affect `ALLOWED_LLM_CODEGEN_MODES`.
+ */
+export const ALLOWED_TEST_INTELLIGENCE_MODES = [
+  "deterministic_llm",
+  "offline_eval",
+] as const;
+
+/** Allowed test-intelligence modes. */
+export type WorkspaceTestIntelligenceMode =
+  (typeof ALLOWED_TEST_INTELLIGENCE_MODES)[number];
+
+/**
+ * Bearer credential bound to a single review principal.
+ *
+ * Used by the test-intelligence review gate when four-eyes review is
+ * enforced (#1376). The token authenticates the caller; the
+ * `principalId` is the server-owned reviewer identity persisted on
+ * review events and snapshots. Never reuse one token for multiple
+ * principals.
+ */
+export interface TestIntelligenceReviewPrincipal {
+  /** Opaque, non-secret reviewer principal id persisted in review audit logs. */
+  principalId: string;
+  /** Bearer token accepted for this principal's review-gate write requests. */
+  bearerToken: string;
+}
+
+/**
+ * Principal-bound credentials used by the controlled OpenText ALM API
+ * transfer pipeline (#1372). The token authenticates the caller; the
+ * `principalId` is the server-owned operator identity persisted in
+ * `transfer-report.json` so audit lineage survives token rotation.
+ * Never reuse one token for multiple principals.
+ */
+export interface TestIntelligenceTransferPrincipal {
+  /** Opaque, non-secret operator principal id persisted in transfer audit logs. */
+  principalId: string;
+  /** Bearer token accepted for this principal's API transfer requests. */
+  bearerToken: string;
+}
+
+/** Contract version for the opt-in test-intelligence surface. */
+export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.39.0" as const;
+
+/**
+ * Schema version for generated test case payloads.
+ *
+ * 1.1.0 — Issue #1735: optional additive field `regulatoryRelevance`
+ * ({domain, rationale}) on each test case. Backwards compatible — the
+ * validator accepts both 1.0.0-shaped lists (without the field) and
+ * 1.1.0-shaped lists (with or without the field).
+ *
+ * 1.3.0 — Issue #2104: optional additive audit field
+ * `audit.truncatedInstructionCount` records how many upstream repair
+ * instructions were clipped before regeneration so validation can emit
+ * a non-blocking audit warning.
+ */
+export const GENERATED_TEST_CASE_SCHEMA_VERSION = "1.3.0" as const;
+
+/** Persisted polarity labels for generated test cases (Issue #2030). */
+export const ALLOWED_GENERATED_TEST_CASE_POLARITIES = [
+  "positive",
+  "negative",
+  "boundary",
+  "validation",
+  "navigation",
+  "accessibility",
+] as const;
+
+/** Machine-readable customer-eval rubric buckets for generated cases. */
+export const ALLOWED_GENERATED_TEST_CASE_CATEGORIES = [
+  "positive_path",
+  "negative_path",
+  "boundary_value",
+  "validation_rule",
+  "navigation_flow",
+  "accessibility",
+] as const;
+
+/**
+ * Prompt template version for the test-intelligence prompt family.
+ *
+ * Semver semantics (Issue #1943):
+ * - PATCH — wording fixes that preserve token-byte-equivalence on the
+ *   baseline-fixture set (typo fixes, comment-only changes inside the
+ *   compiled prompt body, equivalent-byte rewordings).
+ * - MINOR — additive sections, additional instructions, or new optional
+ *   directives that remain backwards-compatible with prior generator
+ *   outputs (the existing covered* arrays, figmaTraceRefs schema, and
+ *   evidence shape are unchanged).
+ * - MAJOR — breaking section reordering, evidence-schema changes, or any
+ *   change that retires a directive contract previously relied on by a
+ *   downstream judge (Logic-Judge, Faithfulness-Judge, A11y-Judge).
+ *
+ * Every non-PATCH bump MUST be recorded in
+ * `docs/test-intelligence-prompt-template-changelog.md` with scope,
+ * motivation, and expected verdict-deltas on the baseline-fixture set.
+ * The CI guard `scripts/check-prompt-template-version.mjs` (wired into
+ * `pr-quality-gate.yml`) fails the build when `prompt-compiler.ts`
+ * content changes but this constant is not bumped.
+ *
+ * History:
+ *
+ * 1.2.0 — Issue #1905: explicit form-screen accessibility directive added
+ * to the generator system prompt and user-prompt preamble. Bump forces a
+ * replay-cache miss for cached generator outputs that pre-date the new
+ * directive so the cache cannot serve a stale list that lacks an a11y case
+ * for a form screen.
+ *
+ * 1.3.0 — Issue #1941: dedicated `[5] CustomerDomainContext` section
+ * promoted from custom-context-markdown so customer-supplied banking and
+ * insurance rules become a first-class evidence source.
+ *
+ * 1.4.0 — Issue #1942: hard-gated technique-quota enforcement on the
+ * generator user-prompt preamble (`GENERATOR_TECHNIQUE_QUOTA_RULE`).
+ *
+ * 1.4.1 — Issue #1987: unresolved validation rules now explicitly forbid
+ * fabricated exact validation text, thresholds, min/max boundaries, and
+ * blocked-submit behavior in the generator prompt preamble.
+ *
+ * 1.4.2 — Issue #1984: narrowed decorative-label filtering and hardened
+ * logic-judge schema handling after prompt-compiler changes in the live-run
+ * quality hardening flow.
+ *
+ * 1.4.3 — Issue #1986: financing-need domain-faithfulness rules now
+ * instruct the generator to honor VAT-exclusion constraints and fall back
+ * to open questions when exact arithmetic remains underspecified.
+ */
+export const TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION = "1.7.1" as const;
+
+/** Visual sidecar schema version consumed by the prompt compiler (Issue #1386). */
+export const VISUAL_SIDECAR_SCHEMA_VERSION = "1.1.0" as const;
+
+/**
+ * Operator-supplied multimodal-sidecar deployment name (Issue #1959).
+ *
+ * The runner does not gate on a hard-coded list — the deployment name is
+ * the verbatim Azure-AI-Foundry / gateway deployment id chosen by the
+ * operator in `.env`. Validity is enforced at the gateway boundary
+ * (HTTP 404 surfaces back to the policy gate); this type's contract is
+ * limited to "non-empty string of reasonable length". Length is bounded
+ * by the JSON-Schema validator at the visual-sidecar wire surface
+ * (`{ minLength: 1, maxLength: 128 }`).
+ *
+ * The optional brand symbol documents intent without forcing a public
+ * type-import migration on callers that pass plain string literals
+ * (e.g., `llama-4-maverick-vision`,
+ * `phi-4-multimodal-instruct`, `mistral-document-ai-2512`, `mock`).
+ */
+export type SidecarDeployment = string & {
+  readonly __brand?: "sidecar_deployment";
+};
+
+/**
+ * Maximum byte length accepted for an operator-supplied sidecar
+ * deployment id at the wire-validation boundary. Mirrors Azure AI
+ * Foundry's deployment-name length constraints.
+ */
+export const SIDECAR_DEPLOYMENT_MAX_LENGTH = 128 as const;
+
+/** Redaction policy bundle version applied before prompt compilation. */
+export const REDACTION_POLICY_VERSION = "1.0.0" as const;
+
+/**
+ * Version of the documented subprocessor register
+ * (`docs/dora/subprocessor-register.md`) and its paired cross-border transfer
+ * ADR (`docs/dpia/cross-border-transfer.md`). Stamped into every Wave 1
+ * Validation evidence manifest so a replay can verify which DORA Art. 28 /
+ * GDPR Ch. V documentation was active for the run (Issue #2113).
+ *
+ * Bump rules — every change to either document MUST bump this version in the
+ * same PR. The CODEOWNERS rule for both files keeps the human-review gate
+ * coupled; this constant keeps the runtime evidence coupled.
+ */
+export const SUBPROCESSOR_REGISTER_VERSION = "1.0.0" as const;
+
+/**
+ * Schema version for the machine-readable {@link SubprocessorRegister}
+ * artifact emitted per run alongside `compliance-annotations.json`
+ * (Issue #2174). Bumped on any breaking shape change to
+ * {@link SubprocessorRegister}, {@link SubprocessorEntry}, or
+ * {@link CrossBorderTransferEntry}.
+ *
+ * The schema version is independent of {@link SUBPROCESSOR_REGISTER_VERSION}:
+ * the latter tracks the documented register content (subprocessor list +
+ * cross-border ADR), this one tracks the artifact shape that auditors
+ * cross-reference programmatically.
+ */
+export const SUBPROCESSOR_REGISTER_SCHEMA_VERSION = "1.0.0" as const;
+
+/**
+ * Canonical filename for the machine-readable subprocessor register
+ * artifact (Issue #2174). Persisted next to
+ * `compliance-annotations.json` and `compliance-coverage-report.json`.
+ */
+export const SUBPROCESSOR_REGISTER_ARTIFACT_FILENAME =
+  "subprocessor-register.json" as const;
+
+/**
+ * Hosting regions that the subprocessor register may name as an
+ * {@link SubprocessorEntry.hostingRegion} or as the source/destination of
+ * a {@link CrossBorderTransferEntry}. The list mirrors the EEA Azure
+ * regions recommended by the cross-border-transfer ADR plus the Mistral
+ * `eu-west-1` family and a single explicit `operator-defined` entry for
+ * categories where the operator selects the concrete region (Jira /
+ * object-storage / hook hosts) rather than the package shipping a default.
+ *
+ * Bump rules — adding a region is a non-breaking change. Removing or
+ * renaming one bumps {@link SUBPROCESSOR_REGISTER_SCHEMA_VERSION}.
+ */
+export const SUPPORTED_HOSTING_REGIONS = [
+  "westeurope",
+  "northeurope",
+  "francecentral",
+  "germanywestcentral",
+  "swedencentral",
+  "eu-west-1",
+  "operator-defined",
+] as const;
+
+/** A single Azure / Mistral / operator-defined hosting region. */
+export type SupportedHostingRegion = (typeof SUPPORTED_HOSTING_REGIONS)[number];
+
+/**
+ * Region-attestation schema version (Issue #2177). Bumped on any breaking
+ * change to the per-artifact region-attestation envelope or report shape.
+ */
+export const REGION_ATTESTATION_SCHEMA_VERSION = "1.0.0" as const;
+
+/**
+ * Closed runtime list of operator-accepted hosting regions for cryptographic
+ * per-artifact EU data-residency attestations (Issue #2177).
+ */
+export const SUPPORTED_REGION_ATTESTATION_HOSTING_REGIONS = [
+  "eu-central-1",
+  "eu-west-1",
+  "eu-west-3",
+  "eu-north-1",
+  "eu-south-1",
+  "eu-de-1",
+  "eu-fr-1",
+  "switzerland-north",
+  "norway-east",
+] as const;
+
+/** One hosting region admitted by {@link RegionAttestation}. */
+export type RegionAttestationHostingRegion =
+  (typeof SUPPORTED_REGION_ATTESTATION_HOSTING_REGIONS)[number];
+
+/** One cryptographic per-artifact EU data-residency attestation. */
+export interface RegionAttestation {
+  readonly schemaVersion: typeof REGION_ATTESTATION_SCHEMA_VERSION;
+  readonly artifactHash: string;
+  readonly deploymentId: string;
+  readonly servedFromRegion: RegionAttestationHostingRegion;
+  readonly observedAtUtc: string;
+  readonly attestedBy:
+    | "azure-instance-metadata"
+    | "endpoint-cert-cn"
+    | "operator-pinned"
+    /**
+     * Issue #2187 — sovereign-cloud / air-gap deployment topologies
+     * (STACKIT, T-Systems Open Sovereign Cloud, OVHcloud sovereign,
+     * on-prem). These endpoints do not implement Azure IMDS and the
+     * harness has no network reach to TLS-probe the upstream, so the
+     * region claim is derived from the operator-signed sovereign-cloud
+     * attestation source (e.g. signed deployment manifest baked into
+     * the air-gapped image). Treated as a first-class attestation
+     * source — equivalent strength to {@link `azure-instance-metadata`}
+     * within its trust boundary — and is **not** flagged with
+     * `severity: "warning"`.
+     */
+    | "sovereign-cloud";
+  /**
+   * Additive audit signal: present only when the attestation fell back to an
+   * operator-pinned region because no stronger runtime evidence was available.
+   */
+  readonly severity?: "warning";
+  readonly attestationSignatureHex: string;
+}
+
+/** Canonical filename for the per-run region-attestation report. */
+export const REGION_ATTESTATION_REPORT_ARTIFACT_FILENAME =
+  "region-attestations.json" as const;
+
+/** One artifact row inside the run-level region-attestation report. */
+export interface RegionAttestationArtifactEntry {
+  readonly filename: string;
+  readonly artifactHash: string;
+  readonly regionAttestations: readonly RegionAttestation[];
+}
+
+/** Machine-readable report of every artifact-level region attestation. */
+export interface RegionAttestationReport {
+  readonly schemaVersion: typeof REGION_ATTESTATION_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly jobId: string;
+  readonly generatedAt: string;
+  readonly artifacts: readonly RegionAttestationArtifactEntry[];
+  readonly distinctRegions: readonly RegionAttestationHostingRegion[];
+}
+
+/**
+ * A single ICT third-party / subprocessor entry under DORA Art. 28(3).
+ * Mirrors a row of the human-readable register at
+ * `docs/dora/subprocessor-register.md` § 2 and is the structured form
+ * auditors cross-reference against `compliance-annotations.json`.
+ *
+ * All fields are required so the artifact is byte-stable across runs;
+ * optional fields are only added behind `?` when omission is the
+ * meaningful signal (e.g. a subprocessor that has no SOC 2 report).
+ */
+export interface SubprocessorEntry {
+  /** Stable, kebab-case identifier (e.g. `"llm-gateway-text-generation"`). */
+  readonly subprocessorId: string;
+  /** Contractual / legal name (operator-selected vendor where applicable). */
+  readonly legalName: string;
+  /** One-sentence purpose of the subprocessor in the test-intelligence pipeline. */
+  readonly purpose: string;
+  /** Hosting region from {@link SUPPORTED_HOSTING_REGIONS}. */
+  readonly hostingRegion: SupportedHostingRegion;
+  /** Sorted, deduplicated data-classification scope tokens. */
+  readonly dataCategories: readonly string[];
+  /** Sorted, deduplicated contractual safeguard citations (e.g. `"DPA-2024"`, `"SCC-2021-Module-2"`). */
+  readonly contractualSafeguards: readonly string[];
+  /** Optional SOC 2 Type II report reference (citation, not a URL). */
+  readonly soc2ReportRef?: string;
+  /** Optional ISO/IEC 27001 certificate reference (citation, not a URL). */
+  readonly iso27001ReportRef?: string;
+  /** Retention policy floor the operator must meet. */
+  readonly retentionPolicy: string;
+  /** ISO-8601 timestamp the entry was first added to the register. */
+  readonly addedAt: string;
+}
+
+/**
+ * A single cross-border transfer record under GDPR Ch. V. Each entry
+ * declares the legal mechanism that legitimises a flow between two
+ * regions in {@link SUPPORTED_HOSTING_REGIONS}. Even intra-EEA entries
+ * are recorded for replay verifiability so an auditor can reconstruct
+ * which transfer mechanism was active at a given run timestamp.
+ */
+export interface CrossBorderTransferEntry {
+  /** Stable, kebab-case transfer identifier. */
+  readonly transferId: string;
+  /** Source region (where the data originates). */
+  readonly sourceRegion: SupportedHostingRegion;
+  /** Destination region (where the data flows to). */
+  readonly destinationRegion: SupportedHostingRegion;
+  /**
+   * Legal mechanism. `"adequacy-decision"` covers intra-EEA and
+   * Commission-recognised third-country adequacy decisions; `"scc-2021"`
+   * is the 2021 EU Standard Contractual Clauses; `"bcr"` is Binding
+   * Corporate Rules; `"consent"` is GDPR Art. 49(1)(a) (rare and
+   * narrow); `"other"` is reserved for derogations the operator
+   * documents in their own register.
+   */
+  readonly transferMechanism:
+    | "scc-2021"
+    | "adequacy-decision"
+    | "bcr"
+    | "consent"
+    | "other";
+  /** Free-form citation pointing to the contractual / legal artefact. */
+  readonly mechanismCitation: string;
+  /** One-sentence purpose of the transfer. */
+  readonly purpose: string;
+  /** ISO-8601 timestamp the transfer was approved by the operator. */
+  readonly approvedAt: string;
+}
+
+/**
+ * Run-level subprocessor register artifact (Issue #2174). Persisted as
+ * `subprocessor-register.json` next to `compliance-annotations.json` and
+ * `compliance-coverage-report.json`; the human-readable
+ * `docs/dora/subprocessor-register.md` is auto-generated from this
+ * structure at build time, never hand-edited.
+ *
+ * The artifact is byte-stable: identical inputs produce identical
+ * canonical JSON bytes, so a SHA-256 over the file is reproducible
+ * across runs at the same commit. Subprocessors and cross-border
+ * transfers are sorted by their stable identifier; the embedded
+ * {@link SubprocessorRegister.merkleRoot} is a SHA-256 Merkle tree over
+ * the canonical-JSON-serialised entries (subprocessors first, then
+ * transfers, both pre-sorted), so a single root pin lets a downstream
+ * verifier detect drift in either list without re-hashing the whole
+ * file.
+ */
+export interface SubprocessorRegister {
+  readonly schemaVersion: typeof SUBPROCESSOR_REGISTER_SCHEMA_VERSION;
+  readonly registerVersion: typeof SUBPROCESSOR_REGISTER_VERSION;
+  readonly generatedAt: string;
+  readonly subprocessors: readonly SubprocessorEntry[];
+  readonly crossBorderTransfers: readonly CrossBorderTransferEntry[];
+  /** SHA-256 Merkle root over the (sorted) entry list, hex-encoded. */
+  readonly merkleRoot: string;
+}
+
+/** Environment variable name that gates test-intelligence features at startup. */
+export const TEST_INTELLIGENCE_ENV =
+  "FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE" as const;
+
+/**
+ * Environment variable name for the Wave 4 multi-source ingestion gate
+ * (Issue #1431). Strictly nested behind {@link TEST_INTELLIGENCE_ENV}; the
+ * resolver requires both gates _and_ the parent startup option to be enabled
+ * before a job may compose more than one test-design source.
+ */
+export const TEST_INTELLIGENCE_MULTISOURCE_ENV =
+  "FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE_MULTISOURCE" as const;
+
+/**
+ * Schema version for the {@link MultiSourceTestIntentEnvelope} aggregate
+ * (Issue #1431). Bumped on any breaking change to the envelope shape, the
+ * source-ref shape, or the aggregate-hash construction.
+ */
+export const MULTI_SOURCE_TEST_INTENT_ENVELOPE_SCHEMA_VERSION =
+  "1.0.0" as const;
+
+/** Schema version for persisted custom-context supporting source artifacts. */
+export const CUSTOM_CONTEXT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for a persisted custom-context supporting source. */
+export const CUSTOM_CONTEXT_ARTIFACT_FILENAME = "custom-context.json" as const;
+
+/** Stable source id for Markdown-authored custom context. */
+export const CUSTOM_CONTEXT_MARKDOWN_SOURCE_ID =
+  "custom-context-markdown" as const;
+
+/** Stable source id for structured-attribute custom context. */
+export const CUSTOM_CONTEXT_STRUCTURED_SOURCE_ID =
+  "custom-context-structured" as const;
+
+/** Version stamp for persisted role-separated LLM gateway evidence artifacts. */
+export const LLM_GATEWAY_CONTRACT_VERSION = "1.0.0" as const;
+
+/** Schema version for the persisted `llm-capabilities.json` evidence artifact. */
+export const LLM_CAPABILITIES_SCHEMA_VERSION = "1.1.0" as const;
+
+/** Canonical filename for the persisted LLM gateway capability probe artifact. */
+export const LLM_CAPABILITIES_ARTIFACT_FILENAME =
+  "llm-capabilities.json" as const;
+
+/**
+ * Schema version for the persisted test-case validation report artifact (Issue #1364).
+ * Bumped when `TestCaseValidationReport` changes shape.
+ */
+export const TEST_CASE_VALIDATION_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Schema version for the persisted policy decision report artifact (Issue #1364). */
+export const TEST_CASE_POLICY_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Schema version for the persisted coverage / quality-signals report artifact (Issue #1364). */
+export const TEST_CASE_COVERAGE_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Schema version for the persisted visual-sidecar validation report artifact (Issue #1364 / #1386). */
+export const VISUAL_SIDECAR_VALIDATION_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the persisted test-case payload accepted into review/export. */
+export const GENERATED_TESTCASES_ARTIFACT_FILENAME =
+  "generated-testcases.json" as const;
+
+/** Canonical filename for the persisted validation diagnostics artifact. */
+export const TEST_CASE_VALIDATION_REPORT_ARTIFACT_FILENAME =
+  "validation-report.json" as const;
+
+/** Canonical filename for the persisted policy-gate decision artifact. */
+export const TEST_CASE_POLICY_REPORT_ARTIFACT_FILENAME =
+  "policy-report.json" as const;
+
+/** Canonical filename for the persisted coverage / quality-signals artifact. */
+export const TEST_CASE_COVERAGE_REPORT_ARTIFACT_FILENAME =
+  "coverage-report.json" as const;
+
+/** Canonical filename for the persisted visual-sidecar validation artifact. */
+export const VISUAL_SIDECAR_VALIDATION_REPORT_ARTIFACT_FILENAME =
+  "visual-sidecar-validation-report.json" as const;
+
+/** Schema version for the persisted deterministic test-data oracle artifact (Issue #2071). */
+export const TEST_DATA_ORACLE_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the persisted deterministic test-data oracle artifact. */
+export const TEST_DATA_ORACLE_REPORT_ARTIFACT_FILENAME =
+  "test-data-oracle-report.json" as const;
+
+/**
+ * Schema version for the persisted causal-validation report artifact
+ * (Issue #2180). Bumped on any breaking change to the report shape, the
+ * counterfactual-pair envelope, or the causal-coverage formula.
+ */
+export const CAUSAL_VALIDATION_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/**
+ * Canonical filename for the persisted causal-validation report artifact
+ * (Issue #2180). The runner writes one `causal-validation-report.json`
+ * per run when the causal-validation framework is enabled and embeds
+ * the resulting summary into `policy-report.json#causalCoverage`.
+ */
+export const CAUSAL_VALIDATION_REPORT_ARTIFACT_FILENAME =
+  "causal-validation-report.json" as const;
+
+/**
+ * Default upper bound on the relative additional token cost the
+ * causal-validation framework may incur per run (Issue #2180 FinOps
+ * cap, "no more than 30 % per run"). Surfaced as a constant so CI can
+ * assert the cap and the runner can refuse to dispatch causal-pair
+ * generation that would exceed it. Pair generation is fully
+ * deterministic and never calls an LLM; under default operation the
+ * actual ratio is `0` — the cap is a hard ceiling, not a quota.
+ */
+export const CAUSAL_VALIDATION_TOKEN_BUDGET_RATIO_CAP = 0.3 as const;
+
+/**
+ * Schema version for the persisted mutation-killing-eval report artifact
+ * (Issue #2041). Bumped on any breaking change to the {@link MutationReport}
+ * shape, the catalog identifier set, or the kill-rate aggregation formula.
+ */
+export const MUTATION_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/**
+ * Canonical filename for the persisted mutation-killing-eval report
+ * artifact (Issue #2041). The runner writes one
+ * `mutation-report.json` per run when mutation evaluation is enabled and
+ * embeds the resulting summary into `policy-report.json#mutationKillRate`.
+ */
+export const MUTATION_REPORT_ARTIFACT_FILENAME =
+  "mutation-report.json" as const;
+
+/**
+ * Default kill-rate threshold (Issue #1753, #2041). Surfaced on the
+ * `mutationKillRate` summary so downstream consumers can reproduce the
+ * pass/fail decision deterministically without re-deriving the literal.
+ * Tracks {@link DEFAULT_MUTATION_KILL_RATE_TARGET} verbatim so the
+ * coverage-planner target and the runtime evaluator threshold cannot
+ * drift; the alias is exposed under the evaluator-namespaced name so
+ * call sites read self-explanatorily.
+ */
+export const MUTATION_KILL_RATE_DEFAULT_THRESHOLD = 0.85 as const;
+
+/**
+ * Default share of the generator token budget reserved for mutation
+ * evaluation (Issue #2041 FinOps cap). Surfaced as a constant so CI can
+ * assert the cap and the runner can refuse to dispatch eval work that
+ * would exceed it. The synthetic-SUT stub is fully deterministic and
+ * never calls an LLM, so under default operation the actual ratio is
+ * `0` — the cap is a hard ceiling, not a quota.
+ */
+export const MUTATION_EVAL_TOKEN_BUDGET_RATIO_CAP = 0.2 as const;
+
+/**
+ * Closed set of mutation classes registered in the
+ * mutation-killing-eval catalog (Issue #2041). The set is intentionally
+ * small and append-only — every class documented here corresponds to a
+ * known SUT-bug archetype the generated test suite is expected to
+ * detect. Adding a new class is a MINOR contract bump; renaming or
+ * retiring a class is MAJOR.
+ *
+ * - `field-required-flipped` — a previously-required input becomes
+ *   optional; cases asserting the required-input invariant kill it.
+ * - `vat-applied-to-netto` — VAT incorrectly added to a netto amount;
+ *   cases asserting the VAT-exclusion invariant kill it.
+ * - `currency-rounding-off-by-one` — final monetary totals drift by one
+ *   cent; cases asserting an exact two-decimal expected total kill it.
+ * - `boundary-off-by-one` — a `>=` becomes `>` (or vice versa) at a
+ *   numeric / length boundary; cases asserting the exact boundary
+ *   kill it.
+ * - `state-transition-skipped` — a workflow step is skipped (e.g. an
+ *   `auth` step is bypassed); workflow / navigation cases asserting
+ *   the transition kill it.
+ * - `regex-relaxed` — a validation pattern accepts inputs it should
+ *   reject; validation cases asserting the rejected-input behavior
+ *   kill it.
+ * - `null-equals-empty` — `null` is treated as an empty string
+ *   (or vice versa); cases asserting the null/empty distinction kill
+ *   it.
+ * - `optional-cost-treated-required` — an optional cost field is
+ *   treated as required; cases that exercise the optional-flow kill
+ *   it.
+ * - `currency-locale-confusion` — a euro amount is treated as a USD
+ *   amount in the calculation; cases that pin currency in the
+ *   expected total kill it.
+ * - `error-message-suppressed` — a required error message no longer
+ *   surfaces; negative-flow cases asserting the error message kill it.
+ * - `accessibility-name-removed` — a labelled element loses its
+ *   accessible name; a11y cases asserting the name kill it.
+ * - `iban-checksum-skipped` — IBAN checksum validation is bypassed;
+ *   negative-flow cases that present an invalid IBAN kill it.
+ * - `pii-redaction-disabled` — PII appears in a downstream artifact;
+ *   policy / compliance cases that assert redaction kill it.
+ * - `four-eyes-principle-skipped` — a state-changing action skips the
+ *   four-eyes / dual-control gate; workflow cases asserting it kill
+ *   it.
+ * - `audit-log-omitted` — a state-changing action no longer writes
+ *   the audit-log entry; cases asserting the audit row kill it.
+ */
+export const ALLOWED_MUTATION_CLASSES = [
+  "field-required-flipped",
+  "vat-applied-to-netto",
+  "currency-rounding-off-by-one",
+  "boundary-off-by-one",
+  "state-transition-skipped",
+  "regex-relaxed",
+  "null-equals-empty",
+  "optional-cost-treated-required",
+  "currency-locale-confusion",
+  "error-message-suppressed",
+  "accessibility-name-removed",
+  "iban-checksum-skipped",
+  "pii-redaction-disabled",
+  "four-eyes-principle-skipped",
+  "audit-log-omitted",
+] as const;
+export type MutationClass = (typeof ALLOWED_MUTATION_CLASSES)[number];
+
+/** Severity reported for a mutation that no test case kills. */
+export const ALLOWED_MUTATION_SEVERITIES = ["error", "warning"] as const;
+export type MutationSeverity = (typeof ALLOWED_MUTATION_SEVERITIES)[number];
+
+/** Per-mutation evaluation outcome (Issue #2041). */
+export interface MutationEvaluation {
+  /**
+   * Stable mutation id matching `^MUT-[A-Z0-9-]{1,60}$` (the same
+   * shape the catalog validator enforces). The default catalog uses
+   * the `MUT-<CLASS>-<NN>` convention but the contract only
+   * guarantees the regex shape so operator-registered mutations have
+   * room to encode their own provenance.
+   */
+  readonly mutationId: string;
+  /** Mutation class drawn from {@link ALLOWED_MUTATION_CLASSES}. */
+  readonly mutationClass: MutationClass;
+  /** Human-readable description of the synthetic bug being injected. */
+  readonly description: string;
+  /**
+   * Stable provenance string, typically `"Issue #2041 (registered)"`.
+   * Matches the convention used by the domain-invariant registry.
+   */
+  readonly source: string;
+  /** Severity of an unkilled mutation (`"error"` for default catalog rows). */
+  readonly severity: MutationSeverity;
+  /**
+   * Sorted, deduplicated test-case ids that are in scope for this
+   * mutation (`applies === true`).
+   */
+  readonly applicableTestCaseIds: readonly string[];
+  /**
+   * Sorted, deduplicated test-case ids that detect this mutation
+   * (`kills === true`).
+   */
+  readonly killingTestCaseIds: readonly string[];
+  /**
+   * `true` iff at least one accepted test case kills the mutation.
+   * `false` covers two cases: (a) no case is in scope (the catalog
+   * mutation does not apply to this run) and (b) every in-scope case
+   * fails to detect the mutation.
+   */
+  readonly killed: boolean;
+  /**
+   * `true` iff at least one accepted test case is in scope for the
+   * mutation. Drives the `applicableMutations` count surfaced in the
+   * summary.
+   */
+  readonly applicable: boolean;
+}
+
+/** Per-class kill-rate row inside {@link MutationReport.byClass}. */
+export interface MutationClassKillRate {
+  /** Mutation class from {@link ALLOWED_MUTATION_CLASSES}. */
+  readonly mutationClass: MutationClass;
+  /** Total catalog mutations registered for this class. */
+  readonly total: number;
+  /** Mutations of this class with at least one in-scope test case. */
+  readonly applicable: number;
+  /** Mutations of this class killed by at least one test case. */
+  readonly killed: number;
+  /**
+   * Kill rate for the class: `killed / applicable` rounded to six
+   * digits. `0` when `applicable === 0` (no in-scope cases). Auditors
+   * comparing per-class rates should consult `applicable` to decide
+   * whether the rate is meaningful.
+   */
+  readonly killRate: number;
+}
+
+/**
+ * Mutation-killing-eval report artifact (Issue #2041). Persisted as
+ * `mutation-report.json` alongside `policy-report.json`. The byte-shape
+ * is canonical: arrays are deterministically sorted, ratios are
+ * rounded to six digits, and only set fields are written.
+ */
+export interface MutationReport {
+  readonly schemaVersion: typeof MUTATION_REPORT_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly generatedAt: string;
+  readonly jobId: string;
+  readonly policyProfileId: string;
+  /** Total accepted test cases evaluated against the catalog. */
+  readonly totalTestCases: number;
+  /** Total mutations registered in the catalog. */
+  readonly totalMutations: number;
+  /** Mutations with at least one in-scope test case. */
+  readonly applicableMutations: number;
+  /** Mutations killed by at least one accepted test case. */
+  readonly killedMutations: number;
+  /**
+   * Overall kill rate: `killedMutations / applicableMutations` rounded
+   * to six digits. `0` when `applicableMutations === 0`.
+   */
+  readonly killRate: number;
+  /** Configured kill-rate threshold (default: 0.85). */
+  readonly threshold: number;
+  /** Whether `killRate >= threshold`. */
+  readonly meetsThreshold: boolean;
+  /**
+   * Per-class kill-rate rows ordered by the closed
+   * {@link ALLOWED_MUTATION_CLASSES} insertion order so the byte-shape
+   * stays stable when new classes are appended to the union. Every
+   * catalog class appears exactly once.
+   */
+  readonly byClass: readonly MutationClassKillRate[];
+  /**
+   * Per-mutation evaluation rows ordered by `mutationId` ascending.
+   * Every catalog mutation appears exactly once.
+   */
+  readonly mutations: readonly MutationEvaluation[];
+  /**
+   * Mutations that were applicable but not killed by any test case,
+   * ordered by `mutationId` ascending. Surfaced as a convenience for
+   * audit reports and CI summaries.
+   */
+  readonly unkilledMutations: readonly string[];
+}
+
+/* ====================================================================== *
+ * Prompt-optimizer (Issue #2044, Wave 3 innovation roadmap).             *
+ *                                                                        *
+ * Replaces manual prompt curation with an offline, deterministic         *
+ * DSPy-style optimizer that mines bootstrapped few-shot exemplars from   *
+ * accepted runs, searches a constrained space of additive directive      *
+ * variants against a deterministic synthetic eval, and writes the best   *
+ * result as an *additive* lock-file entry. Standard runs are untouched: *
+ * the optimizer only runs when the runner is invoked with                *
+ * `optimizePrompts: true` (CLI: `--optimize-prompts`).                   *
+ * ====================================================================== */
+
+/** Optimizer module version. Bumped on breaking algorithmic changes. */
+export const PROMPT_OPTIMIZER_VERSION = "1.0.0" as const;
+
+/** Schema version for the persisted optimizer report artifact. */
+export const PROMPT_OPTIMIZER_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the persisted optimizer report artifact. */
+export const PROMPT_OPTIMIZER_REPORT_ARTIFACT_FILENAME =
+  "prompt-optimization-report.json" as const;
+
+/**
+ * Default quality gate (out of 100) above which an accepted-run case may
+ * be promoted to a candidate few-shot exemplar. Tracks the issue spec.
+ */
+export const PROMPT_OPTIMIZER_DEFAULT_QUALITY_GATE = 90 as const;
+
+/**
+ * Default FinOps multiplier capping the optimizer's total token budget
+ * relative to a single benchmark run. Per Issue #2044 spec: 5x normal.
+ */
+export const PROMPT_OPTIMIZER_DEFAULT_BUDGET_MULTIPLIER = 5 as const;
+
+/**
+ * Default search budget (number of candidate variants the random search
+ * will evaluate per cycle). The cap stays small because the synthetic
+ * eval is deterministic and inexpensive — operators bumping this should
+ * also revisit {@link PROMPT_OPTIMIZER_DEFAULT_BUDGET_MULTIPLIER}.
+ */
+export const PROMPT_OPTIMIZER_DEFAULT_SEARCH_BUDGET = 16 as const;
+
+/** Default cap on how many bootstrapped exemplars a candidate may carry. */
+export const PROMPT_OPTIMIZER_DEFAULT_MAX_FEW_SHOTS = 3 as const;
+
+/**
+ * Closed set of additive optimizer directive ids the registry recognises.
+ * Adding a directive id is a MINOR contract bump; renaming or retiring
+ * one is MAJOR.
+ *
+ * - `prefer-figma-trace-screen-id` — every case must cite a screenId.
+ * - `prefer-figma-trace-node-id`   — every case must cite a nodeId.
+ * - `cite-open-questions-verbatim` — open questions reproduced verbatim.
+ * - `accessibility-name-required`  — a11y cases name the labelled control.
+ * - `boundary-coverage-explicit`   — boundary cases pin the boundary value.
+ * - `negative-flow-pin-error-text` — negative cases pin the error message.
+ */
+export const PROMPT_OPTIMIZER_DIRECTIVE_IDS = [
+  "prefer-figma-trace-screen-id",
+  "prefer-figma-trace-node-id",
+  "cite-open-questions-verbatim",
+  "accessibility-name-required",
+  "boundary-coverage-explicit",
+  "negative-flow-pin-error-text",
+] as const;
+
+export type PromptOptimizerDirectiveId =
+  (typeof PROMPT_OPTIMIZER_DIRECTIVE_IDS)[number];
+
+/**
+ * One candidate prompt variant under evaluation by the optimizer. The
+ * variant is fully described by its enabled directive ids and its
+ * exemplar selection — the *base* prompt template is shared across all
+ * candidates and remains the authoritative artifact (templates are
+ * never replaced by a learned model; the optimizer only rewrites the
+ * additive directive set on top of the pinned base).
+ */
+export interface PromptOptimizerCandidate {
+  readonly candidateId: string;
+  readonly directiveIds: readonly PromptOptimizerDirectiveId[];
+  readonly fewShotExemplarIds: readonly string[];
+  /**
+   * Synthetic token cost charged for evaluating this candidate. The
+   * optimizer refuses to dispatch any candidate whose cumulative cost
+   * would exceed `budgetMultiplier * baselineTokenCost`.
+   */
+  readonly tokenCost: number;
+}
+
+/** Score earned by a {@link PromptOptimizerCandidate} on the eval set. */
+export interface PromptOptimizerCandidateScore {
+  readonly candidateId: string;
+  /** Aggregate score (0-100) earned across the eval set. */
+  readonly score: number;
+  /** Per-directive points contributed (sums to {@link score}). */
+  readonly directiveBreakdown: readonly {
+    readonly directiveId: PromptOptimizerDirectiveId;
+    readonly points: number;
+  }[];
+  /** Number of eval-set cases that received credit. */
+  readonly passingCaseCount: number;
+  /** Total eval-set case count. */
+  readonly totalCaseCount: number;
+}
+
+/**
+ * Bootstrapped few-shot exemplar mined from an accepted run. Exemplars
+ * are content-addressed by `exemplarId` so optimizer outputs are
+ * byte-stable regardless of source ordering.
+ */
+export interface PromptOptimizerExemplar {
+  readonly exemplarId: string;
+  readonly sourceRunId: string;
+  readonly datasetId: string;
+  /**
+   * Quality score (0-100) carried over from the accepted run. Must be
+   * `>= qualityGate` for the exemplar to be retained.
+   */
+  readonly score: number;
+  /** Single accepted test case the exemplar represents. */
+  readonly exemplarCaseId: string;
+  /** SHA-256 of the exemplar payload (canonical-JSON over the case). */
+  readonly contentSha256: string;
+}
+
+/**
+ * Lock-file entry written *additively* to
+ * `docs/test-intelligence-prompt-template-version.lock.json` under the
+ * `optimizedTemplates` array. The base template's `promptCompilerSha256`
+ * pin is untouched so the prompt-template-version CI guard cannot drift.
+ */
+export interface PromptOptimizationLockEntry {
+  /** Stable identifier (`opt-<sha8>` of the report). */
+  readonly optimizedTemplateId: string;
+  /** Optimizer module version that produced the entry. */
+  readonly optimizerVersion: typeof PROMPT_OPTIMIZER_VERSION;
+  /** Base prompt template version this entry layers on top of. */
+  readonly basePromptTemplateVersion: string;
+  /** Dataset id the optimization cycle ran against. */
+  readonly datasetId: string;
+  /** Role-step id the candidate template targets. */
+  readonly roleStepId: string;
+  /** Random seed used by the search algorithm. */
+  readonly seed: number;
+  /** ISO-8601 timestamp captured at write time. */
+  readonly generatedAt: string;
+  /** Score the base template earned on the eval set (0-100). */
+  readonly baselineScore: number;
+  /** Score the optimized template earned on the eval set (0-100). */
+  readonly optimizedScore: number;
+  /** `optimizedScore - baselineScore`. */
+  readonly improvementPoints: number;
+  /** Directive ids enabled by the winning candidate. */
+  readonly directiveIds: readonly PromptOptimizerDirectiveId[];
+  /** Few-shot exemplar ids carried by the winning candidate. */
+  readonly fewShotExemplarIds: readonly string[];
+  /** SHA-256 of the canonical-JSON optimization report. */
+  readonly reportSha256: string;
+}
+
+/**
+ * Persisted optimizer report artifact. Byte-stable: arrays are sorted,
+ * floats are rounded, only set fields are emitted.
+ */
+export interface PromptOptimizationReport {
+  readonly schemaVersion: typeof PROMPT_OPTIMIZER_REPORT_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly optimizerVersion: typeof PROMPT_OPTIMIZER_VERSION;
+  readonly basePromptTemplateVersion: string;
+  readonly generatedAt: string;
+  readonly jobId: string;
+  readonly datasetId: string;
+  readonly roleStepId: string;
+  readonly seed: number;
+  readonly searchBudget: number;
+  readonly qualityGate: number;
+  readonly maxFewShots: number;
+  readonly budgetMultiplier: number;
+  /** Token budget envelope the cycle was given. */
+  readonly tokenBudget: {
+    readonly baselineTokenCost: number;
+    readonly cap: number;
+    readonly consumed: number;
+    readonly withinCap: boolean;
+  };
+  /** Score of the unmodified base template on the eval set. */
+  readonly baselineScore: number;
+  /** Score of the winning candidate. */
+  readonly optimizedScore: number;
+  /** Additive lift the cycle delivered. */
+  readonly improvementPoints: number;
+  /** All exemplars considered after the quality gate. */
+  readonly exemplars: readonly PromptOptimizerExemplar[];
+  /** All candidates evaluated, ordered by descending score then id. */
+  readonly candidates: readonly PromptOptimizerCandidate[];
+  /** Per-candidate scores, ordered by descending score then id. */
+  readonly candidateScores: readonly PromptOptimizerCandidateScore[];
+  /** Optimized lock-file entry. */
+  readonly lockEntry: PromptOptimizationLockEntry;
+  /**
+   * PROV-DM provenance node (B.10) for this optimization activity, so
+   * downstream graph builders can attach it without re-deriving the
+   * shape. The node is informed by the base template version and
+   * generated by the optimizer module.
+   */
+  readonly provenance: {
+    readonly activityId: string;
+    readonly entityId: string;
+    readonly wasInformedBy: string;
+    readonly wasGeneratedAt: string;
+  };
+}
+
+/** Schema version for the deterministic pipeline quality passport artifact. */
+export const PIPELINE_QUALITY_PASSPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the persisted pipeline quality passport artifact. */
+export const PIPELINE_QUALITY_PASSPORT_ARTIFACT_FILENAME =
+  "quality-passport.json" as const;
+
+/**
+ * Schema version for the persisted self-verify rubric pass artifact (Issue #1379).
+ *
+ * Bumped on any breaking change to the per-case evaluation shape, the
+ * job-level aggregate shape, the rubric-dimension union, or the JSON
+ * response shape consumed by the rubric prompt.
+ */
+export const SELF_VERIFY_RUBRIC_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/**
+ * Canonical filename for the persisted self-verify rubric report
+ * (Issue #1379). The artifact is emitted under
+ * `<runDir>/testcases/self-verify-rubric.json` when the opt-in pass runs.
+ */
+export const SELF_VERIFY_RUBRIC_REPORT_ARTIFACT_FILENAME =
+  "self-verify-rubric.json" as const;
+
+/**
+ * Run-dir-relative subdirectory under which the self-verify rubric artifact
+ * is persisted. Sibling to the validation reports so consumers can locate
+ * the test-case quality signals next to the cases they describe.
+ */
+export const SELF_VERIFY_RUBRIC_ARTIFACT_DIRECTORY = "testcases" as const;
+
+/**
+ * Prompt template version stamp for the rubric-only prompt family. Bumped
+ * on any change to the system prompt, user-prompt preamble, or the JSON
+ * response schema; the version stamp participates in the rubric replay-cache
+ * key so any template change forces a cache miss.
+ */
+export const SELF_VERIFY_RUBRIC_PROMPT_TEMPLATE_VERSION = "1.0.0" as const;
+
+/** Stable JSON schema name attached to the structured rubric response. */
+export const SELF_VERIFY_RUBRIC_RESPONSE_SCHEMA_NAME =
+  "SelfVerifyRubricReport" as const;
+
+/** Schema version for the persisted review-gate state and event-log artifacts (Issue #1365). */
+export const REVIEW_GATE_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Schema version for the persisted QC mapping preview artifact (Issue #1365). */
+export const QC_MAPPING_PREVIEW_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Schema version for the persisted export-report artifact (Issue #1365). */
+export const EXPORT_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Schema version stamp embedded in the OpenText ALM reference XML export (Issue #1365). */
+export const ALM_EXPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the persisted review-gate event log. */
+export const REVIEW_EVENTS_ARTIFACT_FILENAME = "review-events.json" as const;
+
+/** Canonical filename for the persisted review-gate snapshot. */
+export const REVIEW_STATE_ARTIFACT_FILENAME = "review-state.json" as const;
+
+/** Canonical filename for the persisted JSON export of approved test cases. */
+export const EXPORT_TESTCASES_JSON_ARTIFACT_FILENAME =
+  "testcases.json" as const;
+
+/** Canonical filename for the persisted CSV export of approved test cases. */
+export const EXPORT_TESTCASES_CSV_ARTIFACT_FILENAME = "testcases.csv" as const;
+
+/** Canonical filename for the optional persisted XLSX export of approved test cases. */
+export const EXPORT_TESTCASES_XLSX_ARTIFACT_FILENAME =
+  "testcases.xlsx" as const;
+
+/** Canonical filename for the persisted OpenText ALM reference XML export. */
+export const EXPORT_TESTCASES_ALM_XML_ARTIFACT_FILENAME =
+  "testcases.alm.xml" as const;
+
+/** Canonical filename for the persisted QC mapping preview artifact. */
+export const QC_MAPPING_PREVIEW_ARTIFACT_FILENAME =
+  "qc-mapping-preview.json" as const;
+
+/** Canonical filename for the persisted export-report artifact. */
+export const EXPORT_REPORT_ARTIFACT_FILENAME = "export-report.json" as const;
+
+/** Built-in OpenText ALM reference export profile id (Wave 1). */
+export const OPENTEXT_ALM_REFERENCE_PROFILE_ID =
+  "opentext-alm-default" as const;
+
+/** Version stamp for the built-in OpenText ALM reference export profile. */
+export const OPENTEXT_ALM_REFERENCE_PROFILE_VERSION = "1.0.0" as const;
+
+/** XML namespace embedded in the OpenText ALM reference export root element. */
+export const ALM_EXPORT_XML_NAMESPACE =
+  "https://workspace-dev.local/schema/alm-export/v1" as const;
+
+/**
+ * Built-in policy profile id for the default EU-banking compliance gate.
+ * Operators may install additional profiles by version stamp; this id is the
+ * one Wave 1 ships with.
+ */
+export const EU_BANKING_DEFAULT_POLICY_PROFILE_ID =
+  "eu-banking-default" as const;
+
+/** Version stamp for the built-in `eu-banking-default` policy profile. */
+export const EU_BANKING_DEFAULT_POLICY_PROFILE_VERSION = "1.0.0" as const;
+
+/**
+ * Issue #2187 — Built-in policy-profile identifier for the
+ * sovereign-cloud / air-gap deployment topology used by DE Sparkassen,
+ * Volksbanken, and on-prem-only insurers. Routes all model calls through
+ * the operator-configured sovereign-cloud LLM gateway and refuses any
+ * deployment outside the customer-approved hosting-region allow-list.
+ */
+export const EU_BANKING_SOVEREIGN_POLICY_PROFILE_ID =
+  "eu-banking-sovereign" as const;
+
+/** Version stamp for the built-in `eu-banking-sovereign` policy profile. */
+export const EU_BANKING_SOVEREIGN_POLICY_PROFILE_VERSION = "1.0.0" as const;
+
+/**
+ * Allowed test-case validation issue codes (Issue #1364).
+ * The list is the runtime source of truth; new codes plug in here without
+ * altering call sites. Adding a new code is a minor (additive) bump.
+ */
+export const ALLOWED_TEST_CASE_VALIDATION_ISSUE_CODES = [
+  "schema_invalid",
+  "missing_trace",
+  "trace_screen_unknown",
+  "missing_expected_results",
+  "steps_unordered",
+  "steps_indices_non_sequential",
+  "step_action_empty",
+  "step_action_too_long",
+  "duplicate_step_index",
+  "duplicate_test_case_id",
+  "title_empty",
+  "objective_empty",
+  "risk_category_invalid_for_intent",
+  "qc_mapping_blocking_reasons_missing",
+  "qc_mapping_exportable_inconsistent",
+  "quality_signals_confidence_out_of_range",
+  "quality_signals_coverage_unknown_id",
+  "test_data_pii_detected",
+  "test_data_unredacted_value",
+  "preconditions_pii_detected",
+  "expected_results_pii_detected",
+  "assumptions_excessive",
+  "open_questions_excessive",
+  "ambiguity_without_review_state",
+  "unsupported_unresolved_validation_detail",
+  "needs_open_question_clarification",
+  "semantic_suspicious_content",
+  "domain_invariant_violation",
+  "test_data_oracle_violation",
+  "truncated_repair_instruction",
+  "missing_field_lifecycle_transition",
+  "unknown_field_lifecycle_transition",
+  "uncovered_field_lifecycle_transition",
+  /**
+   * Issue #2168 — non-blocking counterpart to
+   * `uncovered_field_lifecycle_transition`. Fired when a field-lifecycle
+   * transition classified as `recommended_positive_path` (positive-path
+   * completion) or `state_transition_test_only` (reset/edit flows, only
+   * material when the run carries a `technique === "state_transition"` case)
+   * has no anchored test step. Always `warning` so the run is not blocked
+   * by missing positive-path coverage that previously over-fired
+   * 30–139× per dataset on M0 benchmarks.
+   */
+  "uncovered_field_lifecycle_transition_recommended",
+  /**
+   * Issue #2123 — two cases share the same
+   * {@link EquivalenceClassFingerprint} (covered fields, covered actions,
+   * risk class, technique, oracle polarity) AND fail to add real coverage
+   * relative to the class representative (no new oracle category, no
+   * different action subset, no different state path). Always `warning`.
+   */
+  "intra_equivalence_class_redundancy",
+  /**
+   * Issue #2123 — two cases produce near-identical TEXT (title + ordered
+   * step actions) within a Levenshtein-2 character-distance budget.
+   * Retained as a SEPARATE auditor signal alongside the equivalence-class
+   * check so a reviewer can spot wording duplicates that DO add real
+   * coverage. Always `warning`.
+   */
+  "exact_near_duplicate_text",
+] as const;
+
+export type TestCaseValidationIssueCode =
+  (typeof ALLOWED_TEST_CASE_VALIDATION_ISSUE_CODES)[number];
+
+/** Severity surfaced for a single validation issue. */
+export type TestCaseValidationSeverity = "error" | "warning" | "info";
+
+/** Single semantic / structural validation issue. */
+export interface TestCaseValidationIssue {
+  testCaseId?: string;
+  path: string;
+  code: TestCaseValidationIssueCode;
+  severity: TestCaseValidationSeverity;
+  message: string;
+}
+
+/** Aggregate validation outcome across one job's generated test cases. */
+export interface TestCaseValidationReport {
+  schemaVersion: typeof TEST_CASE_VALIDATION_REPORT_SCHEMA_VERSION;
+  contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  generatedAt: string;
+  jobId: string;
+  totalTestCases: number;
+  errorCount: number;
+  warningCount: number;
+  /** Whether the report blocks downstream review/export (any error => true). */
+  blocked: boolean;
+  /**
+   * Availability state of the optional cross-family judges as observed by the
+   * validation pipeline. `skipped` means no verdict was supplied; `refused`
+   * means a verdict arrived with a refusal payload.
+   */
+  judgeAvailability?: JudgeAvailabilityReport;
+  issues: TestCaseValidationIssue[];
+}
+
+export const ALLOWED_JUDGE_AVAILABILITY_STATES = [
+  "available",
+  "refused",
+  "skipped",
+] as const;
+
+export type JudgeAvailabilityState =
+  (typeof ALLOWED_JUDGE_AVAILABILITY_STATES)[number];
+
+export interface JudgeAvailabilityReport {
+  readonly faithfulness: JudgeAvailabilityState;
+  readonly a11y: JudgeAvailabilityState;
+}
+
+/**
+ * Allowed policy-gate decisions (Issue #1364).
+ *
+ * - `approved` — case may proceed to review/export as-is.
+ * - `blocked` — case must not reach review or export.
+ * - `needs_review` — case must be reviewed manually before export.
+ */
+export const ALLOWED_TEST_CASE_POLICY_DECISIONS = [
+  "approved",
+  "blocked",
+  "needs_review",
+] as const;
+export type TestCasePolicyDecision =
+  (typeof ALLOWED_TEST_CASE_POLICY_DECISIONS)[number];
+
+/**
+ * Allowed policy outcome codes attached to a single decision row.
+ * Visual-sidecar codes (`visual_*`) come from the multimodal sidecar
+ * gating per the Issue #1364 / #1386 update.
+ */
+export const ALLOWED_TEST_CASE_POLICY_OUTCOMES = [
+  "missing_trace",
+  "missing_expected_results",
+  "pii_in_test_data",
+  "ict_register_ref_required",
+  "technique_quota_breach",
+  "p0_risk_element_uncovered",
+  "missing_negative_or_validation_for_required_field",
+  "missing_accessibility_case",
+  "missing_boundary_case",
+  "schema_invalid",
+  "duplicate_test_case",
+  "regulated_risk_review_required",
+  "ambiguity_review_required",
+  "qc_mapping_not_exportable",
+  "low_confidence_review_required",
+  "open_questions_review_required",
+  "visual_sidecar_failure",
+  "visual_sidecar_fallback_used",
+  "visual_sidecar_fallback_used_succeeded",
+  "visual_sidecar_both_failed",
+  "visual_sidecar_low_confidence",
+  "visual_sidecar_possible_pii",
+  "visual_sidecar_prompt_injection_text",
+  "semantic_suspicious_content",
+  "cross_modal_faithfulness_evaluation_missing",
+  "cross_modal_faithfulness_score_below_threshold",
+  "cross_modal_faithfulness_case_level_fallback",
+  "cross_modal_faithfulness_partial_majority",
+  "judge_refused",
+  "risk_tag_downgrade_detected",
+  "custom_context_risk_escalation",
+  "multi_source_conflict_present",
+  "coverage_drift_exceeded",
+  "a11y_criterion_covered_weakly",
+  "a11y_criterion_not_covered",
+] as const;
+export type TestCasePolicyOutcome =
+  (typeof ALLOWED_TEST_CASE_POLICY_OUTCOMES)[number];
+
+/** Single policy-rule violation surfaced for a generated test case. */
+export interface TestCasePolicyViolation {
+  rule: string;
+  outcome: TestCasePolicyOutcome;
+  severity: TestCaseValidationSeverity;
+  reason: string;
+  /** JSON-pointer-style path inside the test case if applicable. */
+  path?: string;
+}
+
+/** Per-test-case policy decision row. */
+export interface TestCasePolicyDecisionRecord {
+  testCaseId: string;
+  decision: TestCasePolicyDecision;
+  violations: TestCasePolicyViolation[];
+}
+
+/** Aggregate policy report across one job's generated test cases. */
+export interface TestCasePolicyReport {
+  schemaVersion: typeof TEST_CASE_POLICY_REPORT_SCHEMA_VERSION;
+  contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  generatedAt: string;
+  jobId: string;
+  policyProfileId: string;
+  policyProfileVersion: string;
+  totalTestCases: number;
+  approvedCount: number;
+  blockedCount: number;
+  needsReviewCount: number;
+  /** Mean calibrated per-case confidence across every generated case. */
+  confidenceMean?: number;
+  /** 10th percentile calibrated per-case confidence across every case. */
+  confidenceP10?: number;
+  /** 50th percentile calibrated per-case confidence across every case. */
+  confidenceP50?: number;
+  /** 90th percentile calibrated per-case confidence across every case. */
+  confidenceP90?: number;
+  /** Whether ANY case was blocked (downstream export gate). */
+  blocked: boolean;
+  decisions: TestCasePolicyDecisionRecord[];
+  /** Job-level policy violations (e.g., job-wide duplicate fingerprint). */
+  jobLevelViolations: TestCasePolicyViolation[];
+  /**
+   * Optional provenance seal summary for runs that persisted
+   * `provenance.jsonld` (Issue #2037). Carries only the Merkle root and
+   * artifact identity so auditors can correlate `policy-report.json` with the
+   * provenance bundle without embedding the full graph here.
+   */
+  provenance?: TestCasePolicyProvenanceSummary;
+  /**
+   * Optional structured quality-gate evaluations carried alongside the
+   * decision records (Issue #2053). Today this surfaces the
+   * `G-NEG-CASE` adversarial-critic negative-case-lift hard gate; future
+   * gates extend the same array. The field is omitted when no quality
+   * gates were evaluated for the run, so the byte-shape stays stable for
+   * legacy runs that pre-date the gate registry.
+   */
+  gateResults?: TestCasePolicyGateResult[];
+  /**
+   * Optional mutation-killing-eval summary (Issue #2041). Surfaces the
+   * top-level `mutationKillRate` KPI alongside per-class kill rates so
+   * downstream auditors can answer "how effective is this generated test
+   * suite at detecting injected SUT bugs?" without re-running the
+   * evaluator. The block is omitted when the mutation evaluator was not
+   * run for this job (default for fast iterative runs), so the byte
+   * shape stays stable for runs that pre-date the evaluator.
+   */
+  mutationKillRate?: MutationKillRateSummary;
+  /**
+   * Optional causal-coverage KPI summary (Issue #2180). Surfaces the
+   * top-level `causalCoverage` ratio alongside hypothesis evaluation
+   * counts so downstream auditors can answer "what share of declared
+   * causal hypotheses did the suite satisfy?" without re-running the
+   * framework. The block is omitted when the causal-validation
+   * framework was not run for this job (default for fast iterative
+   * runs), so the byte shape stays stable for runs that pre-date the
+   * framework.
+   */
+  causalCoverage?: CausalCoverageSummary;
+  /**
+   * Issue #2116 — explicit semantics + audit trail for the
+   * cross-modal-faithfulness gate's tier-elastic fallback.
+   *
+   * Always emitted by the policy gate so reviewers can tell at a glance
+   * whether the gate reasoned over per-step evidence
+   * (`mode === "per_step"`), fell back to the verdict's case-level score
+   * (`mode === "case_level_fallback"`), or had no faithfulness verdict
+   * at all (`mode === "missing"`). The `requirePerStepFaithfulness`
+   * field mirrors the active profile rule so audit reviewers do not
+   * need a second artifact to know whether the fallback was demoted to
+   * an error.
+   */
+  faithfulnessEvaluation?: FaithfulnessEvaluationSummary;
+}
+
+/** Issue #2116 — audit-trail block summarizing how the
+ * cross-modal-faithfulness gate evaluated a job. Carried on
+ * `TestCasePolicyReport.faithfulnessEvaluation`. */
+export interface FaithfulnessEvaluationSummary {
+  /** Evaluation mode the gate applied. */
+  readonly mode: FaithfulnessEvaluationMode;
+  /**
+   * Whether the active profile escalated the
+   * `case_level_fallback` mode to a blocking error (Issue #2116
+   * `requirePerStepFaithfulness`). Mirrors the rule for downstream
+   * consumers without forcing them to re-resolve the profile.
+   */
+  readonly requirePerStepFaithfulness: boolean;
+  /**
+   * Reviewer-readable explanation of why the gate ended up in
+   * {@link mode}. Stable across runs with identical inputs so the
+   * persisted policy report is byte-deterministic.
+   */
+  readonly reason: string;
+  /**
+   * Step-verdict count consumed by the gate when
+   * `mode === "per_step"`. `0` for `case_level_fallback` and
+   * `missing` so the field is always present and machine-comparable.
+   */
+  readonly stepVerdictCount: number;
+}
+
+/**
+ * Compact mutation-killing-eval summary embedded into
+ * `policy-report.json#mutationKillRate` (Issue #2041). Each field is
+ * derived from the persisted `mutation-report.json` artifact and can be
+ * used as a hard-gate input by downstream CI without parsing the full
+ * report.
+ */
+export interface MutationKillRateSummary {
+  /** Stable artifact filename auditors should consult for the full report. */
+  readonly artifactFilename: typeof MUTATION_REPORT_ARTIFACT_FILENAME;
+  /**
+   * Overall fraction of registered mutations killed by at least one
+   * accepted test case, in [0, 1]. Rounded to six digits to match the
+   * canonical-JSON contract. `0` when the catalog is empty or no
+   * mutations were in scope for the run.
+   */
+  readonly killRate: number;
+  /** Total number of registered mutations in the catalog. */
+  readonly totalMutations: number;
+  /** Mutations that had at least one in-scope test case. */
+  readonly applicableMutations: number;
+  /** Mutations killed by at least one accepted test case. */
+  readonly killedMutations: number;
+  /**
+   * Configured KPI threshold (Issue #1753 set `>= 0.85`). Surfaced so
+   * downstream consumers can reproduce the pass/fail computation
+   * without consulting the runner config.
+   */
+  readonly threshold: number;
+  /**
+   * Whether the kill rate meets or exceeds the threshold. Recorded
+   * deterministically at write time so the gate decision survives
+   * re-reads of the report.
+   */
+  readonly meetsThreshold: boolean;
+}
+
+/**
+ * Compact causal-coverage summary embedded into
+ * `policy-report.json#causalCoverage` (Issue #2180). Mirrors the
+ * top-level KPI fields from `causal-validation-report.json` so
+ * downstream consumers can read the headline ratio without parsing the
+ * full report. All fields are deterministic and round-trip stable.
+ */
+export interface CausalCoverageSummary {
+  /** Stable artifact filename auditors should consult for the full report. */
+  readonly artifactFilename: typeof CAUSAL_VALIDATION_REPORT_ARTIFACT_FILENAME;
+  /** Number of distinct causal hypotheses evaluated for the run. */
+  readonly hypothesesEvaluated: number;
+  /** Total counterfactual pairs generated across every hypothesis. */
+  readonly pairsGenerated: number;
+  /**
+   * Pairs whose embedded causal assertion was violated by the
+   * generated suite. A non-zero count signals a SUT-side bug surfaced
+   * by the counterfactual layer (the harness produced a pair that
+   * contradicts the declared hypothesis), not a harness fault.
+   */
+  readonly pairsViolated: number;
+  /**
+   * Causal-coverage ratio in `[0, 1]`, rounded to six digits to match
+   * the canonical-JSON contract. Defined as
+   * `(pairsGenerated - pairsViolated) / pairsGenerated`, i.e. the
+   * share of evaluated counterfactual pairs that satisfy their
+   * declared hypothesis. `0` when no pairs were generated.
+   */
+  readonly causalCoverageRatio: number;
+}
+
+/**
+ * Closed set of quality-gate identifiers the production runner may
+ * evaluate. The set is intentionally small and append-only — every gate
+ * id documented here corresponds to an enforceable hard gate with
+ * persisted, auditable evaluation evidence.
+ *
+ * - `G-NEG-CASE` (Issue #2053): adversarial-critic negative-case-lift
+ *   hard gate. Compares the per-run baseline negative-case ratio
+ *   against the post-critic final negative-case ratio and asserts the
+ *   relative ratio increase meets the configured threshold (default
+ *   `0.30`).
+ */
+export const ALLOWED_TEST_CASE_POLICY_GATE_IDS = ["G-NEG-CASE"] as const;
+export type TestCasePolicyGateId =
+  (typeof ALLOWED_TEST_CASE_POLICY_GATE_IDS)[number];
+
+/**
+ * Closed set of statuses a quality-gate evaluation may report. The
+ * status surfaced for a below-threshold observation depends on the
+ * gate's configured `gateMode`: `enforce` produces `failed` and the
+ * runner exits with a non-zero failure class; `advisory` produces
+ * `advisory` and the run completes successfully. `failed` and
+ * `advisory` are therefore mutually exclusive — they never both appear
+ * for the same evaluation.
+ *
+ * - `passed`: the gate's threshold was met.
+ * - `failed`: the gate's threshold was not met and `gateMode ===
+ *   "enforce"`. The production runner exits with a non-zero failure
+ *   class so CI marks the build red.
+ * - `advisory`: the gate's threshold was not met but `gateMode ===
+ *   "advisory"`. The result is recorded for audit and the run
+ *   completes successfully.
+ * - `skipped`: the gate could not be evaluated (the upstream signal it
+ *   depends on did not run, or the gate was explicitly disabled). Skip
+ *   is an explicit, audit-visible status — it is never silently a
+ *   pass.
+ */
+export const ALLOWED_TEST_CASE_POLICY_GATE_STATUSES = [
+  "passed",
+  "failed",
+  "advisory",
+  "skipped",
+] as const;
+export type TestCasePolicyGateStatus =
+  (typeof ALLOWED_TEST_CASE_POLICY_GATE_STATUSES)[number];
+
+/**
+ * Closed set of skip reasons recorded when a quality gate's status is
+ * `"skipped"`. Each reason documents *why* the gate could not be
+ * evaluated so the audit trail can distinguish a missing input from a
+ * deliberate disable.
+ *
+ * - `adversarial_critic_disabled`: the adversarial-critic loop did not
+ *   run (no `logicJudge` client wired or the loop was suppressed by an
+ *   upstream condition); the gate has no trace artifact to evaluate.
+ * - `adversarial_critic_failed`: the adversarial-critic loop ran but
+ *   exited with `stopReason === "critic_failed"`; the trace artifact
+ *   exists but the negative-coverage accounting cannot be trusted.
+ * - `gate_disabled`: the operator explicitly set
+ *   `negativeCaseLift.gateMode === "off"` for this run.
+ */
+export const ALLOWED_TEST_CASE_POLICY_GATE_SKIP_REASONS = [
+  "adversarial_critic_disabled",
+  "adversarial_critic_failed",
+  "gate_disabled",
+] as const;
+export type TestCasePolicyGateSkipReason =
+  (typeof ALLOWED_TEST_CASE_POLICY_GATE_SKIP_REASONS)[number];
+
+/**
+ * Per-gate evaluation record persisted in `policy-report.json` under
+ * `gateResults`. The shape is intentionally compact: callers correlate
+ * the record back to its source artifact via `ruleRef` (a stable
+ * pointer that names the artifact filename or the contract symbol the
+ * gate consulted) and use `observedRatio` / `thresholdRatio` for
+ * audit-grade comparison.
+ *
+ * Issue #2053 ships the `G-NEG-CASE` instance grounded in the
+ * `AdversarialCriticTraceArtifact.negativeCoverage` block. Future gates
+ * follow the same structure.
+ */
+export interface TestCasePolicyGateResult {
+  /** Stable gate identifier; see {@link ALLOWED_TEST_CASE_POLICY_GATE_IDS}. */
+  readonly gateId: TestCasePolicyGateId;
+  /** Evaluation outcome; see {@link ALLOWED_TEST_CASE_POLICY_GATE_STATUSES}. */
+  readonly status: TestCasePolicyGateStatus;
+  /**
+   * Stable rule reference — typically a `ti:`-prefixed contract symbol
+   * or an artifact filename — so auditors can resolve the gate's
+   * source evidence without the runner having to embed it.
+   */
+  readonly ruleRef: string;
+  /**
+   * Threshold the gate compared against, when the gate is
+   * threshold-shaped (e.g. ratio ≥ 0.30). Omitted for skip-only
+   * outcomes that did not consult a threshold.
+   */
+  readonly thresholdRatio?: number;
+  /**
+   * Observed value the gate produced (e.g. relative ratio increase).
+   * Omitted when the gate was skipped before the value was computed.
+   */
+  readonly observedRatio?: number;
+  /**
+   * Skip reason when `status === "skipped"`; absent otherwise. See
+   * {@link ALLOWED_TEST_CASE_POLICY_GATE_SKIP_REASONS} for the closed
+   * set of values.
+   */
+  readonly skipReason?: TestCasePolicyGateSkipReason;
+  /**
+   * Human-readable explanation suitable for surfacing in CI logs and
+   * audit reports. Always present so consumers do not have to derive a
+   * message from the structured fields.
+   */
+  readonly message: string;
+}
+
+/** Additive provenance summary duplicated into `policy-report.json`. */
+export interface TestCasePolicyProvenanceSummary {
+  readonly artifactFilename: string;
+  readonly merkleAlgorithm: "sha256_merkle_v1";
+  readonly merkleRoot: string;
+  readonly leafCount: number;
+}
+
+/**
+ * Runtime summary of an active model binding used by a job. The optional
+ * `ictRegisterRef` is enforced by the banking policy gate when provided to
+ * policy evaluation and is attested in evidence artifacts when persisted.
+ */
+export interface ActiveModelBinding {
+  /** Stable provider / operator identifier for the bound model. */
+  readonly providerId: string;
+  /** Stable model identifier inside the provider namespace. */
+  readonly modelId: string;
+  /**
+   * Optional deployment / inference-profile identifier that distinguishes
+   * multiple ICT services serving the same base model.
+   */
+  readonly inferenceProfileId?: string;
+  /**
+   * Optional operator-managed ICT register reference. Mandatory for banking
+   * policy enforcement when the binding is active for a regulated job.
+   */
+  readonly ictRegisterRef?: string;
+  /**
+   * Optional coarse deployment-region marker surfaced by routing and used by
+   * region-attestation-aware policy gates to cross-check runtime evidence.
+   */
+  readonly region?: JudgeModelRegion;
+}
+
+/** Tunable knobs of a policy profile (defaults shown for `eu-banking-default`). */
+export interface FinOpsWallClockBudgetPolicy {
+  readonly baseMs: number;
+  readonly perCaseMs: number;
+  readonly perAdditionalJudgeMs: number;
+  readonly perAdversarialRoundMs: number;
+  readonly visualSidecarMs: number;
+  readonly hardCeilingMs: number;
+}
+
+/** Tunable knobs of a policy profile (defaults shown for `eu-banking-default`). */
+export interface TestCasePolicyProfileRules {
+  /** Risk categories that always require manual review. */
+  reviewOnlyRiskCategories: TestCaseRiskCategory[];
+  /** Risk categories that block export when missing trace/expected/PII checks fail. */
+  strictRiskCategories: TestCaseRiskCategory[];
+  /** Whether a screen with form fields requires at least one accessibility case. */
+  requireAccessibilityCaseWhenFormPresent: boolean;
+  /** Whether each detected validation rule requires at least one negative/validation case. */
+  requireNegativeOrValidationForValidationRules: boolean;
+  /** Whether each required field requires at least one boundary case. */
+  requireBoundaryCaseForRequiredFields: boolean;
+  /** Min generator-side confidence; below this threshold => needs_review. */
+  minConfidence: number;
+  /** Max Jaccard similarity above which two cases are flagged as duplicates. */
+  duplicateSimilarityThreshold: number;
+  /** Max open-question count per case before review is required. */
+  maxOpenQuestionsPerCase: number;
+  /** Max assumption count per case before review is required. */
+  maxAssumptionsPerCase: number;
+  /**
+   * Operator-configurable handling when a cross-family judge refuses.
+   * Omitted values preserve the legacy availability-first posture
+   * (`fail_open`) for backwards compatibility.
+   */
+  judgeRefusalPolicy?: JudgeRefusalPolicyConfig;
+  /**
+   * Whether the policy gate must cross-reference each generated test case's
+   * declared `riskCategory` against the risk classification derivable from the
+   * Business Test Intent IR for the screens referenced in the case's
+   * `figmaTraceRefs`. When enabled (the secure default), any case that
+   * declares a risk category outside `reviewOnlyRiskCategories` while the
+   * intent IR derives a review-only classification for one of its screens
+   * raises a `risk_tag_downgrade_detected` outcome at both per-case and
+   * job-level. The case is escalated to `needs_review` (defense-in-depth
+   * against an out-of-band caller submitting forged low-risk tags).
+   *
+   * Optional for backward compatibility. Treat `undefined` as `true`.
+   */
+  enforceRiskTagDowngradeDetection?: boolean;
+  /**
+   * Minimum job-level field-coverage ratio required by the logic-judge
+   * coverage hard-gate (Issue #1901). Computed as
+   * `actionCoverage.covered / actionCoverage.total` across the generated
+   * test case list. Below this threshold the judge emits the
+   * `insufficient_coverage_breadth` finding (severity: error) and the
+   * repair-loop is triggered. Tunable per profile; the secure default for
+   * `eu-banking-default` is `0.4`. Optional for backward compatibility:
+   * when omitted the hard-gate skips the breadth check.
+   */
+  fieldCoverageRatioMin?: number;
+  /**
+   * Minimum job-level action-coverage ratio required by the logic-judge
+   * coverage hard-gate (Issue #1901). Computed as
+   * `actionCoverage.covered / actionCoverage.total` across the generated
+   * test case list. Below this threshold the judge emits the
+   * `insufficient_coverage_breadth` finding (severity: error) and the
+   * repair-loop is triggered. Tunable per profile; the secure default for
+   * `eu-banking-default` is `0.5`. Optional for backward compatibility:
+   * when omitted the hard-gate skips the breadth check.
+   */
+  actionCoverageRatioMin?: number;
+  /**
+   * Issue #2053 — adversarial-critic negative-case-lift hard gate
+   * (`G-NEG-CASE`). When the adversarial-critic loop runs for a job,
+   * the production runner compares the per-run baseline negative-case
+   * ratio against the post-critic final negative-case ratio. The
+   * relative ratio increase must meet `thresholdRatio` (default
+   * `0.30`).
+   *
+   * `gateMode` controls enforcement:
+   *
+   * - `"enforce"` (the secure default for `eu-banking-default`): a
+   *   below-threshold result fails the run with the
+   *   `NEGATIVE_CASE_LIFT_BELOW_THRESHOLD` failure class so CI marks
+   *   the build red.
+   * - `"advisory"`: the gate result is persisted in
+   *   `policy-report.json` but does not fail the run. Intended for
+   *   fast iterative local runs that should still record the metric.
+   * - `"off"`: the gate is not evaluated; the entry persisted in the
+   *   policy report records `status === "skipped"` with
+   *   `skipReason === "gate_disabled"` so audit can distinguish a
+   *   deliberate disable from a missing upstream signal.
+   *
+   * When the adversarial-critic loop did not run (no judge client
+   * wired) or exited with `stopReason === "critic_failed"`, the gate
+   * status is always `"skipped"` regardless of `gateMode` — skip is
+   * an explicit, audit-visible status and is never silently a pass.
+   *
+   * Optional for backward compatibility: when omitted the production
+   * runner falls back to the documented default of
+   * `{ gateMode: "enforce", thresholdRatio: 0.30 }`.
+   */
+  negativeCaseLift?: {
+    readonly gateMode: "enforce" | "advisory" | "off";
+    readonly thresholdRatio: number;
+  };
+  /**
+   * Issue #2068 — `policy:technique-coverage-minimum` resolution mode.
+   *
+   * Drives whether the gate enforces the planner's fixed
+   * `CoveragePlan.perScreen[].techniqueQuotas` rows verbatim
+   * (`{ mode: "fixed" }`) or replaces the equivalence-partitioning
+   * quota with a tier-elastic formula that scales with the screen's
+   * coverage-relevant field count (`{ mode: "tier-elastic" }`).
+   *
+   * Optional for backwards compatibility: when omitted the gate falls
+   * back to `tier-elastic` so small-screen masks with `<= 8` fields
+   * stop tripping the closeout-blocking 12-EP floor that was the
+   * original closeout child #2026.
+   */
+  techniqueCoverageMinimum?: TechniqueCoverageMinimumPolicy;
+  /**
+   * Issue #2070 — generator self-consistency sampling policy. Controls the
+   * number of independently seeded generator samples emitted before the
+   * runner either performs structural majority voting (`3`) or preserves the
+   * legacy single-sample flow (`1`).
+   *
+   * Optional for backwards compatibility: when omitted the runner falls back
+   * to the secure default of `3` for `eu-banking-default`, but the runtime
+   * silently degrades to `1` when the active generator deployment does not
+   * declare seed support.
+   */
+  selfConsistency?: {
+    readonly sampleCount: 1 | 3;
+  };
+  /**
+   * Issue #2116 — faithfulness-tier-elastic fallback strictness.
+   *
+   * Drives how the cross-modal-faithfulness gate treats verdicts that
+   * lack `stepVerdicts` (legacy schema 1.0.0 producers, refused
+   * cross-family judge that still emitted a case-level score, etc.).
+   *
+   * - `false` (the secure default for `eu-banking-default`):
+   *   `case_level_fallback` raises a job-level **warning**
+   *   (`policy:cross-modal-faithfulness:case-level-fallback`) and the
+   *   case-level score continues to drive the threshold check. The
+   *   evaluation mode is recorded on
+   *   `TestCasePolicyReport.faithfulnessEvaluation` for audit.
+   * - `true`: `case_level_fallback` is treated as an **error**, mirroring
+   *   the per-step strictness. Operators that require per-step audit
+   *   evidence flip this on so a verdict with no per-step claims fails
+   *   the run rather than slipping through under the legacy fallback.
+   *
+   * The companion `policy:cross-modal-faithfulness:evaluation-missing`
+   * outcome is always raised at error severity when no faithfulness
+   * verdict is present at all — that path is not configurable because
+   * "no judge ran" must never silently pass an audited gate.
+   *
+   * Optional for backwards compatibility: when omitted the runtime
+   * applies the `false` default.
+   */
+  requirePerStepFaithfulness?: boolean;
+  /**
+   * Issue #2169 — policy-scoped elastic FinOps wall-clock coefficients for
+   * the `test_generation` role.
+   *
+   * Optional for backwards compatibility: when omitted the runtime falls back
+   * to the built-in `eu-banking-default` coefficients.
+   */
+  finopsWallClockBudget?: FinOpsWallClockBudgetPolicy;
+  /**
+   * Issue #2177 — allow-list of attested hosting regions accepted by the
+   * `G8_EU_REGION_ATTESTED` hard gate. Optional for backwards compatibility:
+   * when omitted the runtime falls back to the profile's built-in default.
+   */
+  allowedHostingRegions?: readonly RegionAttestationHostingRegion[];
+  /**
+   * Issue #2128 — opt-in training-influence DP budget configuration. When
+   * omitted or `.enabled === false` (the secure default), the accountant
+   * is inactive.
+   *
+   * This field is the policy-profile-side declaration of the budget. The
+   * runtime helpers in `src/test-intelligence/training-influence-dp-budget.ts`
+   * (`applyDpCharge`, `buildDpBudgetConsumedManifest`, ...) are the
+   * call-site API operators wire into their gateway adapter to charge each
+   * job, block on cap exhaustion, and emit the per-job
+   * `dp-budget-consumed.json` artifact for audit replay. The harness
+   * itself does not call these helpers — this is a library surface, not
+   * an automatically-applied gate.
+   *
+   * NOT a cryptographic DP guarantee — this is an accounting layer that
+   * supports operator decision-making. See the ADR for the model.
+   */
+  trainingInfluenceDpBudget?: TrainingInfluenceDpBudgetConfig;
+}
+
+export const ALLOWED_JUDGE_REFUSAL_POLICIES = [
+  "fail_open",
+  "fail_closed",
+  "needs_review",
+] as const;
+
+export type JudgeRefusalPolicy =
+  (typeof ALLOWED_JUDGE_REFUSAL_POLICIES)[number];
+
+export interface JudgeRefusalPolicyConfig {
+  faithfulness: JudgeRefusalPolicy;
+  a11y: JudgeRefusalPolicy;
+}
+
+/** Built-in policy profile shape. Profiles are identified by `id`+`version`. */
+export interface TestCasePolicyProfile {
+  id: string;
+  version: string;
+  description: string;
+  rules: TestCasePolicyProfileRules;
+}
+
+/** Per-element coverage breakdown. */
+export interface TestCaseCoverageBucket {
+  /** Total IR elements of this kind across the job. */
+  total: number;
+  /** Element ids covered by at least one accepted test case. */
+  covered: number;
+  /** Coverage ratio in [0, 1]; 0 when total=0 (no elements => no gap). */
+  ratio: number;
+  /** Element ids that have no covering test case. */
+  uncoveredIds: string[];
+}
+
+/** Coverage/quality signals across one job's generated test cases. */
+export interface TestCaseCoverageReport {
+  schemaVersion: typeof TEST_CASE_COVERAGE_REPORT_SCHEMA_VERSION;
+  contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  generatedAt: string;
+  jobId: string;
+  policyProfileId: string;
+  totalTestCases: number;
+  fieldCoverage: TestCaseCoverageBucket;
+  actionCoverage: TestCaseCoverageBucket;
+  fieldLifecycleCoverage: TestCaseCoverageBucket;
+  /**
+   * Issue #2168 — share of `recommended_positive_path` field-lifecycle
+   * transitions that are exercised by at least one accepted test step.
+   * Optional (omitted when the workflow topology declares no field
+   * lifecycles or no recommended-tier transitions) so the byte shape of
+   * the coverage report stays stable for runs that pre-date the
+   * tier-aware validator.
+   */
+  recommendedTransitionCoverage?: TestCaseCoverageBucket;
+  validationCoverage: TestCaseCoverageBucket;
+  navigationCoverage: TestCaseCoverageBucket;
+  traceCoverage: { total: number; withTrace: number; ratio: number };
+  negativeCaseCount: number;
+  validationCaseCount: number;
+  boundaryCaseCount: number;
+  accessibilityCaseCount: number;
+  workflowCaseCount: number;
+  positiveCaseCount: number;
+  /** Avg assumptions per case. */
+  assumptionsRatio: number;
+  /** Total open questions across all cases. */
+  openQuestionsCount: number;
+  /** Test-case pairs sharing >= duplicate threshold. */
+  duplicatePairs: TestCaseDuplicatePair[];
+  /** Optional 0..1 rubric score from a downstream rater (Wave 2). */
+  rubricScore?: number;
+  /**
+   * Domain-invariant coverage (Issue #2040). Reports the share of
+   * registered invariants exercised by at least one accepted test case.
+   * `total` is the registered invariant count, `exercised` is the count
+   * matched by `forall` for at least one case, and `ratio` is
+   * `exercised / total` rounded to six digits (0 when `total === 0`).
+   */
+  invariantCoverage?: {
+    total: number;
+    exercised: number;
+    ratio: number;
+    /** Sorted invariant ids registered for the run. */
+    registeredIds: string[];
+    /** Sorted invariant ids exercised by at least one accepted case. */
+    exercisedIds: string[];
+  };
+  /**
+   * Per-case invariant exercise mapping (Issue #2040). Sorted alphabetically
+   * by `testCaseId`; only cases that exercise at least one invariant appear
+   * in the array. Surfaces the `exercises: ["INV-VAT-01", ...]` annotation
+   * the issue spec requires without altering the strict
+   * `GeneratedTestCase` schema.
+   */
+  invariantAnnotations?: TestCaseInvariantAnnotation[];
+}
+
+/**
+ * Per-case invariant annotation row (Issue #2040). Each entry lists the
+ * invariant ids the test case is in scope for (i.e. `forall === true`),
+ * deduplicated and alphabetically sorted.
+ */
+export interface TestCaseInvariantAnnotation {
+  testCaseId: string;
+  exercises: string[];
+}
+
+/* ------------------------------------------------------------------ */
+/*  Self-verify rubric pass (Issue #1379)                              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Allowed scoring dimensions evaluated by the self-verify rubric pass
+ * (Issue #1379). Each dimension is scored in `[0, 1]` per test case;
+ * the per-case rubric score is the arithmetic mean of the supplied
+ * dimensions (and visual subscores when present). The discriminant is
+ * the runtime source of truth — adding a new dimension is a minor
+ * (additive) bump per the contract versioning rules.
+ */
+export const ALLOWED_SELF_VERIFY_RUBRIC_DIMENSIONS = [
+  "schema_conformance",
+  "source_trace_completeness",
+  "assumption_open_question_marking",
+  "expected_result_coverage",
+  "negative_boundary_presence",
+  "duplication_flag_consistency",
+] as const;
+
+/** Single rubric scoring dimension. */
+export type SelfVerifyRubricDimension =
+  (typeof ALLOWED_SELF_VERIFY_RUBRIC_DIMENSIONS)[number];
+
+/**
+ * Allowed multimodal visual subscores layered onto the rubric pass when
+ * a validated `VisualScreenDescription` batch is supplied alongside the
+ * test cases (Issue #1379, multimodal addendum 2026-04-24). The four
+ * subscores are: visible-control coverage, state/validation coverage,
+ * ambiguity handling, and the unsupported-visual-claims penalty (the
+ * latter is interpreted as `1 - penalty` so all subscores remain in
+ * `[0, 1]` where higher is better).
+ */
+export const ALLOWED_SELF_VERIFY_RUBRIC_VISUAL_SUBSCORES = [
+  "visible_control_coverage",
+  "state_validation_coverage",
+  "ambiguity_handling",
+  "unsupported_visual_claims",
+] as const;
+
+/** Single multimodal visual subscore kind. */
+export type SelfVerifyRubricVisualSubscoreKind =
+  (typeof ALLOWED_SELF_VERIFY_RUBRIC_VISUAL_SUBSCORES)[number];
+
+/**
+ * Allowed refusal codes reported by the self-verify rubric pass when the
+ * pass cannot publish a complete per-case evaluation. The code is
+ * load-bearing: callers that gate on rubric output check this code and
+ * fall back to the unscored coverage path. No two refusal codes overlap.
+ */
+export const ALLOWED_SELF_VERIFY_RUBRIC_REFUSAL_CODES = [
+  "feature_disabled",
+  "gateway_failure",
+  "model_binding_mismatch",
+  "schema_invalid_response",
+  "score_out_of_range",
+  "missing_test_case_score",
+  "extra_test_case_score",
+  "duplicate_test_case_score",
+  "image_payload_attempted",
+] as const;
+
+/** Single rubric pass refusal classification. */
+export type SelfVerifyRubricRefusalCode =
+  (typeof ALLOWED_SELF_VERIFY_RUBRIC_REFUSAL_CODES)[number];
+
+/** Single dimension score in the persisted rubric report. */
+export interface SelfVerifyRubricDimensionScore {
+  dimension: SelfVerifyRubricDimension;
+  /** Score in `[0, 1]`; rounded to 6 digits in the persisted artifact. */
+  score: number;
+}
+
+/** Single visual subscore in the persisted rubric report. */
+export interface SelfVerifyRubricVisualSubscore {
+  subscore: SelfVerifyRubricVisualSubscoreKind;
+  /** Score in `[0, 1]`; rounded to 6 digits in the persisted artifact. */
+  score: number;
+}
+
+/**
+ * Short, structured rule citation attached to a per-case evaluation. The
+ * citation surfaces the rubric rule the rater applied and a short
+ * audit-grade message. No chain-of-thought is persisted — `message` is
+ * a single sentence the rater produced when grading the case.
+ */
+export interface SelfVerifyRubricRuleCitation {
+  /** Stable rule identifier (e.g. `"schema_conformance.required_fields"`). */
+  ruleId: string;
+  /** Audit-grade short message; sanitized + truncated by the parser. */
+  message: string;
+}
+
+/** Per-test-case rubric evaluation row. */
+export interface SelfVerifyRubricCaseEvaluation {
+  testCaseId: string;
+  /** Sorted by dimension name for byte stability. */
+  dimensions: SelfVerifyRubricDimensionScore[];
+  /** Visual subscores when the rubric pass had a visual sidecar input. */
+  visualSubscores?: SelfVerifyRubricVisualSubscore[];
+  /** Sorted by `ruleId` for byte stability. Empty array when no rule fired. */
+  citations: SelfVerifyRubricRuleCitation[];
+  /**
+   * Aggregate per-case rubric score in `[0, 1]`. Arithmetic mean of the
+   * dimensions and visual subscores; rounded to 6 digits in the artifact.
+   */
+  rubricScore: number;
+}
+
+/** Job-level aggregate of the rubric pass. */
+export interface SelfVerifyRubricAggregateScores {
+  /** Mean of the per-case `rubricScore` values across the job. */
+  jobLevelRubricScore: number;
+  /** Job-level mean per rubric dimension; sorted by dimension name. */
+  dimensionScores: SelfVerifyRubricDimensionScore[];
+  /** Job-level mean per visual subscore when the rubric pass scored visuals. */
+  visualSubscores?: SelfVerifyRubricVisualSubscore[];
+}
+
+/** Refusal record emitted when the rubric pass cannot publish scores. */
+export interface SelfVerifyRubricRefusal {
+  code: SelfVerifyRubricRefusalCode;
+  /** Sanitized + truncated message; no secrets, no chain-of-thought. */
+  message: string;
+}
+
+/**
+ * Persisted self-verify rubric pass artifact (Issue #1379).
+ *
+ * Sibling to `validation-report.json` and `coverage-report.json` under
+ * `<runDir>/testcases/self-verify-rubric.json`. Always byte-stable: per
+ * case evaluations are sorted by `testCaseId`, dimension lists are
+ * sorted by dimension name, and citations are sorted by rule id.
+ *
+ * When a `refusal` is present, `caseEvaluations` is empty and the
+ * `aggregate` carries `0` job/dimension scores; downstream policy gates
+ * MUST treat the refusal as a soft signal (it does not by itself block
+ * a job) and surface it on the inspector for operator review.
+ */
+export interface SelfVerifyRubricReport {
+  schemaVersion: typeof SELF_VERIFY_RUBRIC_REPORT_SCHEMA_VERSION;
+  contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  promptTemplateVersion: typeof SELF_VERIFY_RUBRIC_PROMPT_TEMPLATE_VERSION;
+  generatedAt: string;
+  jobId: string;
+  policyProfileId: string;
+  /** Whether the rubric replay cache served the result without invoking the LLM. */
+  cacheHit: boolean;
+  /** Hex-encoded SHA-256 digest of the rubric replay-cache key. */
+  cacheKeyDigest: string;
+  /** Identity stamps of the deployment that produced (or would have produced) the scores. */
+  modelDeployment: string;
+  modelRevision: string;
+  gatewayRelease: string;
+  /** Set when the pass refused to publish scores. */
+  refusal?: SelfVerifyRubricRefusal;
+  /** Sorted by `testCaseId` for byte stability. Empty when `refusal` is set. */
+  caseEvaluations: SelfVerifyRubricCaseEvaluation[];
+  aggregate: SelfVerifyRubricAggregateScores;
+}
+
+/**
+ * Replay-cache key for the self-verify rubric pass. The key carries a
+ * hard discriminator (`passKind`) so it can never collide with the
+ * test-generation replay cache key, even when other identity fields
+ * happen to match.
+ */
+export interface SelfVerifyRubricReplayCacheKey {
+  passKind: "self_verify_rubric";
+  /** SHA-256 of the rubric input (test cases + intent + visual descriptions). */
+  inputHash: string;
+  /** SHA-256 of the rubric prompt + response schema identity. */
+  promptHash: string;
+  /** SHA-256 of the rubric response JSON schema. */
+  schemaHash: string;
+  /** Deployment identity used for the rubric pass. */
+  modelDeployment: string;
+  /** Gateway compatibility mode; Issue #1379 pins this to `openai_chat`. */
+  compatibilityMode: LlmGatewayCompatibilityMode;
+  modelRevision: string;
+  gatewayRelease: string;
+  policyBundleVersion: string;
+  redactionPolicyVersion: typeof REDACTION_POLICY_VERSION;
+  promptTemplateVersion: typeof SELF_VERIFY_RUBRIC_PROMPT_TEMPLATE_VERSION;
+  rubricSchemaVersion: typeof SELF_VERIFY_RUBRIC_REPORT_SCHEMA_VERSION;
+  seed?: number;
+}
+
+/** Stored cache entry for a rubric report. */
+export interface SelfVerifyRubricReplayCacheEntry {
+  key: string;
+  storedAt: string;
+  report: SelfVerifyRubricReport;
+}
+
+/** Cache lookup outcome consumed by the rubric pass orchestration layer. */
+export type SelfVerifyRubricReplayCacheLookupResult =
+  | { hit: true; entry: SelfVerifyRubricReplayCacheEntry }
+  | { hit: false; key: string };
+
+/** Pair of generated test case ids exceeding the similarity threshold. */
+export interface TestCaseDuplicatePair {
+  leftTestCaseId: string;
+  rightTestCaseId: string;
+  similarity: number;
+}
+
+/**
+ * Polarity surfaced by a generated test case's oracle (Issue #2123).
+ *
+ * The equivalence-class fingerprint deliberately collapses the persisted
+ * polarity / category / type triple into the coarsest semantic axis
+ * relevant for redundancy: whether the case's oracle expects the system
+ * to ACCEPT the input (positive), REJECT it (negative / validation), test
+ * a value at a partition boundary (boundary), advance through the
+ * navigation graph (navigation), or assert an accessibility property
+ * (accessibility). Cases with identical covered ids, technique, and risk
+ * class but different `oraclePolarity` are NOT considered redundant.
+ */
+export const ALLOWED_TEST_CASE_ORACLE_POLARITIES = [
+  "positive",
+  "negative",
+  "boundary",
+  "navigation",
+  "accessibility",
+] as const;
+export type TestCaseOraclePolarity =
+  (typeof ALLOWED_TEST_CASE_ORACLE_POLARITIES)[number];
+
+/**
+ * Semantic equivalence-class fingerprint (Issue #2123).
+ *
+ * Derived from `(coveredFieldIds, coveredActionIds, riskClass, technique,
+ * oraclePolarity)` — NOT from text. Two generated cases are considered
+ * to belong to the same equivalence class iff their
+ * {@link EquivalenceClassFingerprint} fields are byte-equal under the
+ * canonical projection (`coveredFieldIds` and `coveredActionIds` sorted
+ * lexically and de-duplicated). The fingerprint is the primary signal
+ * the validator uses to detect redundancy WITHIN a technique bucket:
+ * the previous Levenshtein/Jaccard-only path missed cases that differed
+ * by a few characters but covered the same equivalence class.
+ */
+export interface EquivalenceClassFingerprint {
+  readonly coveredFieldIds: readonly string[];
+  readonly coveredActionIds: readonly string[];
+  readonly riskClass: TestCaseRiskCategory;
+  readonly technique: TestCaseTechnique29119;
+  readonly oraclePolarity: TestCaseOraclePolarity;
+}
+
+/**
+ * Allowed visual-sidecar policy outcome codes (Issue #1364 / #1386).
+ *
+ * These mirror the visual-sidecar policy outcomes attached to the policy
+ * report when the multimodal sidecar misbehaves or is downgraded.
+ */
+export const ALLOWED_VISUAL_SIDECAR_VALIDATION_OUTCOMES = [
+  "ok",
+  "schema_invalid",
+  "low_confidence",
+  "fallback_used",
+  "possible_pii",
+  "prompt_injection_like_text",
+  "conflicts_with_figma_metadata",
+  "primary_unavailable",
+] as const;
+export type VisualSidecarValidationOutcome =
+  (typeof ALLOWED_VISUAL_SIDECAR_VALIDATION_OUTCOMES)[number];
+
+/** Single per-screen visual-sidecar validation row. */
+export interface VisualSidecarValidationRecord {
+  screenId: string;
+  deployment: SidecarDeployment;
+  outcomes: VisualSidecarValidationOutcome[];
+  /** Issues found while structurally validating the description. */
+  issues: TestCaseValidationIssue[];
+  /** Mean confidence reported by the sidecar (0..1). */
+  meanConfidence: number;
+}
+
+/** Aggregate visual-sidecar validation report across a job. */
+export interface VisualSidecarValidationReport {
+  schemaVersion: typeof VISUAL_SIDECAR_VALIDATION_REPORT_SCHEMA_VERSION;
+  contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  visualSidecarSchemaVersion: typeof VISUAL_SIDECAR_SCHEMA_VERSION;
+  generatedAt: string;
+  jobId: string;
+  totalScreens: number;
+  screensWithFindings: number;
+  /** Whether any record carries a non-`ok`/non-`fallback_used` outcome that blocks generation. */
+  blocked: boolean;
+  records: VisualSidecarValidationRecord[];
+}
+
+/**
+ * Allowed gateway roles. Each role is bound to a single deployment to keep the
+ * structured test-case generator (`gpt-oss-120b`) strictly separated from the
+ * multimodal visual sidecars (`llama-4-maverick-vision`, `phi-4-multimodal-instruct`),
+ * and from the cross-model logic judge (Issue #1932) which reuses the structured-output
+ * surface but is intentionally bound to a different deployment so a self-consistency
+ * bias from the generator cannot be amplified by reusing the same model on the judge.
+ */
+export const ALLOWED_LLM_GATEWAY_ROLES = [
+  "test_generation",
+  "visual_primary",
+  "visual_fallback",
+  "logic_judge",
+  "a11y_judge",
+  "coverage_planner",
+  "risk_ranker",
+] as const;
+export type LlmGatewayRole = (typeof ALLOWED_LLM_GATEWAY_ROLES)[number];
+
+/**
+ * Wire-protocol compatibility modes. `openai_chat` is the only mode shipped in
+ * Wave 1; the array is the source of truth so future modes (`openai_responses`,
+ * `custom_adapter`) plug in without changing the call sites.
+ */
+export const ALLOWED_LLM_GATEWAY_COMPATIBILITY_MODES = ["openai_chat"] as const;
+export type LlmGatewayCompatibilityMode =
+  (typeof ALLOWED_LLM_GATEWAY_COMPATIBILITY_MODES)[number];
+
+/** Authentication strategy for outbound requests to the LLM gateway. */
+export const ALLOWED_LLM_GATEWAY_AUTH_MODES = [
+  "api_key",
+  "bearer_token",
+  "none",
+] as const;
+export type LlmGatewayAuthMode =
+  (typeof ALLOWED_LLM_GATEWAY_AUTH_MODES)[number];
+
+/**
+ * Wire-format strategy for structured outputs. Decouples our in-process
+ * structured-output behaviour (the gateway always parses JSON content and
+ * validates it against `responseSchema` when present) from the on-the-wire
+ * `response_format` field shipped to the upstream provider.
+ *
+ * - `"json_schema"` (default) — emit
+ *   `response_format: { type: "json_schema", json_schema: {...} }` when the
+ *   client config declares `structuredOutputs: true` and the request carries
+ *   a schema. Matches OpenAI / Azure OpenAI Structured Outputs.
+ * - `"json_object"` — emit `response_format: { type: "json_object" }`. The
+ *   schema is still validated in-process. Use for providers that accept the
+ *   weaker `json_object` mode but reject `json_schema`.
+ * - `"none"` — omit `response_format` entirely. Use when the deployment
+ *   silently returns empty content for any `response_format` value (observed
+ *   on `gpt-oss-120b` via Azure AI Foundry's `openai/v1` path on 2026-05-02:
+ *   any `response_format` setting yields `content: ""` after burning ~2
+ *   tokens; with no `response_format`, the model produces clean parseable
+ *   JSON when the prompt instructs it to). The gateway still parses and
+ *   schema-validates the content in-process so the contract guarantee
+ *   ("structured-output success returns parsed JSON") is unchanged.
+ */
+export const ALLOWED_LLM_GATEWAY_WIRE_STRUCTURED_OUTPUT_MODES = [
+  "json_schema",
+  "json_object",
+  "none",
+] as const;
+export type LlmGatewayWireStructuredOutputMode =
+  (typeof ALLOWED_LLM_GATEWAY_WIRE_STRUCTURED_OUTPUT_MODES)[number];
+
+/**
+ * Internal constrained-decoding adapters. These are more expressive than the
+ * wire-mode enum because multiple provider integrations can implement the same
+ * logical schema-constrained contract.
+ */
+export const ALLOWED_LLM_CONSTRAINED_DECODING_ADAPTER_IDS = [
+  "openai_json_schema",
+  "openai_json_object",
+  "prompt_only",
+  "outlines",
+  "llguidance",
+] as const;
+export type LlmConstrainedDecodingAdapterId =
+  (typeof ALLOWED_LLM_CONSTRAINED_DECODING_ADAPTER_IDS)[number];
+
+/** How strongly the selected constrained-decoding adapter enforces shape. */
+export const ALLOWED_LLM_CONSTRAINED_DECODING_ENFORCEMENTS = [
+  "provider",
+  "sampler",
+  "prompt_only",
+] as const;
+export type LlmConstrainedDecodingEnforcement =
+  (typeof ALLOWED_LLM_CONSTRAINED_DECODING_ENFORCEMENTS)[number];
+
+/**
+ * Operator-configured constrained-decoding preference. The gateway resolves
+ * this preference into an actual adapter per request and may explicitly fall
+ * back when the compatibility mode or deployment cannot honor it.
+ */
+export interface LlmConstrainedDecodingConfig {
+  /** Preferred adapter for schema-carrying requests. */
+  preferredAdapter: LlmConstrainedDecodingAdapterId;
+  /**
+   * Optional explicit fallback adapter. Defaults to `prompt_only` when
+   * omitted; callers should keep this narrow so a single request never fan-outs
+   * across multiple extra network attempts unexpectedly.
+   */
+  fallbackAdapter?: LlmConstrainedDecodingAdapterId;
+  /**
+   * Optional adapter-version pin surfaced in artifacts and FinOps so operators
+   * can correlate cost/quality shifts with constrained-decoding rollout.
+   */
+  adapterVersion?: string;
+}
+
+/**
+ * Resolved constrained-decoding metadata for one request attempt. This is
+ * attached to gateway results and propagated into FinOps/agent-participation
+ * artifacts so fallback behavior is auditable.
+ */
+export interface LlmConstrainedDecodingMetadata {
+  /** True when the caller supplied a response schema on the request. */
+  requested: boolean;
+  /** Adapter actually selected for this attempt. */
+  adapterId: LlmConstrainedDecodingAdapterId;
+  /** Enforcement class of the selected adapter. */
+  enforcement: LlmConstrainedDecodingEnforcement;
+  /** Wire-mode emitted to the upstream compatibility layer. */
+  wireMode: LlmGatewayWireStructuredOutputMode;
+  /** True when the preferred adapter could not be used and a fallback ran. */
+  fallback: boolean;
+  /** Redacted reason for fallback, when applicable. */
+  fallbackReason?: string;
+  /** Optional adapter-version pin from operator config. */
+  adapterVersion?: string;
+}
+
+/**
+ * Disjoint failure classes surfaced by `LlmGatewayClient.generate`. Refusals,
+ * schema-invalid responses, and image-payload guard rejections are NOT
+ * retryable; transport, timeout, and rate-limit failures are.
+ */
+export const ALLOWED_LLM_GATEWAY_ERROR_CLASSES = [
+  "refusal",
+  "schema_invalid",
+  "incomplete",
+  "timeout",
+  "rate_limited",
+  "transport",
+  "image_payload_rejected",
+  "input_budget_exceeded",
+  "response_too_large",
+  // Issue #1703 (audit-2026-05 Wave 2): protocol-level failure distinct from
+  // schema_invalid. Covers HTTP status semantics that indicate gateway/auth
+  // misconfiguration rather than model-output schema violations (401 / 403,
+  // and other auth/routing rejections). Not retryable — operator action
+  // required (rotate key, fix endpoint, repair scope).
+  "protocol",
+  // Issue #1694 (audit-2026-05 Wave 2): caller-initiated cancellation via
+  // upstream AbortSignal. Distinct from "timeout" so the breaker does not
+  // record cancellation as a transient failure (and the retry policy does
+  // not bounce it). Not retryable.
+  "canceled",
+] as const;
+export type LlmGatewayErrorClass =
+  (typeof ALLOWED_LLM_GATEWAY_ERROR_CLASSES)[number];
+
+/**
+ * Capability flags declared by the gateway operator and verified at probe
+ * time. Streaming is disabled by default in Wave 1 — the Figma-to-test
+ * pipeline consumes only the final structured JSON envelope.
+ */
+export interface LlmGatewayCapabilities {
+  structuredOutputs: boolean;
+  seedSupport: boolean;
+  reasoningEffortSupport: boolean;
+  maxOutputTokensSupport: boolean;
+  streamingSupport: boolean;
+  imageInputSupport: boolean;
+}
+
+/** Per-capability probe verdict carried in the persisted artifact. */
+export type LlmCapabilityProbeOutcome =
+  | "supported"
+  | "unsupported"
+  | "untested"
+  | "probe_failed";
+
+/** Probe rows can cover declared capability flags plus the mandatory text-chat baseline. */
+export type LlmCapabilityProbeCapability =
+  | keyof LlmGatewayCapabilities
+  | "textChat";
+
+/** One probe row in `llm-capabilities.json`. */
+export interface LlmCapabilityProbeRecord {
+  capability: LlmCapabilityProbeCapability;
+  declared: boolean;
+  outcome: LlmCapabilityProbeOutcome;
+  detail?: string;
+}
+
+/**
+ * Persistable capabilities artifact. Contains identity (role, deployment,
+ * gateway release, model revision, optional model-weights SHA-256) and the
+ * declared/observed capabilities. NEVER contains tokens, headers, or
+ * reasoning traces.
+ */
+export interface LlmCapabilitiesArtifact {
+  schemaVersion: typeof LLM_CAPABILITIES_SCHEMA_VERSION;
+  contractVersion: typeof LLM_GATEWAY_CONTRACT_VERSION;
+  generatedAt: string;
+  jobId: string;
+  role: LlmGatewayRole;
+  compatibilityMode: LlmGatewayCompatibilityMode;
+  deployment: string;
+  modelRevision: string;
+  gatewayRelease: string;
+  modelWeightsSha256?: string;
+  capabilities: LlmGatewayCapabilities;
+  probes: LlmCapabilityProbeRecord[];
+}
+
+/** Tunable circuit-breaker thresholds for an LLM gateway client. */
+export interface LlmGatewayCircuitBreakerConfig {
+  failureThreshold: number;
+  resetTimeoutMs: number;
+}
+
+export type LlmCircuitState = "closed" | "open" | "half_open";
+
+/**
+ * Construction-time configuration for an LLM gateway client.
+ *
+ * API tokens are NEVER in this object. Operators inject a token reader via
+ * the runtime factory; the reader is invoked once per request and the value
+ * is held only for the duration of that request.
+ */
+export interface LlmGatewayClientConfig {
+  role: LlmGatewayRole;
+  compatibilityMode: LlmGatewayCompatibilityMode;
+  baseUrl: string;
+  deployment: string;
+  modelRevision: string;
+  gatewayRelease: string;
+  /** Optional operator-configured ICT register reference for this deployment. */
+  ictRegisterRef?: string;
+  modelWeightsSha256?: string;
+  authMode: LlmGatewayAuthMode;
+  declaredCapabilities: LlmGatewayCapabilities;
+  timeoutMs: number;
+  maxRetries: number;
+  circuitBreaker: LlmGatewayCircuitBreakerConfig;
+  /**
+   * Hard upper bound on the gateway response body, in bytes. The transport
+   * counts decoded bytes during read and aborts the stream the moment the
+   * running total exceeds this cap; the failure surfaces as
+   * `errorClass: "response_too_large"` with `retryable: false` (Issue #1414).
+   * The cap is enforced both via the `Content-Length` header (pre-read
+   * short-circuit) and via streaming byte accounting (so a missing or
+   * mendacious header still cannot exhaust memory). Defaults to
+   * `8 * 1024 * 1024` (8 MiB) when omitted; positive integer values up to
+   * `Number.MAX_SAFE_INTEGER` are accepted, anything else throws at
+   * client construction. The mock gateway has no transport and ignores
+   * this field.
+   */
+  maxResponseBytes?: number;
+  /**
+   * Wire-format strategy for structured outputs. Defaults to `"json_schema"`
+   * (preserves existing behaviour). Set to `"json_object"` for providers
+   * that accept the weaker mode but reject `json_schema`. Set to `"none"`
+   * for providers that return empty content for ANY `response_format`
+   * (observed on Azure AI Foundry's `gpt-oss-120b` via the `openai/v1`
+   * path on 2026-05-02). In all three modes, the gateway parses and
+   * validates the response content as JSON in-process when the request
+   * carries a `responseSchema`, so the contract guarantee surfaced to
+   * callers is unchanged. See {@link LlmGatewayWireStructuredOutputMode}.
+   */
+  wireStructuredOutputMode?: LlmGatewayWireStructuredOutputMode;
+  /**
+   * Optional internal constrained-decoding preference. When omitted, the
+   * gateway derives a backward-compatible adapter from
+   * `wireStructuredOutputMode` (`json_schema` -> `openai_json_schema`,
+   * `json_object` -> `openai_json_object`, `none` -> `prompt_only`).
+   */
+  constrainedDecoding?: LlmConstrainedDecodingConfig;
+  /**
+   * Per-modality token-estimation strategy used by the client-side input
+   * budget guard (Issue #1930). Defaults to
+   * {@link DEFAULT_LLM_IMAGE_TOKEN_STRATEGY} (`"openai_tiles"`) when omitted.
+   * The wire payload is unaffected: the strategy only changes how the gateway
+   * estimates `imageInputs` against
+   * {@link LlmGenerationRequest.maxInputTokens}, so a Visual-Sidecar request
+   * carrying a 119 KiB / 1280×720 PNG no longer pre-flight-rejects under the
+   * production-default `visual_primary.maxInputTokensPerRequest = 40_000`.
+   */
+  imageTokenStrategy?: LlmImageTokenStrategy;
+}
+
+/** Image payload accepted by visual sidecars. Rejected for `test_generation`. */
+export interface LlmImageInput {
+  mimeType: string;
+  base64Data: string;
+  /**
+   * Decoded pixel width of the image. When present together with
+   * {@link LlmImageInput.heightPx} the prompt-size estimator can use a
+   * tile-based formula (Issue #1930) instead of charging the raw base64
+   * byte length against the token budget. The base64 string remains the
+   * canonical wire payload; these fields only inform the estimator.
+   */
+  widthPx?: number;
+  /** Decoded pixel height. Paired with {@link LlmImageInput.widthPx}. */
+  heightPx?: number;
+}
+
+/** Reasoning-effort hint forwarded only when `reasoningEffortSupport` is true. */
+export type LlmReasoningEffort = "low" | "medium" | "high";
+
+/**
+ * Per-modality token-estimation strategy for image inputs (Issue #1930).
+ *
+ * - `openai_tiles`: OpenAI Chat-Vision aligned default. Charges
+ *   `ceil(widthPx*heightPx / {@link LLM_IMAGE_OPENAI_TILE_SIZE_PX}^2) *
+ *   {@link LLM_IMAGE_OPENAI_TOKENS_PER_TILE} +
+ *   {@link LLM_IMAGE_OPENAI_BASE_TOKENS}` tokens per image.
+ * - `llama_tiles`: Llama-Vision aligned default. Charges
+ *   `ceil(widthPx*heightPx / {@link LLM_IMAGE_LLAMA_TILE_SIZE_PX}^2) *
+ *   {@link LLM_IMAGE_LLAMA_TOKENS_PER_TILE} +
+ *   {@link LLM_IMAGE_LLAMA_BASE_TOKENS}` tokens per image.
+ * - `raw_bytes`: legacy behaviour — charges `ceil(base64.length / 4)` tokens.
+ *   Retained as an explicit override for providers whose multimodal billing
+ *   actually scales with payload size, and as the fallback for any image
+ *   whose pixel dimensions are not supplied.
+ */
+export const ALLOWED_LLM_IMAGE_TOKEN_STRATEGIES = [
+  "openai_tiles",
+  "llama_tiles",
+  "raw_bytes",
+] as const;
+
+export type LlmImageTokenStrategy =
+  (typeof ALLOWED_LLM_IMAGE_TOKEN_STRATEGIES)[number];
+
+/**
+ * Default per-modality strategy used when a gateway client does not pin
+ * `imageTokenStrategy` in its `LlmGatewayClientConfig`. OpenAI-aligned tiles
+ * keep the FinOps envelope realistic for the most common deployments and
+ * remain a safe upper bound for providers whose actual multimodal token cost
+ * is lower than tile + base.
+ */
+export const DEFAULT_LLM_IMAGE_TOKEN_STRATEGY: LlmImageTokenStrategy =
+  "openai_tiles";
+
+/** Tile edge length (px) for the OpenAI Chat-Vision token estimate. */
+export const LLM_IMAGE_OPENAI_TILE_SIZE_PX = 512 as const;
+/** Tokens charged per OpenAI Chat-Vision tile (high-detail). */
+export const LLM_IMAGE_OPENAI_TOKENS_PER_TILE = 85 as const;
+/** Constant base tokens added once per OpenAI Chat-Vision image. */
+export const LLM_IMAGE_OPENAI_BASE_TOKENS = 85 as const;
+
+/** Tile edge length (px) for the Llama-Vision token estimate. */
+export const LLM_IMAGE_LLAMA_TILE_SIZE_PX = 560 as const;
+/**
+ * Tokens charged per Llama-Vision tile. Tracks the published
+ * Llama-3.2-Vision / Llama-4-Maverick-Vision tile encoding (CLS + 1600
+ * patches per tile at 14 px patch size).
+ */
+export const LLM_IMAGE_LLAMA_TOKENS_PER_TILE = 1601 as const;
+/** Constant base tokens added once per Llama-Vision image. */
+export const LLM_IMAGE_LLAMA_BASE_TOKENS = 1 as const;
+
+/** Fixed bytes-per-token estimator used by the shared prompt-size heuristic. */
+export const CONTEXT_BUDGET_ESTIMATOR_BYTES_PER_TOKEN = 4 as const;
+
+/** Schema version for persisted context-budget analyzer reports. */
+export const CONTEXT_BUDGET_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical directory for per-role-step context-budget artifacts. */
+export const CONTEXT_BUDGET_ARTIFACT_DIRECTORY = "context-budget" as const;
+
+/** Deterministic breach actions surfaced by the context-budget analyzer. */
+export const ALLOWED_CONTEXT_BUDGET_ACTIONS = [
+  "none",
+  "compact_prompt_payload",
+  "drop_optional_context",
+  "needs_review",
+] as const;
+
+export type ContextBudgetAction =
+  (typeof ALLOWED_CONTEXT_BUDGET_ACTIONS)[number];
+
+/** Stable category kinds consumed by the context-budget analyzer. */
+export const ALLOWED_CONTEXT_BUDGET_CATEGORY_KINDS = [
+  "system_instructions",
+  "business_intent_ir",
+  "visual_binding",
+  "source_context",
+  "coverage_plan",
+  "risk_priorities",
+  "generated_cases",
+  "validation_findings",
+  "judge_findings",
+  "repair_history",
+] as const;
+
+export type ContextBudgetCategoryKind =
+  (typeof ALLOWED_CONTEXT_BUDGET_CATEGORY_KINDS)[number];
+
+/** Priority drives which categories may be dropped during budget handling. */
+export const ALLOWED_CONTEXT_BUDGET_PRIORITIES = [
+  "required",
+  "important",
+  "optional",
+] as const;
+
+export type ContextBudgetPriority =
+  (typeof ALLOWED_CONTEXT_BUDGET_PRIORITIES)[number];
+
+/** Final disposition of a category after budget analysis. */
+export const ALLOWED_CONTEXT_BUDGET_CATEGORY_STATUSES = [
+  "included",
+  "compacted",
+  "dropped",
+] as const;
+
+export type ContextBudgetCategoryStatus =
+  (typeof ALLOWED_CONTEXT_BUDGET_CATEGORY_STATUSES)[number];
+
+/** Reported metadata for one analyzed category. */
+export interface ContextBudgetCategory {
+  readonly kind: ContextBudgetCategoryKind;
+  readonly priority: ContextBudgetPriority;
+  readonly estimatedTokens: number;
+  readonly status: ContextBudgetCategoryStatus;
+  readonly artifactHashes: readonly string[];
+}
+
+/** Deterministic per-role-step context-budget analyzer report. */
+export interface ContextBudgetReport {
+  readonly schemaVersion: typeof CONTEXT_BUDGET_REPORT_SCHEMA_VERSION;
+  readonly jobId: string;
+  readonly roleStepId: string;
+  readonly parentJobId?: string;
+  readonly roleLineageDepth?: number;
+  readonly modelBinding: string;
+  readonly maxInputTokens: number;
+  readonly estimatedInputTokens: number;
+  readonly categories: readonly ContextBudgetCategory[];
+  readonly action: ContextBudgetAction;
+  readonly compactedFromArtifactHashes: readonly string[];
+}
+
+/** Wire-shaped request handed to a gateway client. */
+export interface LlmGenerationRequest {
+  jobId: string;
+  systemPrompt: string;
+  userPrompt: string;
+  responseSchema?: Record<string, unknown>;
+  responseSchemaName?: string;
+  imageInputs?: ReadonlyArray<LlmImageInput>;
+  seed?: number;
+  reasoningEffort?: LlmReasoningEffort;
+  /**
+   * Optional client-side input-token budget. Gateway clients estimate the
+   * outgoing prompt size (system + user prompt + structured-output schema +
+   * any image payloads) and reject the request before transport with
+   * `errorClass: "input_budget_exceeded"` (`retryable: false`) when the
+   * estimate exceeds this cap (Issue #1415). Operators set the cap to bound
+   * cost and to keep maliciously expanded Figma metadata from reaching the
+   * gateway. Negative or non-integer values are rejected as `schema_invalid`.
+   */
+  maxInputTokens?: number;
+  maxOutputTokens?: number;
+  /**
+   * Optional per-request wall-clock budget. When set, the request times out
+   * after `maxWallClockMs` instead of the client config's `timeoutMs` if
+   * smaller, AND the resulting timeout failure is surfaced with
+   * `retryable: false` (FinOps fail-closed semantics — Issue #1371).
+   */
+  maxWallClockMs?: number;
+  /**
+   * Optional per-request retry cap. When set, the gateway uses
+   * `min(config.maxRetries, request.maxRetries)` so an operator can bound
+   * retry blast radius for an individual job without rebuilding the client
+   * (Issue #1371).
+   */
+  maxRetries?: number;
+  /**
+   * Optional caller-side `AbortSignal`. When the orchestrator cancels a
+   * running job (#1694), this signal is plumbed all the way to the
+   * outbound `fetch` so the in-flight LLM call is aborted immediately
+   * instead of running until the per-request timeout fires. Aborts via
+   * this signal surface as `errorClass: "canceled"` (`retryable: false`),
+   * distinct from `"timeout"` so circuit-breaker accounting and retry
+   * policy do not treat user cancellation as a transient transport
+   * failure.
+   */
+  abortSignal?: AbortSignal;
+  /**
+   * Optional gateway-side idempotency inputs (Issue #1784). When set
+   * AND the gateway runtime is wired with an idempotency cache, the
+   * gateway computes the HMAC of these inputs (using the cache's
+   * operator-configured secret) and consults the TTL-bounded cache
+   * before dispatch. A cache hit returns the previously-completed
+   * structured success result without making a second LLM call and
+   * counts as `gateway_idempotent_replay` in FinOps (separate from
+   * `replay_cache_hit`). The HMAC is never persisted to artifacts or
+   * logs in plaintext; the cache file is stored under
+   * `<runDir>/agent/idempotency-cache/<hmac>.json` with redacted bodies.
+   */
+  idempotency?: GatewayIdempotencyInputs;
+  /**
+   * Optional in-flight dedup key (Issue #1788). When supplied, one
+   * `LlmGatewayClient` collapses concurrent requests with the same
+   * `(promptHash, modelBinding, schemaHash, policyProfileHash)` into a
+   * single Promise. Only in-flight calls dedupe here; completed-result
+   * memoization remains a separate concern.
+   *
+   * `policyProfileHash` scopes the key so two tenants with identical prompt
+   * + schema hashes never collide.
+   */
+  inFlightDedup?: GatewayInFlightDedupInputs;
+}
+
+/**
+ * Optional caller-supplied key used by one gateway client instance to
+ * collapse concurrent equivalent requests onto the same in-flight Promise
+ * (Issue #1788).
+ */
+export interface GatewayInFlightDedupInputs {
+  /** Optional FinOps source label credited with the dedup hit. */
+  readonly source?: AgentSourceLabel;
+  /** sha256 hex digest of the canonical request input payload. */
+  readonly inputHash: string;
+  /** sha256 hex digest of the canonical prompt payload. */
+  readonly promptHash: string;
+  /** Stable model identity string (for example `"rev@release"`). */
+  readonly modelBinding: string;
+  /** sha256 hex digest of the structured-output schema. */
+  readonly schemaHash: string;
+  /**
+   * sha256 hex digest of the active policy profile. Required so two tenants
+   * with identical prompts never share an in-flight slot.
+   */
+  readonly policyProfileHash: string;
+}
+
+/**
+ * Schema-version literal pinned on every persisted
+ * {@link GatewayIdempotencyKey} (Issue #1784, Story MA-3 #1758). Bumping
+ * this constant requires a major contract bump and a CONTRACT_CHANGELOG.md
+ * entry.
+ */
+export const GATEWAY_IDEMPOTENCY_KEY_SCHEMA_VERSION = "1.0.0" as const;
+
+/**
+ * Inputs the LLM gateway hashes (HMAC-SHA256, operator-configured secret)
+ * to derive the idempotency key for a single role-step attempt
+ * (Issue #1784).
+ *
+ * The harness assembles these fields from already-known per-step values
+ * — `jobId` and `roleStepId` from the execution graph (#1781), `attempt`
+ * from the bounded harness state machine (#1780), `promptVersion` and
+ * `schemaHash` from the agent role profile (#1779), and `inputHash`
+ * from the canonical-JSON digest of the assembled prompt-and-schema
+ * payload — so a worker that crashes mid-call can replay the same key
+ * on resume and pull the cached result out of the gateway cache.
+ */
+export interface GatewayIdempotencyInputs {
+  /** Job identifier this attempt belongs to. */
+  readonly jobId: string;
+  /** Stable role-step identifier (e.g. `"<jobId>-generator-1"`). */
+  readonly roleStepId: string;
+  /** Attempt index within the harness retry policy. */
+  readonly attempt: number;
+  /** Prompt-template version pin from the agent role profile. */
+  readonly promptVersion: string;
+  /** sha256 hex digest of the role's structured-output schema. */
+  readonly schemaHash: string;
+  /** sha256 hex digest of the canonical-JSON prompt + schema payload. */
+  readonly inputHash: string;
+}
+
+/**
+ * Persisted idempotency-key envelope written to
+ * `<runDir>/agent/idempotency-cache/<hmac>.json` (Issue #1784). The
+ * `hmac` field doubles as the content-addressable filename so a worker
+ * resuming after a crash can compute the key from the inputs and
+ * directly load the cached result.
+ *
+ * The `hmac` is the HMAC-SHA256 hex digest of
+ * `canonicalJson({jobId, roleStepId, attempt, promptVersion, schemaHash, inputHash})`
+ * keyed by the operator-configured gateway secret. The secret itself is
+ * **never** persisted in any artifact, log, or error message.
+ */
+export interface GatewayIdempotencyKey {
+  readonly schemaVersion: typeof GATEWAY_IDEMPOTENCY_KEY_SCHEMA_VERSION;
+  readonly jobId: string;
+  readonly roleStepId: string;
+  readonly attempt: number;
+  readonly promptVersion: string;
+  readonly schemaHash: string;
+  readonly inputHash: string;
+  /** HMAC-SHA256 hex digest. Never persisted to artifacts in any other form. */
+  readonly hmac: string;
+}
+
+/** Provider finish reasons normalized to a single set. */
+export type LlmFinishReason =
+  | "stop"
+  | "length"
+  | "content_filter"
+  | "tool_calls"
+  | "other";
+
+/** Success outcome — never includes reasoning/CoT traces. */
+export interface LlmGenerationSuccess {
+  outcome: "success";
+  content: unknown;
+  rawTextContent?: string;
+  constrainedDecoding?: LlmConstrainedDecodingMetadata;
+  finishReason: LlmFinishReason;
+  usage: { inputTokens?: number; outputTokens?: number };
+  modelDeployment: string;
+  modelRevision: string;
+  gatewayRelease: string;
+  attempt: number;
+}
+
+/** Failure outcome with a redacted message and an explicit retryable flag. */
+export interface LlmGenerationFailure {
+  outcome: "error";
+  errorClass: LlmGatewayErrorClass;
+  message: string;
+  constrainedDecoding?: LlmConstrainedDecodingMetadata;
+  retryable: boolean;
+  attempt: number;
+}
+
+/** Discriminated union returned by `LlmGatewayClient.generate`. */
+export type LlmGenerationResult = LlmGenerationSuccess | LlmGenerationFailure;
+
+/** Theme brand policy applied during IR token derivation. */
+export type WorkspaceBrandTheme = "derived" | "sparkasse";
+
+/** Router mode for generated React application shells. */
+export type WorkspaceRouterMode = "browser" | "hash";
+
+/** Supported visual quality reference sources. */
+export type WorkspaceVisualQualityReferenceMode =
+  | "figma_api"
+  | "frozen_fixture";
+
+/** Supported browser engines for visual quality capture. */
+export type WorkspaceVisualBrowserName = "chromium" | "firefox" | "webkit";
+
+/** Explicit frozen visual reference files used by validate.project. */
+export interface WorkspaceVisualQualityFrozenReference {
+  imagePath: string;
+  metadataPath: string;
+}
+
+/** Optional overrides for the combined visual/performance quality weights. */
+export interface WorkspaceCompositeQualityWeightsInput {
+  visual?: number;
+  performance?: number;
+}
+
+/** Normalized weights for the combined visual/performance quality score. */
+export interface WorkspaceCompositeQualityWeights {
+  visual: number;
+  performance: number;
+}
+
+/** Output format for operational runtime logs. */
+export type WorkspaceLogFormat = "text" | "json";
+
+/** Form handling mode for generated interactive forms. */
+export type WorkspaceFormHandlingMode = "react_hook_form" | "legacy_use_state";
+
+/** Source that produced a manual or imported component mapping rule. */
+export type WorkspaceComponentMappingSource =
+  | "local_override"
+  | "code_connect_import";
+
+/** Submit-time or regeneration-time component mapping override rule. */
+export interface WorkspaceComponentMappingRule {
+  id?: number;
+  boardKey: string;
+  nodeId?: string;
+  nodeNamePattern?: string;
+  canonicalComponentName?: string;
+  storybookTier?: string;
+  figmaLibrary?: string;
+  semanticType?: string;
+  componentName: string;
+  importPath: string;
+  propContract?: Record<string, unknown>;
+  priority: number;
+  source: WorkspaceComponentMappingSource;
+  enabled: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
 
 /** Runtime status values for asynchronous workspace jobs. */
-export type WorkspaceJobRuntimeStatus = "queued" | "running" | "completed" | "failed";
+export type WorkspaceJobRuntimeStatus =
+  | "queued"
+  | "running"
+  | "partial"
+  | "completed"
+  | "failed"
+  | "canceled";
 
 /** Stage status values for each pipeline stage. */
-export type WorkspaceJobStageStatus = "queued" | "running" | "completed" | "failed" | "skipped";
+export type WorkspaceJobStageStatus =
+  | "queued"
+  | "running"
+  | "completed"
+  | "failed"
+  | "skipped";
 
 /** Structured stage names exposed by workspace-dev. */
 export type WorkspaceJobStageName =
@@ -30,6 +3029,163 @@ export type WorkspaceJobStageName =
   | "repro.export"
   | "git.pr";
 
+/** Retryable stage boundaries supported by persisted-artifact retry jobs. */
+export type WorkspaceJobRetryStage =
+  | "figma.source"
+  | "ir.derive"
+  | "template.prepare"
+  | "codegen.generate";
+
+/** Inspector-facing terminal outcome for a job. */
+export type WorkspaceJobOutcome = "success" | "partial" | "failed";
+
+/** Backend fallback mode surfaced to the inspector. */
+export type WorkspaceJobFallbackMode = "none" | "rest" | "hybrid_rest";
+
+/** Stable pipeline identifiers understood by workspace-dev. */
+export type WorkspacePipelineId = "default" | "rocket" | (string & {});
+
+/** Input scope resolved before pipeline selection. */
+export type WorkspacePipelineScope = "board" | "node" | "selection";
+
+/** Visibility class for a pipeline included in the current package profile. */
+export type WorkspacePipelineVisibility = "oss" | "customer" | "internal";
+
+/** Public stack identity for a pipeline template bundle. */
+export interface WorkspacePipelineStackDescriptor {
+  framework: string;
+  language: string;
+  styling: string;
+  bundler: string;
+}
+
+/** Public template identity for a pipeline included in the current package profile. */
+export interface WorkspacePipelineTemplateMetadata {
+  bundleId: string;
+  path: string;
+  stack: WorkspacePipelineStackDescriptor;
+}
+
+/** Structured request-time pipeline selection failures. */
+export const ALLOWED_PIPELINE_REQUEST_ERROR_CODES = [
+  "INVALID_PIPELINE",
+  "PIPELINE_UNAVAILABLE",
+  "PIPELINE_INPUT_UNSUPPORTED",
+  "PIPELINE_SOURCE_MODE_UNSUPPORTED",
+  "PIPELINE_SCOPE_UNSUPPORTED",
+] as const;
+
+/** Request-time pipeline selection error code. */
+export type WorkspacePipelineRequestErrorCode =
+  (typeof ALLOWED_PIPELINE_REQUEST_ERROR_CODES)[number];
+
+/** Public descriptor for a pipeline included in the current package profile. */
+export interface WorkspacePipelineDescriptor {
+  id: WorkspacePipelineId;
+  displayName: string;
+  description: string;
+  visibility?: WorkspacePipelineVisibility;
+  deterministic?: true;
+  template?: WorkspacePipelineTemplateMetadata;
+  supportedSourceModes: WorkspaceFigmaSourceMode[];
+  supportedScopes: WorkspacePipelineScope[];
+}
+
+/** Pipeline identity stamped onto job lifecycle records and public projections. */
+export interface WorkspaceJobPipelineMetadata {
+  pipelineId: WorkspacePipelineId;
+  pipelineDisplayName: string;
+  templateBundleId: string;
+  buildProfile: string;
+  deterministic: true;
+}
+
+/** Validation status vocabulary used by persisted quality-passport evidence. */
+export type WorkspacePipelineQualityValidationStatus =
+  | "not_run"
+  | "passed"
+  | "warning"
+  | "failed";
+
+/** Severity levels used by deterministic quality-passport warnings. */
+export type WorkspacePipelineQualityWarningSeverity =
+  | "info"
+  | "warning"
+  | "error";
+
+/** Scope projection for a generated pipeline quality passport. */
+export interface WorkspacePipelineQualityScope {
+  sourceMode: WorkspaceFigmaSourceMode;
+  scope: WorkspacePipelineScope;
+  selectedNodeCount: number;
+}
+
+/** Generated-file evidence row for a pipeline quality passport. */
+export interface WorkspacePipelineQualityGeneratedFile {
+  path: string;
+  sizeBytes?: number;
+  sha256?: string;
+}
+
+/** Ratio-based metric used for token and semantic coverage evidence. */
+export interface WorkspacePipelineQualityCoverageMetric {
+  status: WorkspacePipelineQualityValidationStatus;
+  covered: number;
+  total: number;
+  ratio: number;
+}
+
+/** Structured warning row used by deterministic quality-passport evidence. */
+export interface WorkspacePipelineQualityWarning {
+  code: string;
+  severity: WorkspacePipelineQualityWarningSeverity;
+  message: string;
+  source?: string;
+}
+
+/** Stable validation summary for quality-passport evidence. */
+export interface WorkspacePipelineQualityValidationSummary {
+  status: WorkspacePipelineQualityValidationStatus;
+  stages: Array<{
+    name: WorkspaceJobStageName;
+    status: WorkspaceJobStageStatus;
+  }>;
+}
+
+/** Deterministic, secret-free enterprise evidence emitted as `quality-passport.json`. */
+export interface WorkspacePipelineQualityPassport {
+  schemaVersion: typeof PIPELINE_QUALITY_PASSPORT_SCHEMA_VERSION;
+  pipelineId: WorkspacePipelineId;
+  templateBundleId: string;
+  buildProfile: string;
+  scope: WorkspacePipelineQualityScope;
+  generatedFiles: WorkspacePipelineQualityGeneratedFile[];
+  validation: WorkspacePipelineQualityValidationSummary;
+  coverage: {
+    token: WorkspacePipelineQualityCoverageMetric;
+    semantic: WorkspacePipelineQualityCoverageMetric;
+  };
+  warnings: WorkspacePipelineQualityWarning[];
+  metadata: Record<string, unknown>;
+}
+
+/** Inspector-facing compact projection of persisted quality-passport evidence. */
+export interface WorkspacePipelineQualityPassportSummary {
+  artifactFile?: string;
+  schemaVersion: typeof PIPELINE_QUALITY_PASSPORT_SCHEMA_VERSION;
+  pipelineId: WorkspacePipelineId;
+  templateBundleId: string;
+  buildProfile: string;
+  sourceMode: WorkspaceFigmaSourceMode;
+  scope: WorkspacePipelineScope;
+  selectedNodeCount: number;
+  validationStatus: WorkspacePipelineQualityValidationStatus;
+  generatedFileCount: number;
+  warningCount: number;
+  tokenCoverage: WorkspacePipelineQualityCoverageMetric;
+  semanticCoverage: WorkspacePipelineQualityCoverageMetric;
+}
+
 /** Configuration for starting a workspace-dev server instance. */
 export interface WorkspaceStartOptions {
   /** Host to bind to. Default: "127.0.0.1" */
@@ -40,16 +3196,244 @@ export interface WorkspaceStartOptions {
   workDir?: string;
   /** Output root relative to workDir or as absolute path. Default: ".workspace-dev" */
   outputRoot?: string;
+  /** Startup cleanup TTL for stale tmp-figma-paste JSON files in milliseconds. Default: 86400000 */
+  figmaPasteTempTtlMs?: number;
   /** Figma request timeout in milliseconds. Default: 30000 */
   figmaRequestTimeoutMs?: number;
   /** Figma retry attempts. Default: 3 */
   figmaMaxRetries?: number;
+  /** Consecutive transient failures before the Figma REST circuit breaker opens. Default: 3 */
+  figmaCircuitBreakerFailureThreshold?: number;
+  /** Duration in milliseconds that the Figma REST circuit breaker stays open before a probe request is allowed. Default: 30000 */
+  figmaCircuitBreakerResetTimeoutMs?: number;
+  /** Bootstrap depth for large-board staged fetch. Default: 5 */
+  figmaBootstrapDepth?: number;
+  /** Candidate node batch size for staged fetch. Default: 6 */
+  figmaNodeBatchSize?: number;
+  /** Number of concurrent staged /nodes fetch workers. Default: 3 */
+  figmaNodeFetchConcurrency?: number;
+  /** Enable adaptive node batch splitting on repeated oversized responses. Default: true */
+  figmaAdaptiveBatchingEnabled?: boolean;
+  /** Maximum staged screen candidates to fetch. Default: 40 */
+  figmaMaxScreenCandidates?: number;
+  /** Optional case-insensitive regex used to include staged screen candidates by name. */
+  figmaScreenNamePattern?: string;
+  /** Enable file-system cache for figma.source fetches. Default: true */
+  figmaCacheEnabled?: boolean;
+  /** Cache TTL for figma.source entries in milliseconds. Default: 900000 */
+  figmaCacheTtlMs?: number;
+  /** Maximum Figma JSON response bytes accepted before parse fallback/failure. Default: 67108864 */
+  maxJsonResponseBytes?: number;
+  /** Maximum IR cache entry count before eviction. Default: 50 */
+  maxIrCacheEntries?: number;
+  /** Maximum IR cache bytes retained on disk before eviction. Default: 134217728 */
+  maxIrCacheBytes?: number;
+  /** Path to icon fallback mapping file (JSON). Default: <outputRoot>/icon-fallback-map.json */
+  iconMapFilePath?: string;
+  /** Path to design-system mapping file (JSON). Default: <outputRoot>/design-system.json */
+  designSystemFilePath?: string;
+  /** Enable Figma image asset export to generated-app/public/images. Default: true */
+  exportImages?: boolean;
+  /** Maximum IR elements per screen before deterministic truncation. Default: 1200 */
+  figmaScreenElementBudget?: number;
+  /** Configured baseline depth limit for dynamic IR child traversal. Default: 14 */
+  figmaScreenElementMaxDepth?: number;
+  /** Token brand policy used when deriving IR tokens. Default: "derived" */
+  brandTheme?: WorkspaceBrandTheme;
+  /** Optional Sparkasse design-token file used only when `brandTheme="sparkasse"`; when omitted, built-in defaults are used. */
+  sparkasseTokensFilePath?: string;
+  /** Locale used for deterministic select-option number derivation. Default: "de-DE" */
+  generationLocale?: string;
+  /** Router mode for generated App.tsx shell. Default: "browser" */
+  routerMode?: WorkspaceRouterMode;
+  /** Timeout for external commands (pnpm/git) in milliseconds. Default: 900000 */
+  commandTimeoutMs?: number;
+  /** Maximum retained stdout bytes per external command before truncation/spooling. Default: 1048576 */
+  commandStdoutMaxBytes?: number;
+  /** Maximum retained stderr bytes per external command before truncation/spooling. Default: 1048576 */
+  commandStderrMaxBytes?: number;
+  /** Maximum structured diagnostics retained per pipeline error. Default: 25 */
+  pipelineDiagnosticMaxCount?: number;
+  /** Maximum message/suggestion characters retained per structured diagnostic. Default: 320 */
+  pipelineDiagnosticTextMaxLength?: number;
+  /** Maximum object keys retained per structured diagnostic details object. Default: 30 */
+  pipelineDiagnosticDetailsMaxKeys?: number;
+  /** Maximum array items retained per structured diagnostic details array. Default: 20 */
+  pipelineDiagnosticDetailsMaxItems?: number;
+  /** Maximum nesting depth retained when sanitizing structured diagnostic details. Default: 4 */
+  pipelineDiagnosticDetailsMaxDepth?: number;
+  /** Maximum validation retry attempts for lint/typecheck/build correction loops. Default: 3 */
+  maxValidationAttempts?: number;
+  /** Run lint auto-fix during validate.project before lint/typecheck/build. Default: true */
+  enableLintAutofix?: boolean;
+  /** Run perf validation during validate.project. Default: false */
+  enablePerfValidation?: boolean;
+  /** Run generated-project UI validation in validate.project, including static checks and optional browser visual matrix when the template provides `validate:playwright`. Default: false */
+  enableUiValidation?: boolean;
+  /** Run visual quality validation in validate.project. Default: false */
+  enableVisualQualityValidation?: boolean;
+  /** Reference source for visual quality validation. Default: "figma_api" when enabled */
+  visualQualityReferenceMode?: WorkspaceVisualQualityReferenceMode;
+  /** Viewport width used when capturing generated output for visual quality validation. Default: 1280 */
+  visualQualityViewportWidth?: number;
+  /** Viewport height used when capturing generated output for visual quality validation. Default: 800 */
+  visualQualityViewportHeight?: number;
+  /** Device pixel ratio used when capturing generated output for visual quality validation. Default: 1 */
+  visualQualityDeviceScaleFactor?: number;
+  /** Browser engines used when capturing generated output for visual quality validation. Default: ["chromium"] */
+  visualQualityBrowsers?: WorkspaceVisualBrowserName[];
+  /** Weight overrides used when computing the combined visual/performance quality score. Default: visual 0.6, performance 0.4 */
+  compositeQualityWeights?: WorkspaceCompositeQualityWeightsInput;
+  /** Run generated-project unit tests in validate.project. Default: false */
+  enableUnitTestValidation?: boolean;
+  /** Make generated-project unit test failures non-fatal. When true, test results are recorded but failures do not throw. Default: false */
+  unitTestIgnoreFailure?: boolean;
+  /** Prefer offline package resolution during generated-project install. Default: true */
+  installPreferOffline?: boolean;
+  /** Skip package installation in validate.project; requires existing node_modules. Default: false */
+  skipInstall?: boolean;
+  /** Maximum number of jobs that may run concurrently. Default: 1 */
+  maxConcurrentJobs?: number;
+  /** Maximum number of queued jobs waiting for execution before backpressure rejects submit. Default: 20 */
+  maxQueuedJobs?: number;
+  /** Maximum retained job log entries. Default: 300 */
+  logLimit?: number;
+  /** Maximum on-disk bytes for job-owned roots before the pipeline fails. Default: 536870912 */
+  maxJobDiskBytes?: number;
+  /** Output format for operational runtime logs. Default: "text" */
+  logFormat?: WorkspaceLogFormat;
+  /** Maximum accepted job submissions and import-session event writes per minute for a single client IP, enforced separately per route family. Use 0 to disable. Default: 10 */
+  rateLimitPerMinute?: number;
+  /** Maximum graceful shutdown drain time in milliseconds before remaining connections are terminated. Default: 10000 */
+  shutdownTimeoutMs?: number;
+  /**
+   * Bearer token accepted for `POST /workspace/import-sessions/:id/events`.
+   * When omitted, import-session event writes fail closed.
+   */
+  importSessionEventBearerToken?: string;
   /** Enable local preview export and serving. Default: true */
   enablePreview?: boolean;
   /** Optional custom fetch implementation (for tests or custom runtimes). */
   fetchImpl?: typeof fetch;
-  /** Reserved for project-level isolation helpers. */
+  /**
+   * @deprecated Reserved for backward compatibility with callers that reuse
+   * submit-time option objects. Isolated child startup ignores this field and
+   * it does not define any server-start target-root behavior.
+   */
   targetPath?: string;
+  /**
+   * Opt-in startup feature gate for Figma-to-QC test case generation.
+   *
+   * Test intelligence is SEPARATE from the Figma-to-code mode lock and is
+   * local-first by design. The feature is reachable only when both this
+   * startup option and the `FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE=1`
+   * environment variable are enabled; otherwise, submitting a
+   * `figma_to_qc_test_cases` job fails closed with a `503 Feature Disabled`
+   * response and performs no side effects.
+   *
+   * A future-facing optional subpath export `workspace-dev/test-intelligence`
+   * is planned to expose the full test-intelligence surface without
+   * importing it from the root entry point; that export is not wired in
+   * this wave.
+   */
+  testIntelligence?: {
+    /** Whether test-intelligence features may be invoked at runtime. Default: false. */
+    enabled: boolean;
+    /**
+     * Whether the Wave 4 multi-source ingestion gate (Issue #1431) is
+     * permitted at runtime. Default: false. Strictly nested inside
+     * {@link enabled}: even when this flag is true, multi-source
+     * ingestion still fails closed unless `enabled === true` _and_ the
+     * `FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE` /
+     * `FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE_MULTISOURCE` environment
+     * gates are both set. Operators may flip this off at startup to
+     * halt multi-source ingestion without redeploying.
+     */
+    multiSourceEnabled?: boolean;
+    /**
+     * Bearer token accepted by the Inspector test-intelligence review-gate
+     * write routes (`POST /workspace/test-intelligence/review/...`). When
+     * omitted or blank, review writes fail closed with `503` until the
+     * operator configures a token. Reads do not require this token. This
+     * legacy token is treated as one authenticated principal; configure
+     * `reviewPrincipals` for true two-distinct-principal four-eyes approval.
+     */
+    reviewBearerToken?: string;
+    /**
+     * Principal-bound review credentials. When configured, approval actor
+     * identity is derived from the matching bearer token rather than from
+     * the request body, preventing forged reviewer identities (#1376).
+     */
+    reviewPrincipals?: TestIntelligenceReviewPrincipal[];
+    /**
+     * Optional override for the directory under which per-job
+     * test-intelligence artifacts are stored and read by the Inspector
+     * UI. When omitted, defaults to `<outputRoot>/test-intelligence`.
+     * The directory is treated as opaque storage; missing artifacts
+     * surface as empty UI states rather than errors.
+     */
+    artifactRoot?: string;
+    /**
+     * Risk categories for which the review gate must enforce four-eyes
+     * approval (#1376). When omitted, defaults to
+     * `DEFAULT_FOUR_EYES_REQUIRED_RISK_CATEGORIES`. Values outside the
+     * `TestCaseRiskCategory` taxonomy are ignored. An empty array
+     * disables risk-driven enforcement (visual-sidecar triggers still
+     * apply unless `fourEyesVisualSidecarTriggerOutcomes` is also
+     * empty).
+     */
+    fourEyesRequiredRiskCategories?: TestCaseRiskCategory[];
+    /**
+     * Visual-sidecar validation outcomes that trigger four-eyes review
+     * for any case whose Figma trace references a screen carrying the
+     * outcome (#1376, 2026-04-24 multimodal addendum). Defaults to
+     * `DEFAULT_FOUR_EYES_VISUAL_SIDECAR_TRIGGERS`.
+     */
+    fourEyesVisualSidecarTriggerOutcomes?: VisualSidecarValidationOutcome[];
+    /**
+     * Whether the controlled OpenText ALM API transfer pipeline (#1372)
+     * is allowed at runtime. Defaults to `false` (fail-closed). Even
+     * when `true`, every other gate (feature flag, bearer token, dry-run
+     * report, four-eyes, policy) must still pass before any write
+     * leaves the process. Operators may flip this off to halt transfer
+     * without redeploying.
+     */
+    allowApiTransfer?: boolean;
+    /**
+     * Bearer token accepted by the controlled OpenText ALM API transfer
+     * pipeline (#1372) when `allowApiTransfer=true`. When omitted or
+     * blank, every transfer attempt fails closed with
+     * `bearer_token_missing`. The token is matched against the
+     * caller-supplied bearer using a SHA-256 timing-safe compare so
+     * incorrect lengths do not leak via timing. The token is treated as
+     * a single authenticated principal; configure `transferPrincipals`
+     * for multi-principal idempotent transfer audit trails.
+     */
+    transferBearerToken?: string;
+    /**
+     * Principal-bound transfer credentials (#1372). When configured,
+     * the principal id of the matching token is recorded in
+     * `transfer-report.json` audit metadata, enabling per-operator
+     * audit lineage on top of the bearer-token check.
+     */
+    transferPrincipals?: TestIntelligenceTransferPrincipal[];
+    /**
+     * Whether the Jira sub-task write pipeline (#1482) is allowed at
+     * runtime. Defaults to `false` (fail-closed). Even when `true`,
+     * every other gate (feature flag, bearer token, parent issue key,
+     * approved cases, policy/visual sidecar clear) must still pass
+     * before any write leaves the process. Operators may flip this off
+     * to halt Jira writes without redeploying.
+     */
+    allowJiraWrite?: boolean;
+    /**
+     * Bearer token used by the Jira sub-task write pipeline (#1482).
+     * Fail-closed when omitted: every Jira write attempt refuses with
+     * `bearer_token_missing`. The token is supplied to the configured
+     * `JiraWriteClient` and is never persisted into emitted artifacts.
+     */
+    jiraWriteBearerToken?: string;
+  };
 }
 
 /** Status of a running workspace-dev instance. */
@@ -63,40 +3447,211 @@ export interface WorkspaceStatus {
   uptimeMs: number;
   outputRoot: string;
   previewEnabled: boolean;
+  availablePipelines?: WorkspacePipelineDescriptor[];
+  defaultPipelineId?: WorkspacePipelineId;
+  /**
+   * Whether the test-intelligence Inspector surface is reachable. True only
+   * when both `WorkspaceStartOptions.testIntelligence.enabled` and
+   * `FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE=1` are satisfied. The Inspector
+   * UI uses this flag to gate the "Test Intelligence" navigation entry.
+   */
+  testIntelligenceEnabled?: boolean;
+  /**
+   * Whether the Wave 4 multi-source ingestion gate (Issue #1431) is
+   * reachable. True only when {@link testIntelligenceEnabled} is true,
+   * `WorkspaceStartOptions.testIntelligence.multiSourceEnabled` is true,
+   * and `FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE_MULTISOURCE=1` is set.
+   * Independent of mode-lock isolation, which is enforced per request.
+   */
+  testIntelligenceMultiSourceEnabled?: boolean;
+  /**
+   * Whether the Inspector can reach a configured Jira REST gateway for
+   * Jira API source ingestion. False means Jira paste remains the available
+   * air-gapped Jira source path.
+   */
+  testIntelligenceJiraGatewayConfigured?: boolean;
 }
 
 /** Submission payload accepted by workspace-dev. */
 export interface WorkspaceJobInput {
-  figmaFileKey: string;
-  figmaAccessToken: string;
+  pipelineId?: WorkspacePipelineId;
+  figmaFileKey?: string;
+  figmaNodeId?: string;
+  figmaAccessToken?: string;
+  figmaJsonPath?: string;
+  figmaJsonPayload?: string;
+  /** Optional import mode for Figma paste. `"auto"` lets the server pick delta vs full based on diff threshold. */
+  importMode?: WorkspaceImportMode;
+  /** Optional server-side generation scope. When present, only the selected IR nodes are kept for output generation. */
+  selectedNodeIds?: string[];
+  storybookStaticDir?: string;
+  customerProfilePath?: string;
+  customerBrandId?: string;
+  componentMappings?: WorkspaceComponentMappingRule[];
+  enableVisualQualityValidation?: boolean;
+  visualQualityReferenceMode?: WorkspaceVisualQualityReferenceMode;
+  visualQualityViewportWidth?: number;
+  visualQualityViewportHeight?: number;
+  visualQualityDeviceScaleFactor?: number;
+  visualQualityBrowsers?: WorkspaceVisualBrowserName[];
+  visualQualityFrozenReference?: WorkspaceVisualQualityFrozenReference;
+  compositeQualityWeights?: WorkspaceCompositeQualityWeightsInput;
+  /** @deprecated Use visual quality settings instead. */
+  visualAudit?: WorkspaceVisualAuditInput;
   repoUrl?: string;
   repoToken?: string;
   enableGitPr?: boolean;
-  figmaSourceMode?: string;
-  llmCodegenMode?: string;
+  figmaSourceMode?: WorkspaceFigmaSourceMode;
+  llmCodegenMode?: WorkspaceLlmCodegenMode;
   projectName?: string;
   targetPath?: string;
+  brandTheme?: WorkspaceBrandTheme;
+  generationLocale?: string;
+  formHandlingMode?: WorkspaceFormHandlingMode;
+  /**
+   * Optional job-type discriminator. When omitted, the submission is treated
+   * as `figma_to_code`. Setting `figma_to_qc_test_cases` requires both the
+   * `WorkspaceStartOptions.testIntelligence.enabled` startup flag and the
+   * `FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE=1` environment variable. When the
+   * gates are not satisfied, the server returns `503 Feature Disabled`.
+   */
+  jobType?: WorkspaceJobType;
+  /**
+   * Optional test-intelligence mode namespace. Only relevant when
+   * `jobType="figma_to_qc_test_cases"`. Values are validated independently
+   * of `llmCodegenMode`, which remains locked to `deterministic`.
+   */
+  testIntelligenceMode?: WorkspaceTestIntelligenceMode;
+  importIntent?: WorkspaceImportIntent;
+  originalIntent?: WorkspaceImportIntent;
+  intentCorrected?: boolean;
 }
 
 /** Public subset of request metadata stored for a job (secrets excluded). */
 export interface WorkspaceJobRequestMetadata {
-  figmaFileKey: string;
+  pipelineId?: WorkspacePipelineId;
+  pipelineMetadata?: WorkspaceJobPipelineMetadata;
+  figmaFileKey?: string;
+  figmaNodeId?: string;
+  figmaJsonPath?: string;
+  selectedNodeIds?: string[];
+  storybookStaticDir?: string;
+  customerProfilePath?: string;
+  customerBrandId?: string;
+  componentMappings?: WorkspaceComponentMappingRule[];
+  enableVisualQualityValidation: boolean;
+  visualQualityReferenceMode?: WorkspaceVisualQualityReferenceMode;
+  visualQualityViewportWidth?: number;
+  visualQualityViewportHeight?: number;
+  visualQualityDeviceScaleFactor?: number;
+  visualQualityBrowsers?: WorkspaceVisualBrowserName[];
+  visualQualityFrozenReference?: WorkspaceVisualQualityFrozenReference;
+  compositeQualityWeights?: WorkspaceCompositeQualityWeightsInput;
+  /** @deprecated Compatibility alias for legacy callers. */
+  visualAudit?: WorkspaceVisualAuditInput;
   repoUrl?: string;
   enableGitPr: boolean;
   figmaSourceMode: WorkspaceFigmaSourceMode;
   llmCodegenMode: WorkspaceLlmCodegenMode;
   projectName?: string;
   targetPath?: string;
+  brandTheme: WorkspaceBrandTheme;
+  generationLocale: string;
+  formHandlingMode: WorkspaceFormHandlingMode;
+  importMode?: WorkspaceImportMode;
+  importIntent?: WorkspaceImportIntent;
+  originalIntent?: WorkspaceImportIntent;
+  intentCorrected?: boolean;
+  requestSourceMode?: WorkspaceImportSessionSourceMode;
+}
+
+export type WorkspaceImportSessionStatus =
+  | "imported"
+  | "reviewing"
+  | "approved"
+  | "applied"
+  | "rejected";
+
+export type WorkspaceImportSessionEventKind =
+  | "imported"
+  | "review_started"
+  | "approved"
+  | "applied"
+  | "rejected"
+  | "apply_blocked"
+  | "note";
+
+export interface WorkspaceImportSessionEvent {
+  id: string;
+  sessionId: string;
+  kind: WorkspaceImportSessionEventKind;
+  at: string;
+  actor?: string;
+  note?: string;
+  metadata?: Record<string, string | number | boolean | null>;
+  sequence?: number;
+}
+
+export interface WorkspaceImportSessionEventsResponse {
+  events: WorkspaceImportSessionEvent[];
+}
+
+export interface WorkspaceImportSession {
+  id: string;
+  jobId: string;
+  pipelineId?: WorkspacePipelineId;
+  pipelineMetadata?: WorkspaceJobPipelineMetadata;
+  sourceMode: WorkspaceImportSessionSourceMode;
+  fileKey: string;
+  nodeId: string;
+  nodeName: string;
+  importedAt: string;
+  nodeCount: number;
+  fileCount: number;
+  selectedNodes: string[];
+  scope: WorkspaceImportSessionScope;
+  componentMappings: number;
+  version?: string;
+  pasteIdentityKey: string | null;
+  replayable: boolean;
+  replayDisabledReason?: string;
+  userId?: string;
+  qualityScore?: number;
+  status?: WorkspaceImportSessionStatus;
+  reviewRequired?: boolean;
+}
+
+export interface WorkspaceImportSessionsResponse {
+  sessions: WorkspaceImportSession[];
+}
+
+export interface WorkspaceImportSessionReimportAccepted extends WorkspaceSubmitAccepted {
+  sessionId: string;
+  sourceJobId?: string;
+}
+
+export interface WorkspaceImportSessionDeleteResult {
+  sessionId: string;
+  deleted: true;
+  jobId?: string;
 }
 
 /** Submit response for accepted jobs. */
 export interface WorkspaceSubmitAccepted {
   jobId: string;
   status: "queued";
+  pipelineId: WorkspacePipelineId;
+  pipelineMetadata: WorkspaceJobPipelineMetadata;
   acceptedModes: {
     figmaSourceMode: WorkspaceFigmaSourceMode;
     llmCodegenMode: WorkspaceLlmCodegenMode;
   };
+  importIntent?: WorkspaceImportIntent;
+  /**
+   * Per-paste delta summary computed at submit time for Figma paste imports.
+   * Present only when `figmaSourceMode === "figma_paste" | "figma_plugin"` and diff succeeded.
+   */
+  pasteDeltaSummary?: WorkspacePasteDeltaSummary;
 }
 
 /** Stage details for each job stage. */
@@ -112,9 +3667,69 @@ export interface WorkspaceJobStage {
 /** Structured job log line. */
 export interface WorkspaceJobLog {
   at: string;
-  level: "info" | "warn" | "error";
+  level: "debug" | "info" | "warn" | "error";
   stage?: WorkspaceJobStageName;
   message: string;
+}
+
+/** Severity levels emitted for structured job diagnostics. */
+export type WorkspaceJobDiagnosticSeverity = "error" | "warning" | "info";
+
+/** JSON-safe diagnostic payload values attached to structured job diagnostics. */
+export type WorkspaceJobDiagnosticValue =
+  | string
+  | number
+  | boolean
+  | null
+  | WorkspaceJobDiagnosticValue[]
+  | { [key: string]: WorkspaceJobDiagnosticValue };
+
+/** Structured diagnostic entry emitted for job, stage, or node-level issues. */
+export interface WorkspaceJobDiagnostic {
+  code: string;
+  message: string;
+  suggestion: string;
+  stage: WorkspaceJobStageName;
+  severity: WorkspaceJobDiagnosticSeverity;
+  figmaNodeId?: string;
+  figmaUrl?: string;
+  details?: Record<string, WorkspaceJobDiagnosticValue>;
+}
+
+/** Retry target surfaced for failed-stage retries and failed generated files. */
+export interface WorkspaceJobRetryTarget {
+  kind: "stage" | "generated_file";
+  stage: WorkspaceJobRetryStage;
+  targetId: string;
+  displayName?: string;
+  filePath?: string;
+  emittedScreenId?: string;
+}
+
+/** Inspector-facing metadata for a single pipeline stage. */
+export interface WorkspaceJobInspectorStage {
+  stage: WorkspaceJobStageName;
+  status: WorkspaceJobStageStatus;
+  retryable?: boolean;
+  code?: string;
+  message?: string;
+  retryAfterMs?: number;
+  fallbackMode?: WorkspaceJobFallbackMode;
+  retryTargets?: WorkspaceJobRetryTarget[];
+}
+
+/** Inspector-facing backend result contract for recovery-aware paste flows. */
+export interface WorkspaceJobInspector {
+  pipelineId: WorkspacePipelineId;
+  pipelineMetadata: WorkspaceJobPipelineMetadata;
+  outcome?: WorkspaceJobOutcome;
+  fallbackMode?: WorkspaceJobFallbackMode;
+  qualityPassport?: WorkspacePipelineQualityPassportSummary;
+  /** Successful MCP read-tool calls consumed by this job. */
+  mcpCallsConsumed?: number;
+  retryableStages?: WorkspaceJobRetryStage[];
+  retryTargets?: WorkspaceJobRetryTarget[];
+  stages: WorkspaceJobInspectorStage[];
 }
 
 /** Artifact paths emitted by autonomous job execution. */
@@ -123,10 +3738,307 @@ export interface WorkspaceJobArtifacts {
   jobDir: string;
   generatedProjectDir?: string;
   designIrFile?: string;
+  figmaAnalysisFile?: string;
+  businessTestIntentIrFile?: string;
+  coveragePlanFile?: string;
+  llmCapabilitiesEvidenceDir?: string;
   figmaJsonFile?: string;
+  storybookTokensFile?: string;
+  storybookThemesFile?: string;
+  storybookComponentsFile?: string;
+  componentVisualCatalogFile?: string;
+  figmaLibraryResolutionFile?: string;
+  componentMatchReportFile?: string;
+  generationMetricsFile?: string;
+  componentManifestFile?: string;
+  validationSummaryFile?: string;
+  stageTimingsFile?: string;
+  generationDiffFile?: string;
+  visualAuditReferenceImageFile?: string;
+  visualAuditActualImageFile?: string;
+  visualAuditDiffImageFile?: string;
+  visualAuditReportFile?: string;
+  visualQualityReportFile?: string;
+  compositeQualityReportFile?: string;
+  confidenceReportFile?: string;
+  qualityPassportFile?: string;
   reproDir?: string;
 }
 
+/** Describes a modified file in the generation diff report. */
+export interface WorkspaceGenerationDiffModifiedFile {
+  file: string;
+  previousHash: string;
+  currentHash: string;
+}
+
+/** Generation diff report comparing current generation with the previous run. */
+export interface WorkspaceGenerationDiffReport {
+  boardKey: string;
+  currentJobId: string;
+  previousJobId: string | null;
+  generatedAt: string;
+  added: string[];
+  modified: WorkspaceGenerationDiffModifiedFile[];
+  removed: string[];
+  unchanged: string[];
+  summary: string;
+}
+
+/** Configuration for the optional visual audit capture flow. */
+export interface WorkspaceVisualCaptureConfig {
+  viewport?: {
+    width?: number;
+    height?: number;
+    deviceScaleFactor?: number;
+  };
+  waitForNetworkIdle?: boolean;
+  waitForFonts?: boolean;
+  waitForAnimations?: boolean;
+  timeoutMs?: number;
+  fullPage?: boolean;
+}
+
+/** Configuration for the optional visual audit diff flow. */
+export interface WorkspaceVisualDiffConfig {
+  threshold?: number;
+  includeAntialiasing?: boolean;
+  alpha?: number;
+}
+
+/** Region definition used for visual diff breakdowns. */
+export interface WorkspaceVisualDiffRegion {
+  name: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** Region result returned as part of a visual audit. */
+export interface WorkspaceVisualAuditRegionResult extends WorkspaceVisualDiffRegion {
+  diffPixelCount: number;
+  totalPixels: number;
+  deviationPercent: number;
+}
+
+/** Input payload for the optional visual audit flow. */
+export interface WorkspaceVisualAuditInput {
+  baselineImagePath: string;
+  capture?: WorkspaceVisualCaptureConfig;
+  diff?: WorkspaceVisualDiffConfig;
+  regions?: WorkspaceVisualDiffRegion[];
+}
+
+/** Runtime status for the optional visual audit flow. */
+export type WorkspaceVisualAuditStatus =
+  | "not_requested"
+  | "ok"
+  | "warn"
+  | "failed";
+
+/** Computed output for the optional visual audit flow. */
+export interface WorkspaceVisualAuditResult {
+  status: WorkspaceVisualAuditStatus;
+  baselineImagePath?: string;
+  referenceImagePath?: string;
+  actualImagePath?: string;
+  diffImagePath?: string;
+  reportPath?: string;
+  similarityScore?: number;
+  diffPixelCount?: number;
+  totalPixels?: number;
+  regions?: WorkspaceVisualAuditRegionResult[];
+  warnings?: string[];
+}
+
+/** Frozen fixture metadata used for visual quality reference images. */
+export interface WorkspaceVisualReferenceFixtureMetadata {
+  capturedAt: string;
+  source: {
+    fileKey: string;
+    nodeId: string;
+    nodeName: string;
+    lastModified: string;
+  };
+  viewport: {
+    width: number;
+    height: number;
+    deviceScaleFactor?: number;
+  };
+}
+
+/** Scoring weights for the visual quality composite score. */
+export interface WorkspaceVisualScoringWeights {
+  layoutAccuracy: number;
+  colorFidelity: number;
+  typography: number;
+  componentStructure: number;
+  spacingAlignment: number;
+}
+
+/** Per-dimension score in a visual quality report. */
+export interface WorkspaceVisualDimensionScore {
+  name: string;
+  weight: number;
+  score: number;
+  details: string;
+}
+
+/** Deviation hotspot identified in a visual quality comparison. */
+export interface WorkspaceVisualDeviationHotspot {
+  rank: number;
+  region: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  deviationPercent: number;
+  severity: "low" | "medium" | "high" | "critical";
+  category: "layout" | "color" | "typography" | "component" | "spacing";
+}
+
+/** Metadata about a visual quality comparison run. */
+export interface WorkspaceVisualComparisonMetadata {
+  comparedAt: string;
+  imageWidth: number;
+  imageHeight: number;
+  totalPixels: number;
+  diffPixelCount: number;
+  configuredWeights: WorkspaceVisualScoringWeights;
+  viewport: {
+    width: number;
+    height: number;
+    deviceScaleFactor: number;
+  };
+  versions: {
+    packageVersion: string;
+    contractVersion: string;
+  };
+}
+
+export interface WorkspaceVisualCrossBrowserPairwiseDiff {
+  browserA: WorkspaceVisualBrowserName;
+  browserB: WorkspaceVisualBrowserName;
+  diffPercent: number;
+  diffImagePath?: string;
+}
+
+export interface WorkspaceVisualCrossBrowserConsistency {
+  browsers: WorkspaceVisualBrowserName[];
+  consistencyScore: number;
+  pairwiseDiffs: WorkspaceVisualCrossBrowserPairwiseDiff[];
+  warnings?: string[];
+}
+
+export interface WorkspaceVisualPerBrowserResult {
+  browser: WorkspaceVisualBrowserName;
+  overallScore: number;
+  actualImagePath?: string;
+  diffImagePath?: string;
+  reportPath?: string;
+  warnings?: string[];
+}
+
+export interface WorkspaceVisualComponentCoverage {
+  comparedCount: number;
+  skippedCount: number;
+  coveragePercent: number;
+  bySkipReason: Record<string, number>;
+}
+
+export interface WorkspaceVisualQualityComponentEntry {
+  componentId: string;
+  componentName: string;
+  status: "compared" | "skipped";
+  score?: number;
+  diffImagePath?: string;
+  reportPath?: string;
+  skipReason?: string;
+  storyEntryId?: string;
+  referenceNodeId?: string;
+  warnings?: string[];
+}
+
+/** Full visual quality report produced by the scoring system. */
+export interface WorkspaceVisualQualityReport {
+  status: "completed" | "failed" | "not_requested";
+  referenceSource?: WorkspaceVisualQualityReferenceMode;
+  capturedAt?: string;
+  overallScore?: number;
+  interpretation?: string;
+  dimensions?: WorkspaceVisualDimensionScore[];
+  componentAggregateScore?: number;
+  componentCoverage?: WorkspaceVisualComponentCoverage;
+  components?: WorkspaceVisualQualityComponentEntry[];
+  diffImagePath?: string;
+  hotspots?: WorkspaceVisualDeviationHotspot[];
+  metadata?: WorkspaceVisualComparisonMetadata;
+  browserBreakdown?: Partial<Record<WorkspaceVisualBrowserName, number>>;
+  crossBrowserConsistency?: WorkspaceVisualCrossBrowserConsistency;
+  perBrowser?: WorkspaceVisualPerBrowserResult[];
+  warnings?: string[];
+  message?: string;
+}
+
+/** Supported Lighthouse profiles in the combined visual/performance quality report. */
+export type WorkspaceCompositeQualityLighthouseProfile = "mobile" | "desktop";
+
+/** Per-sample Lighthouse metrics captured for the combined visual/performance quality report. */
+export interface WorkspaceCompositeQualityLighthouseSample {
+  profile: WorkspaceCompositeQualityLighthouseProfile;
+  route: string;
+  performanceScore: number | null;
+  fcp_ms: number | null;
+  lcp_ms: number | null;
+  cls: number | null;
+  tbt_ms: number | null;
+  speed_index_ms: number | null;
+}
+
+/** Aggregated Lighthouse metrics included in the combined visual/performance quality report. */
+export interface WorkspaceCompositeQualityPerformanceAggregateMetrics {
+  fcp_ms: number | null;
+  lcp_ms: number | null;
+  cls: number | null;
+  tbt_ms: number | null;
+  speed_index_ms: number | null;
+}
+
+/** Performance breakdown included in the combined visual/performance quality report. */
+export interface WorkspaceCompositeQualityPerformanceBreakdown {
+  sourcePath?: string;
+  score: number | null;
+  sampleCount: number;
+  samples: WorkspaceCompositeQualityLighthouseSample[];
+  aggregateMetrics: WorkspaceCompositeQualityPerformanceAggregateMetrics;
+  warnings: string[];
+}
+
+/** Dimensions that may contribute to the combined visual/performance quality score. */
+export type WorkspaceCompositeQualityDimension = "visual" | "performance";
+
+/** Combined visual + performance quality report surfaced by validate.project. */
+export interface WorkspaceCompositeQualityReport {
+  status: "completed" | "failed" | "not_requested";
+  generatedAt?: string;
+  weights?: WorkspaceCompositeQualityWeights;
+  visual?: {
+    score: number;
+    ranAt: string;
+    source: string;
+  } | null;
+  performance?: WorkspaceCompositeQualityPerformanceBreakdown | null;
+  composite?: {
+    score: number | null;
+    includedDimensions: WorkspaceCompositeQualityDimension[];
+    explanation: string;
+  };
+  warnings?: string[];
+  message?: string;
+}
+
+/** PR execution status attached to completed jobs when Git PR integration is enabled. */
 export interface WorkspaceGitPrStatus {
   status: "executed" | "skipped";
   reason?: string;
@@ -141,12 +4053,37 @@ export interface WorkspaceJobError {
   code: string;
   stage: WorkspaceJobStageName;
   message: string;
+  retryable?: boolean;
+  retryAfterMs?: number;
+  fallbackMode?: WorkspaceJobFallbackMode;
+  retryTargets?: WorkspaceJobRetryTarget[];
+  diagnostics?: WorkspaceJobDiagnostic[];
+}
+
+/** Queue snapshot attached to job payloads for queue-state visibility. */
+export interface WorkspaceJobQueueState {
+  runningCount: number;
+  queuedCount: number;
+  maxConcurrentJobs: number;
+  maxQueuedJobs: number;
+  position?: number;
+}
+
+/** Cancellation metadata attached to jobs with cancel intent and terminal reason. */
+export interface WorkspaceJobCancellation {
+  requestedAt: string;
+  reason: string;
+  requestedBy: "api";
+  completedAt?: string;
 }
 
 /** Full job status payload for polling endpoint. */
 export interface WorkspaceJobStatus {
   jobId: string;
+  pipelineId: WorkspacePipelineId;
+  pipelineMetadata: WorkspaceJobPipelineMetadata;
   status: WorkspaceJobRuntimeStatus;
+  outcome?: WorkspaceJobOutcome;
   currentStage?: WorkspaceJobStageName;
   submittedAt: string;
   startedAt?: string;
@@ -159,21 +4096,43 @@ export interface WorkspaceJobStatus {
     enabled: boolean;
     url?: string;
   };
+  queue: WorkspaceJobQueueState;
+  pasteDeltaSummary?: WorkspacePasteDeltaSummary;
+  cancellation?: WorkspaceJobCancellation;
+  lineage?: WorkspaceJobLineage;
+  generationDiff?: WorkspaceGenerationDiffReport;
+  visualAudit?: WorkspaceVisualAuditResult;
+  visualQuality?: WorkspaceVisualQualityReport;
+  compositeQuality?: WorkspaceCompositeQualityReport;
+  confidence?: WorkspaceJobConfidence;
   gitPr?: WorkspaceGitPrStatus;
+  inspector?: WorkspaceJobInspector;
   error?: WorkspaceJobError;
 }
 
 /** Compact result payload for terminal-state inspection. */
 export interface WorkspaceJobResult {
   jobId: string;
+  pipelineId: WorkspacePipelineId;
+  pipelineMetadata: WorkspaceJobPipelineMetadata;
   status: WorkspaceJobRuntimeStatus;
+  outcome?: WorkspaceJobOutcome;
   summary: string;
   artifacts: WorkspaceJobArtifacts;
   preview: {
     enabled: boolean;
     url?: string;
   };
+  pasteDeltaSummary?: WorkspacePasteDeltaSummary;
+  lineage?: WorkspaceJobLineage;
+  cancellation?: WorkspaceJobCancellation;
+  generationDiff?: WorkspaceGenerationDiffReport;
+  visualAudit?: WorkspaceVisualAuditResult;
+  visualQuality?: WorkspaceVisualQualityReport;
+  compositeQuality?: WorkspaceCompositeQualityReport;
+  confidence?: WorkspaceJobConfidence;
   gitPr?: WorkspaceGitPrStatus;
+  inspector?: WorkspaceJobInspector;
   error?: WorkspaceJobError;
 }
 
@@ -183,8 +4142,9785 @@ export interface WorkspaceVersionInfo {
   contractVersion: string;
 }
 
+/** Structured override entry for regeneration from Inspector drafts. */
+export interface WorkspaceRegenerationOverrideEntry {
+  nodeId: string;
+  field: string;
+  value:
+    | string
+    | number
+    | boolean
+    | { top: number; right: number; bottom: number; left: number };
+}
+
+/**
+ * Submission payload for regeneration from a completed source job with IR overrides.
+ *
+ * Customer profile handling: regeneration reuses the source job's persisted
+ * customer-profile snapshot (`STAGE_ARTIFACT_KEYS.customerProfileResolved`).
+ * This interface intentionally exposes no `customerProfilePath` field — the
+ * profile is not overridable at regeneration time. To regenerate against a
+ * different profile, submit a new job.
+ */
+export interface WorkspaceRegenerationInput {
+  sourceJobId: string;
+  /**
+   * Optional pipeline assertion. When provided, it must match the completed
+   * source job pipeline; regeneration cannot migrate between pipelines.
+   */
+  pipelineId?: WorkspacePipelineId;
+  overrides: WorkspaceRegenerationOverrideEntry[];
+  draftId?: string;
+  baseFingerprint?: string;
+  customerBrandId?: string;
+  componentMappings?: WorkspaceComponentMappingRule[];
+}
+
+/** Submit response for accepted regeneration jobs. */
+export interface WorkspaceRegenerationAccepted {
+  jobId: string;
+  sourceJobId: string;
+  status: "queued";
+  pipelineId: WorkspacePipelineId;
+  pipelineMetadata: WorkspaceJobPipelineMetadata;
+  acceptedModes: {
+    figmaSourceMode: WorkspaceFigmaSourceMode;
+    llmCodegenMode: WorkspaceLlmCodegenMode;
+  };
+}
+
+/** Submission payload for retrying a failed or partial job from a persisted stage boundary. */
+export interface WorkspaceRetryInput {
+  sourceJobId: string;
+  retryStage: WorkspaceJobRetryStage;
+  retryTargets?: string[];
+}
+
+/** Submit response for accepted retry jobs. */
+export interface WorkspaceRetryAccepted {
+  jobId: string;
+  sourceJobId: string;
+  retryStage: WorkspaceJobRetryStage;
+  status: "queued";
+  pipelineId: WorkspacePipelineId;
+  pipelineMetadata: WorkspaceJobPipelineMetadata;
+  acceptedModes: {
+    figmaSourceMode: WorkspaceFigmaSourceMode;
+    llmCodegenMode: WorkspaceLlmCodegenMode;
+  };
+}
+
+/** Lineage metadata linking a regeneration job to its source. */
+export interface WorkspaceJobLineage {
+  sourceJobId: string;
+  kind?: "regeneration" | "retry" | "delta";
+  pipelineMetadata?: WorkspaceJobPipelineMetadata;
+  draftId?: string;
+  baseFingerprint?: string;
+  overrideCount: number;
+  retryStage?: WorkspaceJobRetryStage;
+  retryTargets?: string[];
+}
+
+/** Supported local sync execution modes. */
+export type WorkspaceLocalSyncMode = "dry_run" | "apply";
+
+/** File action the sync planner intends to perform for a path. */
+export type WorkspaceLocalSyncFileAction = "create" | "overwrite" | "none";
+/** File status reported by the sync planner after comparing generated, baseline, and destination states. */
+export type WorkspaceLocalSyncFileStatus =
+  | "create"
+  | "overwrite"
+  | "conflict"
+  | "untracked"
+  | "unchanged";
+/** Reason explaining why a file received its planned sync status. */
+export type WorkspaceLocalSyncFileReason =
+  | "new_file"
+  | "managed_destination_unchanged"
+  | "destination_modified_since_sync"
+  | "destination_deleted_since_sync"
+  | "existing_without_baseline"
+  | "already_matches_generated";
+/** User decision applied to a single file in local sync preview/apply flows. */
+export type WorkspaceLocalSyncFileDecision = "write" | "skip";
+
+/** Dry-run request payload for previewing a local sync plan. */
+export interface WorkspaceLocalSyncDryRunRequest {
+  mode: "dry_run";
+  targetPath?: string;
+}
+
+/** User decision for a single planned file during local sync apply. */
+export interface WorkspaceLocalSyncFileDecisionEntry {
+  path: string;
+  decision: WorkspaceLocalSyncFileDecision;
+}
+
+/** Apply request payload for executing a previously previewed local sync plan. */
+export interface WorkspaceLocalSyncApplyRequest {
+  mode: "apply";
+  confirmationToken: string;
+  confirmOverwrite: boolean;
+  fileDecisions: WorkspaceLocalSyncFileDecisionEntry[];
+  reviewerNote?: string;
+}
+
+/** Union of supported local sync request payloads. */
+export type WorkspaceLocalSyncRequest =
+  | WorkspaceLocalSyncDryRunRequest
+  | WorkspaceLocalSyncApplyRequest;
+
+/** Planned file entry returned by local sync preview/apply flows. */
+export interface WorkspaceLocalSyncFilePlanEntry {
+  path: string;
+  action: WorkspaceLocalSyncFileAction;
+  status: WorkspaceLocalSyncFileStatus;
+  reason: WorkspaceLocalSyncFileReason;
+  decision: WorkspaceLocalSyncFileDecision;
+  selectedByDefault: boolean;
+  sizeBytes: number;
+  message: string;
+}
+
+/** Aggregate counts and byte sizes for a planned local sync run. */
+export interface WorkspaceLocalSyncSummary {
+  totalFiles: number;
+  selectedFiles: number;
+  createCount: number;
+  overwriteCount: number;
+  conflictCount: number;
+  untrackedCount: number;
+  unchangedCount: number;
+  totalBytes: number;
+  selectedBytes: number;
+}
+
+/** Dry-run response payload describing a local sync plan before apply. */
+export interface WorkspaceLocalSyncDryRunResult {
+  jobId: string;
+  sourceJobId: string;
+  boardKey: string;
+  targetPath: string;
+  scopePath: string;
+  destinationRoot: string;
+  files: WorkspaceLocalSyncFilePlanEntry[];
+  summary: WorkspaceLocalSyncSummary;
+  confirmationToken: string;
+  confirmationExpiresAt: string;
+}
+
+/** Apply response payload describing the executed local sync plan. */
+export interface WorkspaceLocalSyncApplyResult {
+  jobId: string;
+  sourceJobId: string;
+  boardKey: string;
+  targetPath: string;
+  scopePath: string;
+  destinationRoot: string;
+  files: WorkspaceLocalSyncFilePlanEntry[];
+  summary: WorkspaceLocalSyncSummary;
+  appliedAt: string;
+}
+
+/** Input payload for creating a PR from a completed regeneration job. */
+export interface WorkspaceCreatePrInput {
+  repoUrl: string;
+  repoToken: string;
+  targetPath?: string;
+  reviewerNote?: string;
+}
+
+/** Result payload returned after PR creation from a regenerated job. */
+export interface WorkspaceCreatePrResult {
+  jobId: string;
+  sourceJobId: string;
+  gitPr: WorkspaceGitPrStatus;
+}
+
+/** Prerequisites check result for PR creation from a regenerated job. */
+export interface WorkspaceGitPrPrerequisites {
+  available: boolean;
+  missing: string[];
+}
+
+/** User decision for handling a stale draft. */
+export type WorkspaceStaleDraftDecision =
+  | "continue"
+  | "discard"
+  | "carry-forward";
+
+/** Result of a stale-draft check for a given job. */
+export interface WorkspaceStaleDraftCheckResult {
+  /** Whether the draft's source job is stale (a newer completed job exists for the same board key). */
+  stale: boolean;
+  /** The job ID of the latest completed job for the same board key (if stale). */
+  latestJobId: string | null;
+  /** The job ID the draft was created from. */
+  sourceJobId: string;
+  /** Board key shared by source and latest jobs. */
+  boardKey: string | null;
+  /** Whether carry-forward is available (all draft node IDs exist in the latest job's IR). */
+  carryForwardAvailable: boolean;
+  /** Node IDs from the draft that could not be resolved in the latest job's IR. */
+  unmappedNodeIds: string[];
+  /** Human-readable explanation of the stale state. */
+  message: string;
+}
+
+// ---------------------------------------------------------------------------
+// Remap suggestion types for guided stale-draft override remapping (#466)
+// ---------------------------------------------------------------------------
+
+/** User decision for handling a stale draft — extended with remap option. */
+export type WorkspaceStaleDraftDecisionExtended =
+  | WorkspaceStaleDraftDecision
+  | "remap";
+
+/** Confidence level for a remap suggestion. */
+export type WorkspaceRemapConfidence = "high" | "medium" | "low";
+
+/** Rule that produced a remap suggestion. */
+export type WorkspaceRemapRule =
+  | "exact-id"
+  | "name-and-type"
+  | "name-fuzzy-and-type"
+  | "ancestry-and-type";
+
+/** A single remap suggestion mapping a source node to a candidate target node. */
+export interface WorkspaceRemapSuggestion {
+  /** The original node ID from the stale draft override. */
+  sourceNodeId: string;
+  /** The original node name (from the source IR). */
+  sourceNodeName: string;
+  /** The element type of the source node. */
+  sourceNodeType: string;
+  /** The suggested target node ID in the latest IR. */
+  targetNodeId: string;
+  /** The target node name in the latest IR. */
+  targetNodeName: string;
+  /** The element type of the target node. */
+  targetNodeType: string;
+  /** The rule that produced this suggestion. */
+  rule: WorkspaceRemapRule;
+  /** Confidence level of the suggestion. */
+  confidence: WorkspaceRemapConfidence;
+  /** Human-readable reason for the suggestion. */
+  reason: string;
+}
+
+/** A source node for which no remap could be determined. */
+export interface WorkspaceRemapRejection {
+  /** The unmappable node ID from the stale draft. */
+  sourceNodeId: string;
+  /** The original node name (from the source IR). */
+  sourceNodeName: string;
+  /** The element type of the source node. */
+  sourceNodeType: string;
+  /** Human-readable reason why remapping was not possible. */
+  reason: string;
+}
+
+/** Input payload for the remap-suggest endpoint. */
+export interface WorkspaceRemapSuggestInput {
+  /** The stale source job ID whose draft overrides need remapping. */
+  sourceJobId: string;
+  /** The latest job ID to remap into. */
+  latestJobId: string;
+  /** Node IDs from the draft that need remapping (those not found in the latest IR). */
+  unmappedNodeIds: string[];
+}
+
+/** Result of the remap-suggest endpoint. */
+export interface WorkspaceRemapSuggestResult {
+  sourceJobId: string;
+  latestJobId: string;
+  suggestions: WorkspaceRemapSuggestion[];
+  rejections: WorkspaceRemapRejection[];
+  message: string;
+}
+
+/** A user decision on a single remap suggestion. */
+export interface WorkspaceRemapDecisionEntry {
+  sourceNodeId: string;
+  targetNodeId: string | null;
+  accepted: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Generation confidence model types (#849)
+// ---------------------------------------------------------------------------
+
+/** Confidence level for a generated job, screen, or component. */
+export type WorkspaceConfidenceLevel = "high" | "medium" | "low" | "very_low";
+
+/** A single explainable contributor to a confidence score. */
+export interface WorkspaceConfidenceContributor {
+  signal: string;
+  impact: "positive" | "negative" | "neutral";
+  weight: number;
+  value: number;
+  detail: string;
+}
+
+/** Per-component confidence assessment. */
+export interface WorkspaceComponentConfidence {
+  componentId: string;
+  componentName: string;
+  level: WorkspaceConfidenceLevel;
+  score: number;
+  contributors: WorkspaceConfidenceContributor[];
+}
+
+/** Per-screen confidence assessment. */
+export interface WorkspaceScreenConfidence {
+  screenId: string;
+  screenName: string;
+  level: WorkspaceConfidenceLevel;
+  score: number;
+  contributors: WorkspaceConfidenceContributor[];
+  components: WorkspaceComponentConfidence[];
+}
+
+/** Job-level confidence report produced by the scoring model. */
+export interface WorkspaceJobConfidence {
+  status: "completed" | "failed" | "not_requested";
+  generatedAt?: string;
+  level?: WorkspaceConfidenceLevel;
+  score?: number;
+  contributors?: WorkspaceConfidenceContributor[];
+  screens?: WorkspaceScreenConfidence[];
+  lowConfidenceSummary?: string[];
+  message?: string;
+}
+
+/**
+ * Business Test Intent IR surface (Issue #1361).
+ *
+ * The IR is the sanitized, test-design-oriented input that the downstream
+ * test-case generator consumes. Raw Figma payloads must never reach prompt
+ * compilation — PII-like mock values are detected and replaced with opaque
+ * redaction tokens before any artifact is persisted.
+ */
+
+/** Schema version for `BusinessTestIntentIr` artifacts. */
+export const BUSINESS_TEST_INTENT_IR_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Schema version for persisted `TestDesignModel` projection artifacts. */
+export const TEST_DESIGN_MODEL_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for persisted `TestDesignModel` artifacts. */
+export const TEST_DESIGN_MODEL_ARTIFACT_FILENAME =
+  "test-design-model.json" as const;
+
+/** Schema version for persisted agent-role prompt-run artifacts. */
+export const AGENT_ROLE_RUN_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Directory containing per-role prompt-run metadata artifacts. */
+export const AGENT_ROLE_RUN_ARTIFACT_DIRECTORY = "agent-role-runs" as const;
+
+/**
+ * Schema version for the static `AgentRoleProfile` matrix introduced for
+ * Issue #1779 (Story MA-3). The profile shape is locked behind this
+ * version; structural changes require a major bump and a migration entry
+ * in `CONTRACT_CHANGELOG.md`.
+ */
+export const AGENT_ROLE_PROFILE_SCHEMA_VERSION = "1.0.0" as const;
+
+/**
+ * Closed runtime list of agent harness roles tracked by the Production
+ * Runner state machine. The order is alphabetical for stable
+ * canonical-JSON serialisation; `contract-version.test.ts` enforces the
+ * shape via the public-export snapshot.
+ */
+export const AGENT_HARNESS_ROLES = [
+  "action_topology",
+  "adversarial_critic",
+  "adversarial_gap_finder",
+  "final_verifier",
+  "generator",
+  "human_review",
+  "logic_judge",
+  "repair_planner",
+  "semantic_judge",
+  "visual_sidecar",
+] as const;
+
+/** Closed runtime list of agent-role capability filters. */
+export const AGENT_ROLE_CAPABILITIES = [
+  "none",
+  "propose_changes",
+  "read_artifacts",
+  "score_only",
+] as const;
+
+/** Closed runtime list of agent-role kinds. */
+export const AGENT_ROLE_KINDS = ["deterministic_service", "llm_role"] as const;
+
+/** Closed runtime list of FinOps attribution groups for agent-role runs. */
+export const AGENT_ROLE_FINOPS_GROUPS = [
+  "adversarial",
+  "generation",
+  "judge",
+  "repair",
+  "verification",
+  "visual",
+] as const;
+
+/** Closed runtime list of allowed `maxAttempts` budgets for an agent role. */
+export const AGENT_ROLE_MAX_ATTEMPT_VALUES = [1, 2, 3] as const;
+
+/**
+ * Discrete role identifiers consumed by the multi-agent harness state
+ * machine.
+ *
+ * - `visual_sidecar` — deterministic screenshot/spec-check service.
+ * - `generator` — LLM that produces structured test cases.
+ * - `logic_judge` — LLM that validates generator output against the
+ *   deterministic design and coverage artifacts.
+ * - `semantic_judge` — LLM judge panel that scores generated cases.
+ * - `adversarial_gap_finder` — LLM that surfaces missing coverage.
+ * - `repair_planner` — LLM that proposes a structured repair plan
+ *   consumed by a deterministic apply-step gated by `RepairChangeGuard`.
+ * - `final_verifier` — deterministic post-repair verifier that produces
+ *   the evidence anchor.
+ */
+export type AgentHarnessRole = (typeof AGENT_HARNESS_ROLES)[number];
+
+/**
+ * Capability filter that determines what side effects a role is allowed
+ * to declare. The boundary lint in
+ * `src/test-intelligence/agent-role-profile.test.ts` proves that no role
+ * with `roleKind === "llm_role"` is ever assigned `propose_changes`;
+ * filesystem / gateway / review-store mutations are reserved for
+ * deterministic services.
+ */
+export type AgentRoleCapability = (typeof AGENT_ROLE_CAPABILITIES)[number];
+
+/** Whether a role is a deterministic service or a LLM-driven role. */
+export type AgentRoleKind = (typeof AGENT_ROLE_KINDS)[number];
+
+/** FinOps attribution group used for per-source cost rollups. */
+export type AgentRoleFinOpsGroup = (typeof AGENT_ROLE_FINOPS_GROUPS)[number];
+
+/**
+ * Closed runtime list of model-family markers consumed by the
+ * cross-family judge ensemble (Issue #2038). The vocabulary is
+ * deliberately small: only families with judge-grade models are
+ * surfaced. Extending the list requires a contract bump.
+ */
+export const JUDGE_MODEL_FAMILIES = [
+  "anthropic",
+  "azure-openai",
+  "google",
+  "in-house",
+  "mistral",
+  "openai",
+] as const;
+
+/** Discriminated alias for {@link JUDGE_MODEL_FAMILIES}. */
+export type JudgeModelFamily = (typeof JUDGE_MODEL_FAMILIES)[number];
+
+/**
+ * Closed runtime list of deployment-region markers consumed by the
+ * EU-residency policy gate (Issue #2038). `eu` is the only region
+ * accepted under `eu-banking-default`; `us` and `global` are accepted
+ * for non-EU profiles.
+ */
+export const JUDGE_MODEL_REGIONS = ["eu", "global", "us"] as const;
+
+/** Discriminated alias for {@link JUDGE_MODEL_REGIONS}. */
+export type JudgeModelRegion = (typeof JUDGE_MODEL_REGIONS)[number];
+
+/**
+ * Static binding of an agent role to a model identity. The optional
+ * `ictRegisterRef` is mandatory under `policyProfile = "banking"` and is
+ * enforced by Wave MA-4; this contract defines the slot but does not
+ * itself enforce the banking policy.
+ */
+export interface AgentModelBinding {
+  /** Stable provider identifier (e.g., `"azure-openai"`, `"in-house"`). */
+  readonly providerId: string;
+  /** Stable model identifier inside the provider namespace. */
+  readonly modelId: string;
+  /**
+   * Optional inference profile / deployment identifier for providers
+   * that route by deployment name (e.g., Azure deployments).
+   */
+  readonly inferenceProfileId?: string;
+  /**
+   * Optional reference into the operator's ICT register. Mandatory
+   * under banking profiles (enforced in MA-4) so deployed models map
+   * back to a registered ICT asset.
+   */
+  readonly ictRegisterRef?: string;
+  /**
+   * Optional model-family marker (Issue #2038). Used by the
+   * cross-family judge ensemble to enforce that no two judge roles in
+   * the same run draw from the same model family. Must be one of
+   * {@link JUDGE_MODEL_FAMILIES} when present.
+   */
+  readonly family?: JudgeModelFamily;
+  /**
+   * Optional deployment-region marker (Issue #2038). Used by EU
+   * data-residency policies (e.g., `eu-banking-default`) to refuse
+   * non-EU endpoints during judge-binding validation. Must be one of
+   * {@link JUDGE_MODEL_REGIONS} when present.
+   */
+  readonly region?: JudgeModelRegion;
+}
+
+/**
+ * Stable tier labels used by the production multi-model routing policy
+ * (Issue #2099). The vocabulary is intentionally small and auditable:
+ * - `light` — cheap/fast text roles used for triage or low-risk helpers.
+ * - `heavy` — flagship reasoning roles.
+ * - `multimodal` — screenshot/document-aware roles.
+ */
+export const MODEL_ROUTING_TIER_LABELS = [
+  "light",
+  "heavy",
+  "multimodal",
+] as const;
+
+/** Discriminated alias for {@link MODEL_ROUTING_TIER_LABELS}. */
+export type ModelRoutingTierLabel = (typeof MODEL_ROUTING_TIER_LABELS)[number];
+
+/**
+ * Routing slots within one role. Most active runtime roles expose one slot,
+ * but the contract permits explicit fallback / triage / diversity bindings
+ * without adding new top-level role ids.
+ */
+export const MODEL_ROUTING_ROUTE_SLOTS = [
+  "primary",
+  "secondary",
+  "fallback",
+  "triage",
+] as const;
+
+/** Discriminated alias for {@link MODEL_ROUTING_ROUTE_SLOTS}. */
+export type ModelRoutingRouteSlot = (typeof MODEL_ROUTING_ROUTE_SLOTS)[number];
+
+/**
+ * Closed runtime list of roles that may participate in the typed
+ * multi-model routing policy. The list includes the production-runner roles
+ * in use today plus additive foundation-only roles from Issue #2099 whose
+ * runtime wiring may land in follow-up stories.
+ */
+export const MODEL_ROUTING_ROLES = [
+  "test_generation",
+  "logic_judge",
+  "coverage_planner",
+  "risk_ranker",
+  "visual_primary",
+  "visual_fallback",
+  "a11y_judge",
+  "faithfulness_judge",
+  "document_ingestion",
+  "adversarial_critic",
+  "calibration_holdout_generator",
+] as const;
+
+/** Discriminated alias for {@link MODEL_ROUTING_ROLES}. */
+export type ModelRoutingRole = (typeof MODEL_ROUTING_ROLES)[number];
+
+/** Schema version pinned on every persisted {@link ModelRoutingPolicy}. */
+export const MODEL_ROUTING_POLICY_SCHEMA_VERSION = "1.0.0" as const;
+
+/**
+ * One resolved route in the typed multi-model policy. The route carries the
+ * static model binding plus the concrete deployment/revision identity the
+ * current runtime selected so replay keys, FinOps, and evidence artifacts can
+ * attest the exact model path without re-reading environment variables.
+ */
+export interface ModelRoutingRoute {
+  /** Stable role identifier this route binds. */
+  readonly role: ModelRoutingRole;
+  /** Slot within the role (`primary`, `fallback`, `triage`, ...). */
+  readonly slot: ModelRoutingRouteSlot;
+  /** Cost/capability tier label for this route. */
+  readonly tierLabel: ModelRoutingTierLabel;
+  /** Stable provider/model/deployment binding. */
+  readonly modelBinding: AgentModelBinding;
+  /** Concrete model revision selected for this route, when known. */
+  readonly modelRevision?: string;
+  /** Concrete gateway release selected for this route, when known. */
+  readonly gatewayRelease?: string;
+}
+
+/**
+ * Typed, canonical model-routing policy for one job/profile. The policy is an
+ * auditable input into client construction and replay identity rather than a
+ * dynamic rule engine.
+ */
+export interface ModelRoutingPolicy {
+  readonly schemaVersion: typeof MODEL_ROUTING_POLICY_SCHEMA_VERSION;
+  /** Stable policy identifier, e.g. `eu-banking-default`. */
+  readonly policyId: string;
+  /** Stable version stamp of the policy definition. */
+  readonly policyVersion: string;
+  /** Policy profile that selected this routing policy. */
+  readonly policyProfileId: string;
+  /** Sorted, canonical list of active routes. */
+  readonly routes: readonly ModelRoutingRoute[];
+}
+
+/** Additive per-job override entry layered over a base routing policy. */
+export interface ModelRoutingOverrideRoute {
+  readonly role: ModelRoutingRole;
+  readonly slot?: ModelRoutingRouteSlot;
+  readonly tierLabel?: ModelRoutingTierLabel;
+  readonly modelBinding?: AgentModelBinding;
+  readonly modelRevision?: string;
+  readonly gatewayRelease?: string;
+}
+
+/**
+ * Optional per-job routing override supplied by operators. The override is
+ * additive and explicit: callers override individual routes rather than
+ * replacing the whole policy object.
+ */
+export interface ModelRoutingOverride {
+  readonly routes: readonly ModelRoutingOverrideRoute[];
+}
+
+/**
+ * Static, hand-rolled profile that pins a role to a budget tier,
+ * capability filter, output schema, and FinOps group. Profiles are
+ * frozen at module load and serialise to canonical JSON for evidence
+ * anchoring.
+ */
+export interface AgentRoleProfile {
+  /** Pinned schema version literal. Bumping requires a major contract bump. */
+  readonly schemaVersion: typeof AGENT_ROLE_PROFILE_SCHEMA_VERSION;
+  /** Role identifier this profile binds to. */
+  readonly role: AgentHarnessRole;
+  /** Whether the role is deterministic or LLM-driven. */
+  readonly roleKind: AgentRoleKind;
+  /**
+   * Optional prompt-template version pin. Required for `llm_role`
+   * profiles (validated at registry construction); omitted for
+   * deterministic services that do not compile a prompt.
+   */
+  readonly promptVersion?: string;
+  /**
+   * Optional model binding. Required for `llm_role` profiles
+   * (validated at registry construction); omitted for deterministic
+   * services that do not call the gateway.
+   */
+  readonly modelBinding?: AgentModelBinding;
+  /** Stable identifier of the structured-output JSON schema this role emits. */
+  readonly outputSchema: string;
+  /** Maximum attempts the harness may make before declaring failure. */
+  readonly maxAttempts: 1 | 2 | 3;
+  /** Hard cap on input tokens passed to the gateway for this role. */
+  readonly maxInputTokens: number;
+  /** Hard cap on output tokens the gateway may emit for this role. */
+  readonly maxOutputTokens: number;
+  /** Capability filter — what kinds of side effects the role may declare. */
+  readonly capability: AgentRoleCapability;
+  /** FinOps attribution group used for cost rollups. */
+  readonly finOpsGroup: AgentRoleFinOpsGroup;
+}
+
+/**
+ * Schema version literal pinned on every persisted
+ * {@link AgentHarnessExecutionGraph} artifact (Issue #1781). Structural
+ * changes require a major bump and a `CONTRACT_CHANGELOG.md` entry.
+ */
+export const AGENT_HARNESS_EXECUTION_GRAPH_SCHEMA_VERSION = "1.0.0" as const;
+
+/**
+ * Closed runtime list of retry policies a node in the execution graph
+ * may declare. The harness state machine (#1780) consumes the literal
+ * to decide whether a transient gateway error is retried in-place,
+ * resumed from the most recent checkpoint, or terminal.
+ */
+export const AGENT_HARNESS_GRAPH_RETRY_POLICIES = [
+  "none",
+  "retry_from_checkpoint",
+  "retry_transient_once",
+] as const;
+
+/** Retry policy for a single node in {@link AgentHarnessExecutionGraph}. */
+export type AgentHarnessGraphRetryPolicy =
+  (typeof AGENT_HARNESS_GRAPH_RETRY_POLICIES)[number];
+
+/**
+ * One node in the multi-agent harness execution DAG. The shape is
+ * intentionally minimal — `blocks` and `blockedBy` form a reversible
+ * adjacency record that callers can canonicalise byte-for-byte. The
+ * harness Production Runner reads `requiredInputArtifacts` and
+ * `producedArtifacts` to wire role-step IO without a workflow engine.
+ *
+ * The graph is not a workflow framework: there is no scheduler, no
+ * trigger, no conditional. Edge ordering is alphabetical on
+ * `roleStepId`.
+ */
+export interface AgentHarnessGraphNode {
+  /** Stable per-step identifier (e.g., `"<jobId>-generator-1"`). */
+  readonly roleStepId: string;
+  /** Role this step is bound to. */
+  readonly role: AgentHarnessRole;
+  /**
+   * Downstream `roleStepId`s this node unblocks once its outcome is
+   * `accepted` or `needs_review`. Sorted alphabetically; mirrored by
+   * each downstream node's `blockedBy`.
+   */
+  readonly blocks: readonly string[];
+  /**
+   * Upstream `roleStepId`s that must reach a non-failed terminal
+   * outcome before this node may run. Sorted alphabetically;
+   * mirrored by each upstream node's `blocks`.
+   */
+  readonly blockedBy: readonly string[];
+  /**
+   * Stable artifact identifiers (filenames or content addresses) the
+   * step requires as input. Sorted alphabetically.
+   */
+  readonly requiredInputArtifacts: readonly string[];
+  /**
+   * Stable artifact identifiers the step is expected to produce.
+   * Sorted alphabetically.
+   */
+  readonly producedArtifacts: readonly string[];
+  /** Retry policy applied to this node. */
+  readonly retryPolicy: AgentHarnessGraphRetryPolicy;
+}
+
+/**
+ * Persisted execution-graph artifact for a single Production Runner
+ * job. The harness consumes the graph to drive role-step ordering and
+ * to skip already-completed steps on resume. Canonical-JSON-stable for
+ * byte-identical inputs; the `graphHash` is the sha256 of the
+ * canonical-JSON representation of the `nodes` array.
+ */
+export interface AgentHarnessExecutionGraph {
+  /** Pinned schema version literal. */
+  readonly schemaVersion: typeof AGENT_HARNESS_EXECUTION_GRAPH_SCHEMA_VERSION;
+  /** Job identifier this graph belongs to. */
+  readonly jobId: string;
+  /** sha256 hex digest of `canonicalJson(nodes)`. 64 lowercase hex chars. */
+  readonly graphHash: string;
+  /** Nodes sorted alphabetically by `roleStepId`. */
+  readonly nodes: readonly AgentHarnessGraphNode[];
+}
+
+/**
+ * Closed runtime list of terminal outcomes the team-artifact roll-up
+ * may report. Mirrors the harness step-level vocabulary so the team
+ * artifact does not introduce a second outcome surface.
+ */
+export const ALLOWED_AGENT_TEAM_OUTCOMES = [
+  "accepted",
+  "blocked",
+  "failed_permanent",
+  "failed_retryable",
+  "needs_review",
+] as const;
+
+/** Terminal outcome of an entire agent-team run. */
+export type AgentTeamOutcome = (typeof ALLOWED_AGENT_TEAM_OUTCOMES)[number];
+
+/** Schema version literal pinned on `agent-team-config.json`. */
+export const AGENT_TEAM_CONFIG_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the per-run team configuration artifact. */
+export const AGENT_TEAM_CONFIG_ARTIFACT_FILENAME =
+  "agent-team-config.json" as const;
+
+/** Schema version literal pinned on `agent-team-results.json`. */
+export const AGENT_TEAM_RESULTS_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the per-run team results artifact. */
+export const AGENT_TEAM_RESULTS_ARTIFACT_FILENAME =
+  "agent-team-results.json" as const;
+
+/**
+ * Persisted team-configuration artifact written once per job at run
+ * start. Contains only profile metadata, the graph hash, and the
+ * policy-profile hash — no secrets, no raw prompts, no chain-of-thought.
+ */
+export interface AgentTeamConfigArtifact {
+  /** Pinned schema version literal. */
+  readonly schemaVersion: typeof AGENT_TEAM_CONFIG_SCHEMA_VERSION;
+  /** Job identifier this configuration belongs to. */
+  readonly jobId: string;
+  /** Profiles wired into this run, sorted alphabetically by role. */
+  readonly profiles: readonly AgentRoleProfile[];
+  /** sha256 hex digest of the run's {@link AgentHarnessExecutionGraph}. */
+  readonly graphHash: string;
+  /**
+   * sha256 hex digest of the canonical-JSON of the active policy
+   * profile (e.g., banking, neutral). Used to scope idempotency and
+   * gateway in-flight dedup keys.
+   */
+  readonly policyProfileHash: string;
+  /** Hard guarantee that the artifact never carries a raw prompt. */
+  readonly rawPromptsIncluded: false;
+}
+
+/** Per-role-step rolled-up record persisted in the team-results artifact. */
+export interface AgentTeamRoleRunSummary {
+  /** Step identifier (matches the per-step harness rollup filename). */
+  readonly roleStepId: string;
+  /** Role that produced the step. */
+  readonly role: AgentHarnessRole;
+  /** Terminal outcome from the harness state machine. */
+  readonly outcome: AgentTeamOutcome;
+  /** Closed taxonomy error class recorded by the harness. */
+  readonly errorClass: string;
+  /** Job-runtime status onto which the outcome was mapped. */
+  readonly mappedJobStatus: "completed" | "failed" | "partial";
+  /** Number of attempts the harness consumed for this step. */
+  readonly attemptsConsumed: number;
+  /** sha256 hex digest of the canonical-JSON step rollup artifact. */
+  readonly artifactHash: string;
+  /** Cost rollup across attempts; never includes pricing data. */
+  readonly costsRollup: {
+    readonly inputTokens: number;
+    readonly outputTokens: number;
+    readonly totalLatencyMs: number;
+  };
+}
+
+/** Cost rollup across every role-run in the team. */
+export interface AgentTeamTotalCost {
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly totalLatencyMs: number;
+}
+
+/**
+ * Persisted team-results artifact written once per job at run end.
+ * Contains only hashes, status fields, and aggregate cost — never
+ * secrets, raw prompts, raw screenshots, or chain-of-thought.
+ */
+export interface AgentTeamResultsArtifact {
+  /** Pinned schema version literal. */
+  readonly schemaVersion: typeof AGENT_TEAM_RESULTS_SCHEMA_VERSION;
+  /** Job identifier this results bundle belongs to. */
+  readonly jobId: string;
+  /** sha256 hex digest of the graph used by this run. */
+  readonly graphHash: string;
+  /** Aggregate outcome across the team. */
+  readonly outcome: AgentTeamOutcome;
+  /** Per-role-step summaries sorted alphabetically by `roleStepId`. */
+  readonly roleRuns: readonly AgentTeamRoleRunSummary[];
+  /** Aggregate cost rollup. */
+  readonly totalCost: AgentTeamTotalCost;
+  /** Hard guarantee that the artifact never carries a raw prompt. */
+  readonly rawPromptsIncluded: false;
+}
+
+// ---------------------------------------------------------------------------
+// Issue #1782 — Agent_02 Judge Panel (PoLL) verdict artifact.
+// ---------------------------------------------------------------------------
+
+/**
+ * Schema version literal pinned on every persisted
+ * {@link JudgePanelVerdict} artifact (Issue #1782, Story MA-3 #1758).
+ * Structural changes require a major bump and a `CONTRACT_CHANGELOG.md`
+ * entry.
+ */
+export const JUDGE_PANEL_VERDICT_SCHEMA_VERSION = "1.0.0" as const;
+
+/**
+ * Canonical filename for the per-run Panel-of-LLM-Judges (PoLL)
+ * verdict artifact. The harness writes
+ * `<runDir>/judge-panel-verdicts.json` once per `semantic_judge`
+ * step; the file carries the per-judge raw verdicts the AT-022 audit
+ * requires for disagreement reproduction.
+ */
+export const JUDGE_PANEL_VERDICTS_ARTIFACT_FILENAME =
+  "judge-panel-verdicts.json" as const;
+
+/** Closed runtime list of judge identifiers in the panel. */
+export const JUDGE_PANEL_JUDGE_IDS = [
+  "judge_primary",
+  "judge_secondary",
+] as const;
+
+/** Discriminated alias for {@link JUDGE_PANEL_JUDGE_IDS}. */
+export type JudgePanelJudgeId = (typeof JUDGE_PANEL_JUDGE_IDS)[number];
+
+/** Closed runtime list of per-judge verdict literals. */
+export const JUDGE_PANEL_PER_JUDGE_VERDICTS = [
+  "fail",
+  "pass",
+  "uncertain",
+] as const;
+
+/** Discriminated alias for {@link JUDGE_PANEL_PER_JUDGE_VERDICTS}. */
+export type JudgePanelPerJudgeVerdict =
+  (typeof JUDGE_PANEL_PER_JUDGE_VERDICTS)[number];
+
+/** Closed runtime list of panel-level agreement labels. */
+export const JUDGE_PANEL_AGREEMENT_LABELS = [
+  "both_fail",
+  "both_pass",
+  "disagree",
+] as const;
+
+/** Discriminated alias for {@link JUDGE_PANEL_AGREEMENT_LABELS}. */
+export type JudgePanelAgreement = (typeof JUDGE_PANEL_AGREEMENT_LABELS)[number];
+
+/**
+ * Closed runtime list of resolved-severity labels emitted by the
+ * Trust-or-Escalate router. `downgraded_disagreement` is the
+ * disagreement-routing severity that downstream consumers can audit
+ * against the AT-022 acceptance criterion.
+ */
+export const JUDGE_PANEL_RESOLVED_SEVERITIES = [
+  "critical",
+  "downgraded_disagreement",
+  "major",
+  "minor",
+] as const;
+
+/** Discriminated alias for {@link JUDGE_PANEL_RESOLVED_SEVERITIES}. */
+export type JudgePanelResolvedSeverity =
+  (typeof JUDGE_PANEL_RESOLVED_SEVERITIES)[number];
+
+/** Closed runtime list of escalation routes the panel may emit. */
+export const JUDGE_PANEL_ESCALATION_ROUTES = [
+  "accept",
+  "downgrade",
+  "needs_review",
+] as const;
+
+/** Discriminated alias for {@link JUDGE_PANEL_ESCALATION_ROUTES}. */
+export type JudgePanelEscalationRoute =
+  (typeof JUDGE_PANEL_ESCALATION_ROUTES)[number];
+
+/**
+ * Hard upper bound on the persisted `reason` text emitted per judge.
+ * Reasons longer than this are refused at validation; the limit keeps
+ * the artifact bounded and matches the issue spec (≤ 240 chars).
+ */
+export const JUDGE_PANEL_REASON_MAX_CHARS = 240 as const;
+
+/**
+ * One judge's pointwise rubric verdict for a single
+ * `(testCaseId, criterion)` pair. Raw `score` is the pre-calibration
+ * 0..1 score; `calibratedScore` is the post-hoc CalibraEval-style
+ * mapping against the fixture distribution. No length normalisation
+ * is applied (verbosity-bias inversion 2025).
+ */
+export interface JudgePanelPerJudgeVerdictRecord {
+  /** Judge identifier within the panel. */
+  readonly judgeId: JudgePanelJudgeId;
+  /**
+   * Stable model identifier this judge was bound to at the time of
+   * scoring. Echoed verbatim from the {@link AgentModelBinding}'s
+   * `modelId` (e.g., `"gpt-oss-120b"`, `"phi-4-multimodal-instruct"`).
+   */
+  readonly modelBinding: string;
+  /** Raw 0..1 pointwise score before post-hoc calibration. */
+  readonly score: number;
+  /** Post-hoc CalibraEval-style mapped 0..1 score. */
+  readonly calibratedScore: number;
+  /** Per-judge verdict derived from the calibrated score. */
+  readonly verdict: JudgePanelPerJudgeVerdict;
+  /**
+   * Redacted, length-capped justification (≤
+   * {@link JUDGE_PANEL_REASON_MAX_CHARS} chars). Never carries chain
+   * of thought, raw prompts, or secrets — the validator refuses
+   * over-long or non-string reasons before persistence.
+   */
+  readonly reason: string;
+}
+
+/**
+ * Persisted Panel-of-LLM-Judges (PoLL) verdict for a single
+ * `(testCaseId, criterion)` pair (Issue #1782). The harness writes
+ * one verdict per scored case; the per-run artifact at
+ * `<runDir>/judge-panel-verdicts.json` is a canonical-JSON-stable
+ * array of these records (sorted by `(testCaseId, criterion)`).
+ *
+ * Disagreement routing: `agreement === "disagree"` always maps to
+ * `escalationRoute ∈ {downgrade, needs_review}` and the resolved
+ * severity is downgraded to `downgraded_disagreement` (severity-1) or
+ * the case is routed to `needs_review`. Both-pass and both-fail
+ * verdicts are deterministic functions of the per-judge verdicts and
+ * the panel's escalation policy.
+ */
+export interface JudgePanelVerdict {
+  /** Pinned schema version literal. */
+  readonly schemaVersion: typeof JUDGE_PANEL_VERDICT_SCHEMA_VERSION;
+  /** Test-case identifier the verdict applies to. */
+  readonly testCaseId: string;
+  /** Stable rubric criterion identifier the verdict scores. */
+  readonly criterion: string;
+  /**
+   * Per-judge raw verdicts, sorted alphabetically by `judgeId` for
+   * canonical-JSON stability. Always exactly two entries — the
+   * cross-family `judge_primary` and `judge_secondary`.
+   */
+  readonly perJudge: readonly JudgePanelPerJudgeVerdictRecord[];
+  /** Panel-level agreement label derived from per-judge verdicts. */
+  readonly agreement: JudgePanelAgreement;
+  /** Resolved severity after Trust-or-Escalate routing. */
+  readonly resolvedSeverity: JudgePanelResolvedSeverity;
+  /** Final routing decision consumed by the Production Runner. */
+  readonly escalationRoute: JudgePanelEscalationRoute;
+}
+
+// ---------------------------------------------------------------------------
+// Issue #1898 / #1899 — production-runner logic + faithfulness judges.
+// ---------------------------------------------------------------------------
+
+/** Schema version for persisted logic-judge verdict artifacts. */
+export const LOGIC_JUDGE_VERDICT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Prompt-template version pinned onto logic-judge verdict artifacts. */
+export const LOGIC_JUDGE_PROMPT_TEMPLATE_VERSION = "logic-judge.v1" as const;
+
+/** Structured-output schema name used by the logic-judge LLM call. */
+export const LOGIC_JUDGE_OUTPUT_SCHEMA_NAME =
+  "workspace-dev-logic-judge-v1" as const;
+
+/** Canonical filename for the persisted logic-judge prompt artifact. */
+export const LOGIC_JUDGE_COMPILED_PROMPT_ARTIFACT_FILENAME =
+  "compiled-prompt-logic-judge.json" as const;
+
+/** Canonical filename for the persisted logic-judge verdict artifact. */
+export const LOGIC_JUDGE_VERDICT_ARTIFACT_FILENAME =
+  "logic_judge.json" as const;
+
+/** Closed runtime list of logic-judge terminal verdicts. */
+export const ALLOWED_LOGIC_JUDGE_VERDICTS = [
+  "accept",
+  "repair",
+  "reject",
+] as const;
+
+/** Discriminant of an allowed logic-judge terminal verdict. */
+export type LogicJudgeVerdictLabel =
+  (typeof ALLOWED_LOGIC_JUDGE_VERDICTS)[number];
+
+/** Closed runtime list of logic-judge finding severities. */
+export const ALLOWED_LOGIC_JUDGE_FINDING_SEVERITIES = [
+  "warning",
+  "error",
+] as const;
+
+/** Discriminant of an allowed logic-judge finding severity. */
+export type LogicJudgeFindingSeverity =
+  (typeof ALLOWED_LOGIC_JUDGE_FINDING_SEVERITIES)[number];
+
+/**
+ * Canonical placeholder used when a finding or repair instruction is scoped to
+ * the overall job rather than a single generated test case.
+ */
+export const JOB_LEVEL_TEST_CASE_ID = "$job" as const;
+
+/** Closed runtime list of finding scopes used by judge and consensus artifacts. */
+export const JUDGE_FINDING_SCOPES = ["job", "test_case"] as const;
+
+/** One logic-judge finding anchored to a generated test case or the job. */
+export type JudgeFindingScope = (typeof JUDGE_FINDING_SCOPES)[number];
+
+/** One logic-judge finding anchored to a generated test case or the job. */
+export interface JudgeFinding {
+  readonly scope: JudgeFindingScope;
+  readonly testCaseId: string;
+  readonly code: string;
+  readonly severity: LogicJudgeFindingSeverity;
+  readonly message: string;
+}
+
+/**
+ * One structured repair hint emitted by the logic judge.
+ *
+ * Paths point at the field that must change. Schema-failure repairs use the
+ * same shape so downstream repair consolidators can treat recoverable
+ * structured-output violations the same way as semantic repairs.
+ */
+export interface RepairInstruction {
+  readonly testCaseId: string;
+  readonly path: string;
+  readonly instruction: string;
+  /** True when `instruction` was clipped to the configured max length. */
+  readonly instructionTruncated?: boolean;
+  /**
+   * Optional structured hint kind. Issue #1931 uses `schema_violation`
+   * for deterministic repair-loop guidance when the judge response
+   * wrapper fails structured-output validation.
+   */
+  readonly kind?: "schema_violation";
+  /**
+   * Optional redacted diagnostic paired with {@link kind}. Kept
+   * alongside the legacy `instruction` field so existing repair-loop
+   * plumbing remains compatible while downstream prompts can consume
+   * machine-readable schema-violation metadata.
+   */
+  readonly message?: string;
+}
+
+/** Optional refusal attached to a logic-judge verdict. */
+export interface JudgeVerdictRefusal {
+  readonly code: string;
+  readonly message: string;
+}
+
+/** Persisted logic-judge verdict artifact. */
+export interface JudgeVerdict {
+  readonly schemaVersion: typeof LOGIC_JUDGE_VERDICT_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly promptTemplateVersion: typeof LOGIC_JUDGE_PROMPT_TEMPLATE_VERSION;
+  readonly generatedAt: string;
+  readonly jobId: string;
+  readonly cacheHit: boolean;
+  readonly cacheKeyDigest: string;
+  readonly modelDeployment: string;
+  readonly modelRevision: string;
+  readonly gatewayRelease: string;
+  readonly verdict: LogicJudgeVerdictLabel;
+  readonly findings: readonly JudgeFinding[];
+  readonly repairInstructions: readonly RepairInstruction[];
+  readonly truncatedInstructionCount?: number;
+  readonly refusal?: JudgeVerdictRefusal;
+}
+
+/** Schema version for persisted cross-modal faithfulness-judge verdicts.
+ *
+ * 1.1.0 — Issue #2066: optional additive field `stepVerdicts` on each
+ * verdict carrying per-step `match | evidence_partial | mismatch` labels.
+ * Backwards compatible: consumers built against 1.0.0 see the legacy
+ * `hallucinations` / `mismatches` arrays unchanged. */
+export const FAITHFULNESS_VERDICT_SCHEMA_VERSION = "1.1.0" as const;
+
+/** Prompt-template version pinned onto faithfulness-judge verdict artifacts.
+ *
+ * `faithfulness-judge.v2` — Issue #2066: prompt rubric distinguishes
+ * `match` / `evidence_partial` / `mismatch` per step so partial-evidence
+ * signals are no longer collapsed into mismatches.
+ *
+ * `faithfulness-judge.v3` — Issue #2170: prompt rubric explicitly calls out
+ * the state-transition tier (steps belonging to a `state_transition`
+ * technique case) so the judge prefers `evidence_partial` over `mismatch`
+ * when the workflow transition is intermediate (e.g. only the in-flight
+ * frame is captured). The verdict-emission contract is unchanged. */
+export const FAITHFULNESS_JUDGE_PROMPT_TEMPLATE_VERSION =
+  "faithfulness-judge.v3" as const;
+
+/** Canonical filename for the persisted faithfulness-judge prompt artifact. */
+export const FAITHFULNESS_JUDGE_COMPILED_PROMPT_ARTIFACT_FILENAME =
+  "compiled-prompt-faithfulness-judge.json" as const;
+
+/** Canonical filename for the persisted faithfulness-judge verdict artifact. */
+export const FAITHFULNESS_VERDICT_ARTIFACT_FILENAME =
+  "faithfulness_judge.json" as const;
+
+/** Closed runtime list of faithfulness-judge terminal verdicts. */
+export const ALLOWED_FAITHFULNESS_VERDICTS = [
+  "accept",
+  "repair",
+  "reject",
+] as const;
+
+/** Discriminant of an allowed faithfulness-judge terminal verdict. */
+export type FaithfulnessVerdictLabel =
+  (typeof ALLOWED_FAITHFULNESS_VERDICTS)[number];
+
+/** Closed runtime list of per-step faithfulness verdict labels (Issue #2066).
+ *
+ *   - `match`             — positive visual evidence for the step.
+ *   - `evidence_partial`  — no contradiction, but the screenshot does not
+ *                           fully verify the step (e.g. label-only step
+ *                           where the description was truncated). Treated
+ *                           as a soft signal, not a mismatch.
+ *   - `mismatch`          — positive contradiction between the step and
+ *                           the screenshot. */
+export const FAITHFULNESS_STEP_VERDICT_LABELS = [
+  "match",
+  "evidence_partial",
+  "mismatch",
+] as const;
+
+/** Discriminant of an allowed per-step faithfulness verdict. */
+export type FaithfulnessStepVerdictLabel =
+  (typeof FAITHFULNESS_STEP_VERDICT_LABELS)[number];
+
+/** Per-step faithfulness verdict emitted by the cross-family judge.
+ *
+ * `stepIndex` mirrors `GeneratedTestCaseStep.index` (1-based). `message` is
+ * a short reviewer-readable rationale. The judge MAY omit step verdicts —
+ * older callers that only consume the legacy `hallucinations` / `mismatches`
+ * arrays continue to work. */
+export interface FaithfulnessStepVerdict {
+  readonly testCaseId: string;
+  readonly stepIndex: number;
+  readonly verdict: FaithfulnessStepVerdictLabel;
+  readonly message: string;
+}
+
+/** Hallucination reported by the screenshot-based judge. */
+export interface HallucinationFinding {
+  readonly testCaseId: string;
+  readonly stepIndex?: number;
+  readonly message: string;
+}
+
+/** Label mismatch reported by the screenshot-based judge. */
+export interface VisualMismatch {
+  readonly testCaseId: string;
+  readonly stepIndex?: number;
+  readonly expectedLabel: string;
+  readonly visibleLabel: string;
+  readonly message: string;
+}
+
+/** Optional refusal attached to a faithfulness-judge verdict. */
+export interface FaithfulnessVerdictRefusal {
+  readonly code: string;
+  readonly message: string;
+}
+
+/** Persisted screenshot-vs-cases faithfulness verdict artifact. */
+export interface FaithfulnessVerdict {
+  readonly schemaVersion: typeof FAITHFULNESS_VERDICT_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly promptTemplateVersion: typeof FAITHFULNESS_JUDGE_PROMPT_TEMPLATE_VERSION;
+  readonly generatedAt: string;
+  readonly jobId: string;
+  readonly cacheHit: boolean;
+  readonly cacheKeyDigest: string;
+  readonly modelDeployment: string;
+  readonly modelRevision: string;
+  readonly gatewayRelease: string;
+  readonly fallbackReason: VisualSidecarFallbackReason;
+  /** Aggregate cross-modal faithfulness score in `[0, 1]`. */
+  readonly score: number;
+  readonly verdict: FaithfulnessVerdictLabel;
+  readonly hallucinations: readonly HallucinationFinding[];
+  readonly mismatches: readonly VisualMismatch[];
+  /** Per-step verdicts (Issue #2066). Optional for backwards compatibility
+   * with verdicts persisted under schema 1.0.0. When emitted, the policy
+   * gate uses the per-step labels to compute the tier-aware faithfulness
+   * score and the persisted `faithfulness-tier-report.json` artifact. */
+  readonly stepVerdicts?: readonly FaithfulnessStepVerdict[];
+  readonly refusal?: FaithfulnessVerdictRefusal;
+}
+
+/** Schema version for persisted faithfulness-tier-report artifacts.
+ *
+ * 1.1.0 — Issue #2170: additive `state_transition` tier label, additive
+ * `partialMajorityCaseIds` summary, and richer per-entry `tierReason`. The
+ * shape of pre-existing fields is unchanged — readers built against 1.0.0
+ * continue to load 1.1.0 reports unchanged. */
+export const FAITHFULNESS_TIER_REPORT_SCHEMA_VERSION = "1.1.0" as const;
+
+/** Canonical filename for the per-run faithfulness-tier-report artifact
+ * (Issue #2066). */
+export const FAITHFULNESS_TIER_REPORT_ARTIFACT_FILENAME =
+  "faithfulness-tier-report.json" as const;
+
+/** Closed runtime list of step-level faithfulness tiers.
+ *
+ *   - `concrete_data`     — the step carries observable input or expected
+ *                           data (numeric value, message text, identifier).
+ *                           Strictness: `match >= 0.95`,
+ *                           `evidence_partial >= 0.80`, `mismatch < 0.80`.
+ *   - `label_only`        — the step asserts label-only or layout-only intent
+ *                           (e.g. "open the form", "see the heading").
+ *                           Strictness: `match >= 0.95`,
+ *                           `evidence_partial >= 0.85`, `mismatch < 0.85`.
+ *   - `state_transition`  — the step belongs to a `technique === "state_transition"`
+ *                           test case AND has no concrete-data assertions
+ *                           (Issue #2170). The cross-family judge can rarely
+ *                           verify the full intermediate frame of a workflow
+ *                           transition from a single capture, so the tier
+ *                           is the most permissive: `match >= 0.95`,
+ *                           `evidence_partial >= 0.65`, `mismatch < 0.65`. */
+export const FAITHFULNESS_TIER_LABELS = [
+  "concrete_data",
+  "label_only",
+  "state_transition",
+] as const;
+
+/** Discriminant of a step-level faithfulness tier. */
+export type FaithfulnessTierLabel = (typeof FAITHFULNESS_TIER_LABELS)[number];
+
+/** One per-step entry of the faithfulness-tier-report. */
+export interface FaithfulnessTierReportEntry {
+  readonly testCaseId: string;
+  readonly stepIndex: number;
+  readonly tier: FaithfulnessTierLabel;
+  /** Reviewer-readable indicator that explains the tier classification. */
+  readonly tierReason: string;
+  readonly verdict: FaithfulnessStepVerdictLabel;
+  /** Per-step score `{1.0 | 0.85 | 0.0}` derived from `verdict`. */
+  readonly score: number;
+  /** Whether the step's `(verdict, score)` clears its tier-aware threshold. */
+  readonly passesThreshold: boolean;
+  /** Optional reviewer-readable message attached by the judge. */
+  readonly message?: string;
+}
+
+/** Closed runtime list of faithfulness-evaluation modes (Issue #2116).
+ *
+ *   - `per_step`               — the faithfulness verdict carried per-step
+ *                                verdicts and the gate reasoned over them.
+ *                                Strongest evidence path.
+ *   - `case_level_fallback`    — the verdict was present but lacked
+ *                                `stepVerdicts` (e.g. legacy schema 1.0.0
+ *                                producers); the gate fell back to the
+ *                                verdict's case-level `score`. Auditable
+ *                                fallback.
+ *   - `missing`                — no faithfulness verdict at all; the gate
+ *                                had nothing to reason against.
+ */
+export const FAITHFULNESS_EVALUATION_MODES = [
+  "per_step",
+  "case_level_fallback",
+  "missing",
+] as const;
+
+/** Discriminant of an allowed faithfulness-evaluation mode (Issue #2116). */
+export type FaithfulnessEvaluationMode =
+  (typeof FAITHFULNESS_EVALUATION_MODES)[number];
+
+/** Persistable per-run report capturing the tier path that produced the
+ * cross-modal faithfulness score (Issue #2066).
+ *
+ * The report is emitted on every run that has a non-refused
+ * {@link FaithfulnessVerdict}, regardless of whether the gate passes. It
+ * lets reviewers audit why a label-only step that was visually only
+ * partially verified did NOT trigger a `mismatch`. */
+export interface FaithfulnessTierReport {
+  readonly schemaVersion: typeof FAITHFULNESS_TIER_REPORT_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly generatedAt: string;
+  readonly jobId: string;
+  /** Aggregate cross-modal faithfulness score after tier weighting. */
+  readonly aggregateScore: number;
+  /** Threshold the aggregate is compared against (profile-scoped). */
+  readonly aggregateThreshold: number;
+  /** Whether the aggregate score clears the threshold. */
+  readonly aggregatePasses: boolean;
+  /** Total step count covered by the report. */
+  readonly stepCount: number;
+  /** Steps where the tier-aware score is `1.0`. */
+  readonly matchCount: number;
+  /** Steps where the tier-aware score is `0.85`. */
+  readonly evidencePartialCount: number;
+  /** Steps where the tier-aware score is `0.0`. */
+  readonly mismatchCount: number;
+  /**
+   * Issue #2116 — evaluation mode the report was produced under. The
+   * tier-report builder only materializes a report for `per_step` runs
+   * (per-step evidence is required to populate `entries`), so this field
+   * is constant `"per_step"` on persisted reports. The companion
+   * {@link TestCasePolicyReport.faithfulnessEvaluation} block surfaces
+   * the broader mode taxonomy at the policy-gate level. Carried here so
+   * a tier report parsed in isolation tells reviewers unambiguously
+   * which evaluation path produced it.
+   */
+  readonly evaluationMode: FaithfulnessEvaluationMode;
+  /** Per-step records, sorted by `(testCaseId, stepIndex)`. */
+  readonly entries: readonly FaithfulnessTierReportEntry[];
+  /**
+   * Issue #2170 — case ids whose `evidence_partial` step verdicts make up
+   * `>= 60 %` of the case's verdict population. The companion policy gate
+   * raises a per-case `policy:cross-modal-faithfulness-partial-majority`
+   * warning (NOT error) for these ids so the case still ships while
+   * reviewers see the partial-evidence majority. Sorted ascending; empty
+   * when no case crosses the threshold. */
+  readonly partialMajorityCaseIds: readonly string[];
+}
+
+/** Issue #2170 — minimum fraction of step verdicts on a case that must be
+ * `evidence_partial` for the case to be flagged with the partial-majority
+ * warning. Encoded as a constant so the tier report and the policy gate
+ * agree on the threshold. */
+export const FAITHFULNESS_PARTIAL_MAJORITY_FRACTION = 0.6 as const;
+
+/** Schema version for persisted multimodal accessibility-judge verdicts. */
+export const A11Y_VERDICT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Prompt-template version pinned onto accessibility-judge verdict artifacts. */
+export const A11Y_JUDGE_PROMPT_TEMPLATE_VERSION = "a11y-judge.v1" as const;
+
+/** Structured-output schema name used by the accessibility-judge LLM call. */
+export const A11Y_JUDGE_OUTPUT_SCHEMA_NAME =
+  "workspace-dev-a11y-judge-v1" as const;
+
+/** Canonical filename for the persisted accessibility-judge verdict artifact. */
+export const A11Y_JUDGE_VERDICT_ARTIFACT_FILENAME = "a11y_judge.json" as const;
+
+/** Closed runtime list of global accessibility-judge verdicts. */
+export const ALLOWED_A11Y_VERDICTS = ["accept", "repair"] as const;
+
+/** Discriminant of an allowed accessibility-judge terminal verdict. */
+export type A11yJudgeVerdictLabel = (typeof ALLOWED_A11Y_VERDICTS)[number];
+
+/** Closed runtime list of per-criterion accessibility coverage verdicts. */
+export const ALLOWED_A11Y_CRITERION_VERDICTS = [
+  "covered_passes",
+  "covered_weakly",
+  "not_covered",
+] as const;
+
+/** Discriminant of an accessibility-criterion coverage verdict. */
+export type A11yCriterionVerdictLabel =
+  (typeof ALLOWED_A11Y_CRITERION_VERDICTS)[number];
+
+/** One per-criterion verdict emitted by the multimodal accessibility judge. */
+export interface A11yCriterionVerdict {
+  readonly criterionId: string;
+  readonly screenId: string;
+  readonly screenName: string;
+  readonly pillarId: string;
+  readonly successCriterion: string;
+  readonly verdict: A11yCriterionVerdictLabel;
+  readonly rationale: string;
+}
+
+/** One accessibility-gap finding anchored to a criterion id. */
+export interface A11yFinding {
+  readonly criterionId: string;
+  readonly testCaseId: string;
+  readonly code: string;
+  readonly severity: LogicJudgeFindingSeverity;
+  readonly message: string;
+}
+
+/** Optional refusal attached to an accessibility-judge verdict. */
+export interface A11yVerdictRefusal {
+  readonly code: string;
+  readonly message: string;
+}
+
+/** Persisted multimodal accessibility-judge verdict artifact. */
+export interface A11yVerdict {
+  readonly schemaVersion: typeof A11Y_VERDICT_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly promptTemplateVersion: typeof A11Y_JUDGE_PROMPT_TEMPLATE_VERSION;
+  readonly generatedAt: string;
+  readonly jobId: string;
+  readonly cacheHit: boolean;
+  readonly cacheKeyDigest: string;
+  readonly modelDeployment: string;
+  readonly modelRevision: string;
+  readonly gatewayRelease: string;
+  readonly verdict: A11yJudgeVerdictLabel;
+  readonly criteria: readonly A11yCriterionVerdict[];
+  readonly findings: readonly A11yFinding[];
+  readonly repairInstructions: readonly RepairInstruction[];
+  readonly truncatedInstructionCount?: number;
+  readonly refusal?: A11yVerdictRefusal;
+}
+
+/** Schema version for persisted production-runner judge-consensus artifacts. */
+export const JUDGE_CONSENSUS_SCHEMA_VERSION = "1.1.0" as const;
+
+/** Canonical filename for the persisted judge-consensus artifact. */
+export const JUDGE_CONSENSUS_ARTIFACT_FILENAME =
+  "judge-consensus.json" as const;
+
+/** Closed runtime list of known production-runner judge ids. */
+export const KNOWN_JUDGE_CONSENSUS_JUDGE_IDS = [
+  "logic_judge",
+  "faithfulness_judge",
+  "hallucination_judge",
+  "a11y_judge",
+  "coverage_judge",
+] as const;
+
+/** Known judge ids surfaced in the production-runner consensus panel. */
+export type KnownJudgeConsensusJudgeId =
+  (typeof KNOWN_JUDGE_CONSENSUS_JUDGE_IDS)[number];
+
+/** Closed runtime list of consensus finding categories. */
+export const JUDGE_CONSENSUS_FINDING_CATEGORIES = [
+  "schema_class",
+  "cross_modal_mismatch",
+  "ir_allowlist_violation",
+  "hallucination",
+  "a11y_gap",
+  "coverage_gap",
+  "other",
+] as const;
+
+/** Category tag used by the consensus module for veto / repair routing. */
+export type JudgeConsensusFindingCategory =
+  (typeof JUDGE_CONSENSUS_FINDING_CATEGORIES)[number];
+
+/** One normalized finding consumed by the production-runner consensus module. */
+export interface JudgeConsensusFinding {
+  readonly scope: JudgeFindingScope;
+  readonly testCaseId: string;
+  readonly code: string;
+  readonly message: string;
+  readonly severity?: LogicJudgeFindingSeverity;
+  readonly category: JudgeConsensusFindingCategory;
+}
+
+/** One normalized judge entry consumed by the consensus module. */
+export interface JudgeConsensusPanelEntry {
+  readonly judgeId: string;
+  readonly verdict: LogicJudgeVerdictLabel;
+  readonly weight: number;
+  /**
+   * Optional normalized confidence in the judge verdict (`0..1`).
+   * When omitted, callers should treat the vote as fully trusted for
+   * backwards compatibility with pre-#2102 artifacts.
+   */
+  readonly confidence?: number;
+  readonly findings: readonly JudgeConsensusFinding[];
+  readonly repairInstructions: readonly RepairInstruction[];
+  readonly truncatedInstructionCount?: number;
+  /**
+   * Optional model-family marker (Issue #2038). Set by the harness
+   * when the judge is sourced from a known cross-family deployment.
+   * Persisted into `judge-consensus.json` so the per-family agreement
+   * matrix can be reconstructed offline.
+   */
+  readonly family?: JudgeModelFamily;
+  /**
+   * Optional deployment-region marker (Issue #2038). Used by the
+   * EU-residency check on the judge-disagreement report.
+   */
+  readonly region?: JudgeModelRegion;
+  /**
+   * Optional stable model identifier (e.g., `"claude-3.5-sonnet-20240620"`)
+   * captured by the harness so the disagreement report can attribute
+   * each verdict to a specific model version.
+   */
+  readonly modelId?: string;
+  /**
+   * Optional prompt-template version pin captured by the harness so
+   * provenance graph edges (B.10) can record every judge family +
+   * version used in the run (Issue #2038).
+   */
+  readonly promptVersion?: string;
+}
+
+/** Primary veto attribution surfaced by the consensus artifact. */
+export interface JudgeConsensusVeto {
+  readonly judgeId: string;
+  readonly verdict: LogicJudgeVerdictLabel;
+  readonly findingCodes: readonly string[];
+}
+
+/** Vote-shape labels surfaced by the persisted judge-consensus artifact. */
+export const JUDGE_CONSENSUS_AGREEMENT_SHAPES = [
+  "unanimous",
+  "majority",
+  "split",
+  "vetoed",
+] as const;
+
+/** Vote-shape labels surfaced by the persisted judge-consensus artifact. */
+export type JudgeConsensusAgreementShape =
+  (typeof JUDGE_CONSENSUS_AGREEMENT_SHAPES)[number];
+
+/** Repair-state labels surfaced by the persisted judge-consensus artifact. */
+export const JUDGE_CONSENSUS_REPAIR_STATES = [
+  "none",
+  "repair_required",
+  "repaired",
+] as const;
+
+/** Repair-state labels surfaced by the persisted judge-consensus artifact. */
+export type JudgeConsensusRepairState =
+  (typeof JUDGE_CONSENSUS_REPAIR_STATES)[number];
+
+/** Final repair-loop outcomes persisted alongside judge-consensus history. */
+export const JUDGE_CONSENSUS_REPAIR_OUTCOMES = [
+  "not_needed",
+  "accepted",
+  "rejected",
+  "needs_review",
+  "convergence_stalled",
+  // Issue #2016: budget_exhausted is a soft outcome — the repair loop
+  // refused to start the next regeneration because doing so would have
+  // pushed the cumulative generator output tokens or attempts past the
+  // FinOps `test_generation` envelope. The latest best-effort case list
+  // is still handed downstream so the policy gate can make a final call.
+  "budget_exhausted",
+] as const;
+
+/** Final repair-loop outcomes persisted alongside judge-consensus history. */
+export type JudgeConsensusRepairOutcome =
+  (typeof JUDGE_CONSENSUS_REPAIR_OUTCOMES)[number];
+
+/** Historical repair metadata persisted alongside the final consensus state. */
+export interface JudgeConsensusRepairHistory {
+  readonly attempted: boolean;
+  readonly repairIterationCount: number;
+  readonly finalOutcome: JudgeConsensusRepairOutcome;
+  readonly historicalFindings: readonly JudgeConsensusFinding[];
+  readonly historicalRepairInstructions: readonly RepairInstruction[];
+  readonly truncatedInstructionCount?: number;
+}
+
+/** Persisted production-runner judge-consensus artifact. */
+export interface JudgeConsensusVerdict {
+  readonly schemaVersion: typeof JUDGE_CONSENSUS_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly generatedAt: string;
+  readonly jobId: string;
+  readonly verdict: LogicJudgeVerdictLabel;
+  readonly agreementShape: JudgeConsensusAgreementShape;
+  readonly repairState: JudgeConsensusRepairState;
+  readonly activeFindings: readonly JudgeConsensusFinding[];
+  readonly repairInstructions: readonly RepairInstruction[];
+  readonly truncatedInstructionCount?: number;
+  readonly repairHistory: JudgeConsensusRepairHistory;
+  readonly vetoBy?: JudgeConsensusVeto;
+  readonly panel: readonly JudgeConsensusPanelEntry[];
+  /**
+   * Optional cross-family escalation summary (Issue #2038). Populated
+   * by `judge-consensus.ts` when the panel triggered a disagreement
+   * escalation; consumers (production runner, run-quality reporter)
+   * can detect human-review hand-off without re-deriving it from the
+   * disagreement-report artifact.
+   */
+  readonly humanReview?: HumanReviewDecision;
+  /**
+   * Optional cross-family agreement summary (Issue #2038). Mirrors
+   * the totals in `judge-disagreement-report.json` but is inlined here
+   * so a single artifact carries both the legal verdict and the
+   * disagreement evidence.
+   */
+  readonly crossFamily?: JudgeCrossFamilySummary;
+}
+
+// ---------------------------------------------------------------------------
+// Issue #2038 — Cross-family judge ensemble + human-review escalation.
+// ---------------------------------------------------------------------------
+
+/**
+ * Schema version literal pinned on every persisted
+ * {@link JudgeDisagreementReport} artifact (Issue #2038). Structural
+ * changes require a major bump and a `CONTRACT_CHANGELOG.md` entry.
+ */
+export const JUDGE_DISAGREEMENT_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/**
+ * Canonical filename for the per-run disagreement-report artifact
+ * (Issue #2038). The harness writes
+ * `<runDir>/judge-disagreement-report.json` once per `judge_consensus`
+ * step. The artifact carries disagreement rate, escalation rate, and
+ * the per-family agreement matrix the AT-2038 audit requires.
+ */
+export const JUDGE_DISAGREEMENT_REPORT_ARTIFACT_FILENAME =
+  "judge-disagreement-report.json" as const;
+
+/**
+ * Closed runtime list of cross-family decision shapes (Issue #2038).
+ * The vote outcome over the three judge roles maps to one of these
+ * labels; the disagreement report tallies them.
+ */
+export const JUDGE_DISAGREEMENT_DECISION_LABELS = [
+  "majority_decision",
+  "split_decision",
+  "unanimous_accept",
+  "unanimous_reject",
+  "unanimous_repair",
+] as const;
+
+/** Discriminated alias for {@link JUDGE_DISAGREEMENT_DECISION_LABELS}. */
+export type JudgeDisagreementDecisionLabel =
+  (typeof JUDGE_DISAGREEMENT_DECISION_LABELS)[number];
+
+/**
+ * Closed runtime list of escalation actions that the cross-family
+ * disagreement detector may emit (Issue #2038). `none` is the
+ * no-op; `human_review_required` instructs the consensus builder to
+ * attach a deterministic `human_review` envelope to the consensus
+ * artifact.
+ */
+export const JUDGE_DISAGREEMENT_ESCALATION_ACTIONS = [
+  "human_review_required",
+  "none",
+] as const;
+
+/** Discriminated alias for {@link JUDGE_DISAGREEMENT_ESCALATION_ACTIONS}. */
+export type JudgeDisagreementEscalationAction =
+  (typeof JUDGE_DISAGREEMENT_ESCALATION_ACTIONS)[number];
+
+/** Per-judge entry recorded in the disagreement report. */
+export interface JudgeDisagreementJudgeEntry {
+  /** Stable judge identifier (e.g., `"logic_judge"`). */
+  readonly judgeId: string;
+  /** Judge model-family marker. */
+  readonly family: JudgeModelFamily;
+  /** Stable model identifier (e.g., `"claude-3.5-sonnet"`). */
+  readonly modelId: string;
+  /** Pinned prompt-template version. */
+  readonly promptVersion: string;
+  /** Deployment region marker (used by EU-residency policy). */
+  readonly region: JudgeModelRegion;
+  /** Verdict cast by this judge in the run. */
+  readonly verdict: LogicJudgeVerdictLabel;
+}
+
+/** Per-family agreement-matrix cell (Issue #2038). */
+export interface JudgeDisagreementMatrixCell {
+  readonly family: JudgeModelFamily;
+  /** Number of votes from this family that matched the resolved verdict. */
+  readonly agreements: number;
+  /**
+   * Number of votes from this family that disagreed with the resolved
+   * verdict. Counts every dissenting vote — not just the
+   * lone-dissenter case — so a 1:1:1 split surfaces a `dissents: 1`
+   * cell on each minority family. The `agreements + dissents === votes`
+   * invariant holds per cell.
+   */
+  readonly dissents: number;
+  /** Total votes cast by this family across the run. */
+  readonly votes: number;
+}
+
+/** Roll-up cost markers attributed per-family (Issue #2038). */
+export interface JudgeDisagreementCostByFamily {
+  readonly family: JudgeModelFamily;
+  /** Total tokens consumed by this family across judge calls. */
+  readonly totalTokens: number;
+  /** Aggregate cost in micro-units (1e-6 USD); 0 when unknown. */
+  readonly costMicrounits: number;
+}
+
+/**
+ * Persisted per-run disagreement evidence (Issue #2038). The
+ * Production Runner writes one of these per `judge_consensus` step,
+ * even when the panel is unanimous — the artifact is the audit anchor
+ * the disagreement-rate trending consumes (B.10).
+ */
+export interface JudgeDisagreementReport {
+  readonly schemaVersion: typeof JUDGE_DISAGREEMENT_REPORT_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly generatedAt: string;
+  readonly jobId: string;
+  /** Cross-family decision label for this run. */
+  readonly decision: JudgeDisagreementDecisionLabel;
+  /** Escalation action emitted by the detector. */
+  readonly escalation: JudgeDisagreementEscalationAction;
+  /** Disagreement rate in [0,1] = dissenting-judge-count / panel-size. */
+  readonly disagreementRate: number;
+  /** Escalation rate in [0,1] = 1 if escalated, 0 otherwise. */
+  readonly escalationRate: number;
+  /** Per-judge entries sorted alphabetically by `judgeId`. */
+  readonly judges: readonly JudgeDisagreementJudgeEntry[];
+  /** Per-family agreement matrix (sorted alphabetically by `family`). */
+  readonly perFamilyAgreement: readonly JudgeDisagreementMatrixCell[];
+  /** Per-family cost rollup (sorted alphabetically by `family`). */
+  readonly costByFamily: readonly JudgeDisagreementCostByFamily[];
+  /** Hard guarantee that the artifact never carries a raw prompt. */
+  readonly rawPromptsIncluded: false;
+}
+
+/**
+ * Schema version literal pinned on every persisted
+ * {@link HumanReviewDecision} envelope (Issue #2038).
+ */
+export const HUMAN_REVIEW_DECISION_SCHEMA_VERSION = "1.0.0" as const;
+
+/**
+ * Closed runtime list of human-review reviewer kinds (Issue #2038).
+ * `dry_run_marker` is the default for offline runs; `principal` is
+ * reserved for future integration with the live human-review channel.
+ */
+export const HUMAN_REVIEW_REVIEWER_KINDS = [
+  "dry_run_marker",
+  "principal",
+] as const;
+
+/** Discriminated alias for {@link HUMAN_REVIEW_REVIEWER_KINDS}. */
+export type HumanReviewReviewerKind =
+  (typeof HUMAN_REVIEW_REVIEWER_KINDS)[number];
+
+/**
+ * Closed runtime list of human-review verdict labels (Issue #2038).
+ * The reviewer's verdict feeds back into `JudgeConsensusVerdict` and
+ * may override the panel's verdict.
+ */
+export const HUMAN_REVIEW_VERDICT_LABELS = [
+  "accept",
+  "deferred",
+  "reject",
+  "repair",
+] as const;
+
+/** Discriminated alias for {@link HUMAN_REVIEW_VERDICT_LABELS}. */
+export type HumanReviewVerdictLabel =
+  (typeof HUMAN_REVIEW_VERDICT_LABELS)[number];
+
+/**
+ * Hard upper bound on the persisted `rationale` text emitted per
+ * human-review decision. Keeps the artifact bounded and prevents
+ * smuggling unbounded reviewer prose into the consensus surface.
+ */
+export const HUMAN_REVIEW_RATIONALE_MAX_CHARS = 1024 as const;
+
+/**
+ * Persisted human-review decision (Issue #2038). The reviewer is
+ * deterministically identified by a `principalHash` (sha256 hex of
+ * the reviewer's stable identifier) so the artifact carries a stable
+ * audit anchor without leaking reviewer PII.
+ */
+export interface HumanReviewDecision {
+  readonly schemaVersion: typeof HUMAN_REVIEW_DECISION_SCHEMA_VERSION;
+  /** Reviewer kind — `dry_run_marker` for offline / unattended runs. */
+  readonly reviewerKind: HumanReviewReviewerKind;
+  /** sha256 hex of the reviewer's stable identifier (64 lowercase hex chars). */
+  readonly principalHash: string;
+  /** Final verdict the reviewer cast. */
+  readonly verdict: HumanReviewVerdictLabel;
+  /** Length-capped, redacted rationale (no chain-of-thought, no PII). */
+  readonly rationale: string;
+  /** ISO-8601 timestamp at which the decision was recorded. */
+  readonly decidedAt: string;
+  /** Disagreement decision label that triggered escalation. */
+  readonly triggeredBy: JudgeDisagreementDecisionLabel;
+}
+
+/**
+ * Inline cross-family summary attached to the consensus artifact when
+ * the panel was sourced from a cross-family ensemble (Issue #2038).
+ */
+export interface JudgeCrossFamilySummary {
+  readonly decision: JudgeDisagreementDecisionLabel;
+  readonly escalation: JudgeDisagreementEscalationAction;
+  /** Distinct judge model families used in the run, sorted alphabetically. */
+  readonly families: readonly JudgeModelFamily[];
+  readonly disagreementRate: number;
+  readonly escalationRate: number;
+}
+
+// ---------------------------------------------------------------------------
+// Human-review queue + decision-capture surface (Issue #2179).
+//
+// Tier-1 / W6-5 — surfaces the existing `human_review` agent role
+// (Issue #2038) as a queryable per-tenant queue + a signed verdict-capture
+// surface so a competent human operator can satisfy DSGVO Art. 22
+// ("automated decisions with significant legal effect") and EU AI Act
+// Art. 14 ("human oversight") for banking-test generation runs.
+//
+// Verdicts are signed (ed25519) by the reviewer's key, deterministically
+// hashed via the principal-hash convention from `human-review-agent.ts`,
+// and persisted into:
+//
+//   - `human-review-log.json` per run (audit trail).
+//   - `provenance.jsonld` (PROV `wasInformedBy` link from the verdict to
+//     the original judge-disagreement artifact).
+//   - `run-quality.json` (verdict reference attached to the case decision).
+//
+// Replay determinism: re-running a job that previously had a verdict
+// reuses the persisted verdict — no re-prompting the LLM, no re-judging.
+// SLA tracking: every queue item carries `slaDeadlineAt`; expired items
+// surface a `policy:human-review-sla-breach` warning at next run.
+// ---------------------------------------------------------------------------
+
+/** Schema version pinned on every persisted {@link HumanReviewQueueItem}. */
+export const HUMAN_REVIEW_QUEUE_ITEM_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Schema version pinned on every persisted {@link HumanReviewVerdict}. */
+export const HUMAN_REVIEW_VERDICT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Schema version pinned on every persisted {@link HumanReviewLog}. */
+export const HUMAN_REVIEW_LOG_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the per-run human-review audit log. */
+export const HUMAN_REVIEW_LOG_ARTIFACT_FILENAME =
+  "human-review-log.json" as const;
+
+/**
+ * Canonical filename for the per-run formal-verification report
+ * emitted by the LTL / CTL model-checker driver (Issue #2181).
+ * Mirrored in `formal-verification.ts` as
+ * `FORMAL_VERIFICATION_REPORT_ARTIFACT_FILENAME` — both constants must
+ * stay in lockstep.
+ */
+export const FORMAL_VERIFICATION_REPORT_AUDIT_ARTIFACT_FILENAME =
+  "formal-verification-report.json" as const;
+
+/** Hard upper bound on the persisted reviewer rationale, in characters. */
+export const HUMAN_REVIEW_VERDICT_RATIONALE_MAX_CHARS = 4096 as const;
+
+/** Closed runtime list of operator-facing review verdict labels. */
+export const HUMAN_REVIEW_QUEUE_VERDICT_LABELS = [
+  "approved",
+  "rejected",
+  "revised",
+] as const;
+
+/** Discriminated alias for {@link HUMAN_REVIEW_QUEUE_VERDICT_LABELS}. */
+export type HumanReviewQueueVerdictLabel =
+  (typeof HUMAN_REVIEW_QUEUE_VERDICT_LABELS)[number];
+
+/**
+ * Closed list of `policy:` warning rules emitted by the human-review
+ * surface. Operators can filter the policy report by these stable codes.
+ */
+export const HUMAN_REVIEW_POLICY_WARNING_RULES = [
+  "policy:human-review-sla-breach",
+] as const;
+
+export type HumanReviewPolicyWarningRule =
+  (typeof HUMAN_REVIEW_POLICY_WARNING_RULES)[number];
+
+/**
+ * Inline disagreement snapshot pinned on each queue item. Carries only
+ * the deterministic identifying fields from {@link JudgeDisagreementReport}
+ * — never raw prompts, never PII — so a queue item can be inspected and
+ * replayed without re-loading the full disagreement artifact.
+ */
+export interface JudgeDisagreementSnapshot {
+  /** Cross-family decision label that triggered escalation. */
+  readonly decision: JudgeDisagreementDecisionLabel;
+  /** Escalation action recorded by the disagreement detector. */
+  readonly escalation: JudgeDisagreementEscalationAction;
+  /** Disagreement rate in [0,1] = dissenting-judge-count / panel-size. */
+  readonly disagreementRate: number;
+  /** Per-judge entries sorted alphabetically by `judgeId`. */
+  readonly judges: readonly JudgeDisagreementJudgeEntry[];
+}
+
+/**
+ * One pending case that requires human oversight before the run can
+ * advance. The producer (the harness) writes one of these per
+ * disagreement-escalated case; the reviewer surface (CLI / minimal UI)
+ * fetches them and emits a {@link HumanReviewVerdict}.
+ *
+ * Hard invariants:
+ *
+ *   - `itemId` is stable across replays for the same logical case so
+ *     verdicts can be re-located on re-run without an external index.
+ *   - `tenantId` matches the active {@link TenantScope}; the queue is
+ *     partitioned per-tenant and never returns cross-tenant items.
+ *   - `enqueuedAt` and `slaDeadlineAt` are strict ISO-8601 strings; the
+ *     module is clock-free.
+ *   - `proposedDecision` records what the harness would have done in the
+ *     absence of human input — useful for SLA-breach defaulting and for
+ *     reviewer context.
+ */
+export interface HumanReviewQueueItem {
+  readonly schemaVersion: typeof HUMAN_REVIEW_QUEUE_ITEM_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly itemId: string;
+  readonly tenantId: string;
+  readonly profileId: string;
+  readonly runId: string;
+  readonly testCaseId: string;
+  readonly judgeDisagreement: JudgeDisagreementSnapshot;
+  readonly proposedDecision: TestCasePolicyDecision;
+  readonly enqueuedAt: string;
+  readonly slaDeadlineAt: string;
+}
+
+/**
+ * Persisted human verdict for a {@link HumanReviewQueueItem}. The
+ * verdict carries a detached ed25519 signature over the canonical-JSON
+ * serialisation of the verdict body (every field except `signatureHex`)
+ * so the queue can verify reviewer identity and detect tampering before
+ * persisting the decision into the run record.
+ */
+export interface HumanReviewVerdict {
+  readonly schemaVersion: typeof HUMAN_REVIEW_VERDICT_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly itemId: string;
+  readonly reviewerPrincipalHash: string;
+  readonly verdict: HumanReviewQueueVerdictLabel;
+  /** Length-capped, redacted rationale (no chain-of-thought, no PII). */
+  readonly rationale: string;
+  /**
+   * Optional revised test case the reviewer wishes to substitute for the
+   * proposed decision. Only meaningful when `verdict === "revised"`.
+   * Stored as an opaque JSON object — the queue does not validate the
+   * inner `GeneratedTestCase` shape (the consumer does).
+   */
+  readonly revisedTestCase?: Readonly<Record<string, unknown>>;
+  readonly decidedAt: string;
+  /** Detached ed25519 signature, lowercase hex (128 chars). */
+  readonly signatureHex: string;
+  /** SPKI-DER sha256 hex of the reviewer's public key. */
+  readonly publicKeyFingerprintSha256: string;
+  /** PEM-encoded SPKI public key the signature can be verified against. */
+  readonly publicKeyPem: string;
+}
+
+/** Filter shape consumed by the queue-fetch surface. */
+export interface HumanReviewFilter {
+  readonly tenantId: string;
+  readonly profileId?: string;
+  /**
+   * Optional inclusive upper bound on `slaDeadlineAt`. ISO-8601 string;
+   * items with `slaDeadlineAt <= slaDueBy` are returned.
+   */
+  readonly slaDueBy?: string;
+}
+
+/**
+ * Per-run audit log capturing the queue items that were created during
+ * the run and any verdicts that were recorded against them. The log is
+ * canonical-JSON, byte-stable for byte-identical inputs, and bundled
+ * into the W6-1 audit-dossier (Issue #2175) so a regulator can replay
+ * the human-oversight chain.
+ */
+export interface HumanReviewLog {
+  readonly schemaVersion: typeof HUMAN_REVIEW_LOG_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly jobId: string;
+  readonly tenantId: string;
+  readonly generatedAt: string;
+  /** Items sorted alphabetically by `itemId`. */
+  readonly items: readonly HumanReviewQueueItem[];
+  /** Verdicts sorted alphabetically by `itemId`. */
+  readonly verdicts: readonly HumanReviewVerdict[];
+  /**
+   * Items whose `slaDeadlineAt` had elapsed at log-emission time.
+   * Drives the `policy:human-review-sla-breach` warning on the next run.
+   */
+  readonly slaBreaches: readonly HumanReviewSlaBreachEntry[];
+}
+
+/** One SLA-breach entry surfaced for the next run's policy report. */
+export interface HumanReviewSlaBreachEntry {
+  readonly itemId: string;
+  readonly testCaseId: string;
+  readonly slaDeadlineAt: string;
+  readonly observedAt: string;
+}
+
+/** Schema version for persisted production-runner run-quality artifacts. */
+export const RUN_QUALITY_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the persisted run-quality artifact. */
+export const RUN_QUALITY_ARTIFACT_FILENAME = "run-quality.json" as const;
+
+/** Top-level run-quality states for the production-runner artifact bundle. */
+export const RUN_QUALITY_STATUSES = [
+  "clean_success",
+  "repaired_success",
+  "degraded_success",
+  "blocked_failure",
+] as const;
+
+/** Top-level run-quality states for the production-runner artifact bundle. */
+export type RunQualityStatus = (typeof RUN_QUALITY_STATUSES)[number];
+
+/** Stage identifiers surfaced in the run-quality attempt summaries. */
+export const RUN_QUALITY_STAGE_IDS = [
+  "generator",
+  "judge",
+  "visual_sidecar",
+  "policy_gate",
+] as const;
+
+/** Stage identifiers surfaced in the run-quality attempt summaries. */
+export type RunQualityStageId = (typeof RUN_QUALITY_STAGE_IDS)[number];
+
+/** Stage-level attempt summary persisted in the run-quality artifact. */
+export interface RunQualityAttemptSummary {
+  readonly stage: RunQualityStageId;
+  readonly attempts: number;
+  readonly successes: number;
+  readonly failures: number;
+  readonly finalOutcome:
+    | "not_run"
+    | "clean"
+    | "recovered"
+    | "degraded"
+    | "blocked";
+  readonly lastErrorClass?: string;
+}
+
+/** Persisted production-runner run-quality artifact. */
+export interface RunQualityArtifact {
+  readonly schemaVersion: typeof RUN_QUALITY_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly generatedAt: string;
+  readonly jobId: string;
+  readonly status: RunQualityStatus;
+  readonly blocked: boolean;
+  readonly usable: boolean;
+  readonly finalJudgeVerdict: LogicJudgeVerdictLabel;
+  readonly repairState: JudgeConsensusRepairState;
+  readonly repairHistory: JudgeConsensusRepairHistory;
+  readonly activeFindings: readonly JudgeConsensusFinding[];
+  readonly activeFindingCount: number;
+  readonly attemptSummaries: readonly RunQualityAttemptSummary[];
+  readonly degradedReasons: readonly string[];
+  /** Aggregate self-consistency agreement ratio in [0,1], when sampled. */
+  readonly selfConsistencyAgreement?: number;
+}
+
+/** Schema version for per-run self-consistency voting artifacts. */
+export const SELF_CONSISTENCY_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the persisted self-consistency artifact. */
+export const SELF_CONSISTENCY_REPORT_ARTIFACT_FILENAME =
+  "self-consistency-report.json" as const;
+
+/** Stable route emitted for targets whose samples disagree structurally. */
+export type SelfConsistencyDisagreementRoute =
+  | "cross_family_arbitration"
+  | "human_review";
+
+/** Deterministic self-consistency vote summary (Issue #2125). */
+export interface SelfConsistencyVote {
+  readonly winner?: string;
+  readonly agreementRate: number;
+  readonly confidenceInterval95: readonly [number, number];
+  readonly bootstrapSampleSize: number;
+  readonly consensusStrength: "strong_consensus" | "weak_consensus";
+}
+
+/** One field-level vote recorded for a single coverage target. */
+export interface SelfConsistencyFieldVote extends SelfConsistencyVote {
+  readonly field:
+    | "type"
+    | "technique"
+    | "riskCategory"
+    | "step_action"
+    | "step_expected";
+  readonly stepIndex?: number;
+  /** Backwards-compatible alias for agreementRate. */
+  readonly agreement: number;
+  readonly majorityValue?: string;
+  readonly majorityCount: number;
+}
+
+/** One per-target row in the persisted self-consistency report. */
+export interface SelfConsistencyTargetReportEntry {
+  readonly targetKey: string;
+  readonly selectedTestCaseId: string;
+  readonly samplePresenceCount: number;
+  readonly agreement: number;
+  readonly consensusStrength: "strong_consensus" | "weak_consensus";
+  readonly disagreement: boolean;
+  readonly disagreementRoute?: SelfConsistencyDisagreementRoute;
+  readonly arbitrationTriggered?: boolean;
+  readonly votes: readonly SelfConsistencyFieldVote[];
+}
+
+/** Persisted self-consistency voting artifact (Issue #2070). */
+export interface SelfConsistencyReport {
+  readonly schemaVersion: typeof SELF_CONSISTENCY_REPORT_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly generatedAt: string;
+  readonly jobId: string;
+  readonly sampleCount: number;
+  readonly selfConsistencyAgreement: number;
+  readonly targets: readonly SelfConsistencyTargetReportEntry[];
+}
+
+/** Canonical filename for per-run genealogy DAG artifacts. */
+export const GENEALOGY_ARTIFACT_FILENAME = "genealogy.json" as const;
+
+/** Schema version for per-run genealogy DAG artifacts. */
+export const GENEALOGY_SCHEMA_VERSION = "1.0.0" as const;
+
+// ---------------------------------------------------------------------------
+// Issue #1795 — canonical-JSON harness job artifacts
+//
+// The harness persists every report it produces under the per-job runDir as
+// canonical-JSON (or canonical newline-delimited JSON for append-mostly
+// event logs). All artifacts below are atomic-write (tmp + rename),
+// byte-stable for byte-identical inputs, and schema-versioned. They are
+// hashed into a sibling {@link HarnessArtifactManifest} so the evidence
+// verify route can reproduce every hash offline without re-running the
+// harness.
+// ---------------------------------------------------------------------------
+
+/** Canonical filename for the consolidated per-repair-iteration log. */
+export const AGENT_ITERATIONS_ARTIFACT_FILENAME =
+  "agent-iterations.json" as const;
+
+/** Schema version for {@link AgentIterationsArtifact}. */
+export const AGENT_ITERATIONS_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Closed runtime list of repair-iteration outcome literals. */
+export const ALLOWED_AGENT_ITERATION_OUTCOMES = [
+  "exhausted",
+  "halted",
+  "needs_repair",
+  "passed",
+] as const;
+
+/** Discriminated alias for {@link ALLOWED_AGENT_ITERATION_OUTCOMES}. */
+export type AgentIterationOutcome =
+  (typeof ALLOWED_AGENT_ITERATION_OUTCOMES)[number];
+
+/** One persisted record describing a single repair-iteration step. */
+export interface AgentIterationRecord {
+  /** 0-based iteration index inside the repair budget. */
+  readonly iteration: number;
+  /** Stable harness role-step identifier of the role that ran. */
+  readonly roleStepId: string;
+  /** ISO-8601 timestamp at which the iteration started. */
+  readonly startedAt: string;
+  /** ISO-8601 timestamp at which the iteration completed. */
+  readonly completedAt: string;
+  /** Resolved outcome of the iteration. */
+  readonly outcome: AgentIterationOutcome;
+  /** Total finding count surfaced by this iteration. */
+  readonly findingsCount: number;
+  /** Optional repair-plan identifier carried into the next iteration. */
+  readonly repairPlanId?: string;
+  /** Merkle parent hash linking this iteration into the harness chain. */
+  readonly parentHash: string;
+}
+
+/** Persisted, canonical-JSON, per-job repair-iteration log. */
+export interface AgentIterationsArtifact {
+  readonly schemaVersion: typeof AGENT_ITERATIONS_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly jobId: string;
+  /** ISO-8601 timestamp the artifact was assembled (server clock). */
+  readonly generatedAt: string;
+  /** Iteration records sorted by `iteration` ascending. */
+  readonly iterations: readonly AgentIterationRecord[];
+}
+
+/** Canonical filename for the consolidated cache-break event log. */
+export const CACHE_BREAK_EVENTS_LOG_ARTIFACT_FILENAME =
+  "cache-break-events.jsonl" as const;
+
+/** Schema version for {@link CacheBreakEventLogEntry}. */
+export const CACHE_BREAK_EVENTS_LOG_SCHEMA_VERSION = "1.0.0" as const;
+
+/**
+ * One persisted line in `cache-break-events.jsonl`. Each line is an
+ * independent canonical-JSON object so the file is byte-stable when the
+ * input set is byte-identical and the entries are sorted before write.
+ */
+export interface CacheBreakEventLogEntry {
+  readonly schemaVersion: typeof CACHE_BREAK_EVENTS_LOG_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly jobId: string;
+  readonly roleStepId: string;
+  readonly querySource: string;
+  /** ISO-8601 timestamp at which the break was observed. */
+  readonly ts: string;
+  /** Merkle parent hash carried by the original `cache_break` event. */
+  readonly parentHash: string;
+  /** `cache_read_input_tokens` observed on the breaking response. */
+  readonly cacheReadTokens: number;
+  /** `cache_creation_input_tokens` observed on the breaking response. */
+  readonly cacheCreationTokens: number;
+  /** Basename of the per-event diff artifact, when persisted. */
+  readonly diffArtifactBasename?: string;
+  /** Suppression reason when the break was intentional, if any. */
+  readonly suppressionReason?: CacheBreakSuppressionReason;
+}
+
+/** Canonical filename for the consolidated CompactBoundary log. */
+export const COMPACT_BOUNDARY_LOG_ARTIFACT_FILENAME =
+  "compact-boundary-log.jsonl" as const;
+
+/** Schema version for {@link CompactBoundaryLogEntry}. */
+export const COMPACT_BOUNDARY_LOG_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Closed runtime list of compaction-boundary tier literals. */
+export const ALLOWED_COMPACT_BOUNDARY_LOG_TIERS = [
+  "context_budget",
+  "manual",
+  "post_repair",
+  "task_round",
+] as const;
+
+/** Discriminated alias for {@link ALLOWED_COMPACT_BOUNDARY_LOG_TIERS}. */
+export type CompactBoundaryLogTier =
+  (typeof ALLOWED_COMPACT_BOUNDARY_LOG_TIERS)[number];
+
+/**
+ * One persisted line in `compact-boundary-log.jsonl`. Carries only
+ * non-sensitive identifiers (sha256 of the summary, byte-counts) so the
+ * log can be persisted alongside the per-job artifacts without leaking
+ * raw conversation text.
+ */
+export interface CompactBoundaryLogEntry {
+  readonly schemaVersion: typeof COMPACT_BOUNDARY_LOG_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly jobId: string;
+  /** ISO-8601 timestamp of the compaction boundary. */
+  readonly ts: string;
+  /** Tier the boundary belongs to. */
+  readonly tier: CompactBoundaryLogTier;
+  /** sha256-hex of the canonical-JSON summary string. */
+  readonly summarySha256: string;
+  /** Total bytes of cleared tool result blocks at the boundary. */
+  readonly clearedToolResultBytes: number;
+  /** Merkle parent hash linking this boundary into the harness chain. */
+  readonly parentHash: string;
+}
+
+/** Canonical filename for the per-run settings migration audit log. */
+export const MIGRATIONS_LOG_ARTIFACT_FILENAME = "migrations.log.jsonl" as const;
+
+/** Schema version for approved signed migration bundles. */
+export const MIGRATION_BUNDLE_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Closed runtime list of migration refusal codes. */
+export const ALLOWED_MIGRATION_REFUSAL_CODES = [
+  "migration_apply_failed",
+  "migration_audit_log_invalid",
+  "migration_registry_invalid",
+  "migration_rollback_failed",
+  "migration_rollback_required",
+  "migration_state_invalid",
+  "migration_unsigned",
+] as const;
+
+/** Discriminated alias for {@link ALLOWED_MIGRATION_REFUSAL_CODES}. */
+export type MigrationRefusalCode =
+  (typeof ALLOWED_MIGRATION_REFUSAL_CODES)[number];
+
+/** One approved entry inside a signed migration bundle. */
+export interface SignedMigrationBundleEntry {
+  readonly id: string;
+  readonly hash: string;
+  readonly description: string;
+  readonly evidenceBearing?: boolean;
+}
+
+/** Changelog-approved signed migration bundle for banking-profile runs. */
+export interface SignedMigrationBundle {
+  readonly schemaVersion: typeof MIGRATION_BUNDLE_SCHEMA_VERSION;
+  readonly contractVersion: typeof CONTRACT_VERSION;
+  readonly entries: readonly SignedMigrationBundleEntry[];
+}
+
+/** Canonical filename for the per-release library coverage report. */
+export const LIBRARY_COVERAGE_REPORT_ARTIFACT_FILENAME =
+  "library-coverage-report.json" as const;
+
+/** Schema version for {@link LibraryCoverageReport}. */
+export const LIBRARY_COVERAGE_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Closed runtime list of library-primitive status literals. */
+export const ALLOWED_LIBRARY_PRIMITIVE_STATUSES = [
+  "deprecated",
+  "implemented",
+  "stub",
+  "unimplemented",
+] as const;
+
+/** Discriminated alias for {@link ALLOWED_LIBRARY_PRIMITIVE_STATUSES}. */
+export type LibraryPrimitiveStatus =
+  (typeof ALLOWED_LIBRARY_PRIMITIVE_STATUSES)[number];
+
+/** Per-primitive coverage row in {@link LibraryCoverageReport.primitives}. */
+export interface LibraryPrimitiveCoverageEntry {
+  /** Stable identifier of the primitive within the library version. */
+  readonly primitiveId: string;
+  /** Library name (e.g. design-system or component-library). */
+  readonly libraryName: string;
+  /** Library version — must match the release's pinned version. */
+  readonly libraryVersion: string;
+  /** Status of the primitive in this release. */
+  readonly status: LibraryPrimitiveStatus;
+  /** Number of generated test cases that exercise this primitive. */
+  readonly testCaseCount: number;
+  /** Optional human-readable note (length-capped at validation). */
+  readonly notes?: string;
+}
+
+/** Roll-up counts in {@link LibraryCoverageReport.counts}. */
+export interface LibraryCoverageReportCounts {
+  readonly total: number;
+  readonly deprecated: number;
+  readonly implemented: number;
+  readonly stub: number;
+  readonly unimplemented: number;
+}
+
+/** Per-release primitive-map status report. */
+export interface LibraryCoverageReport {
+  readonly schemaVersion: typeof LIBRARY_COVERAGE_REPORT_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  /** Stable release identifier (e.g. `"figma-ds@2026.05.0"`). */
+  readonly releaseId: string;
+  /** ISO-8601 timestamp the report was assembled. */
+  readonly generatedAt: string;
+  /**
+   * Per-primitive rows, sorted by `(libraryName, libraryVersion,
+   * primitiveId)` for canonical-JSON stability.
+   */
+  readonly primitives: readonly LibraryPrimitiveCoverageEntry[];
+  /** Roll-up counts, derived from `primitives`. */
+  readonly counts: LibraryCoverageReportCounts;
+}
+
+/** Canonical filename for the per-job harness artifact manifest. */
+export const HARNESS_ARTIFACT_MANIFEST_ARTIFACT_FILENAME =
+  "harness-artifact-manifest.json" as const;
+
+/** Schema version for {@link HarnessArtifactManifest}. */
+export const HARNESS_ARTIFACT_MANIFEST_SCHEMA_VERSION = "1.0.0" as const;
+
+/**
+ * Closed runtime list of canonical-JSON harness artifact filenames the
+ * manifest may reference. Adding a member is an additive minor bump.
+ */
+export const ALLOWED_HARNESS_ARTIFACT_FILENAMES = [
+  "agent-findings.json",
+  "agent-iterations.json",
+  "cache-break-events.jsonl",
+  "compact-boundary-log.jsonl",
+  "coverage-plan.json",
+  // Issue #2128 — per-job differential-privacy budget-accounting manifest
+  // (training-influence accountability). Opt-in feature; written only when
+  // the policy profile enables `trainingInfluenceDpBudget`.
+  "dp-budget-consumed.json",
+  "genealogy.json",
+  "ir-mutation-coverage-strength.json",
+  "judge-panel-verdicts.json",
+  "library-coverage-report.json",
+  "migrations.log.jsonl",
+  "self-verify-rubric.json",
+  "test-design-model.json",
+  "workflow-topology.json",
+] as const;
+
+/** Discriminated alias for {@link ALLOWED_HARNESS_ARTIFACT_FILENAMES}. */
+export type HarnessArtifactFilename =
+  (typeof ALLOWED_HARNESS_ARTIFACT_FILENAMES)[number];
+
+/** One row of {@link HarnessArtifactManifest.entries}. */
+export interface HarnessArtifactManifestEntry {
+  /** Basename of the artifact, relative to the per-job runDir. */
+  readonly filename: HarnessArtifactFilename;
+  /** Schema version literal of the artifact at the time of write. */
+  readonly schemaVersion: string;
+  /** sha256-hex of the on-disk artifact bytes. */
+  readonly sha256: string;
+  /** Total byte length of the on-disk artifact. */
+  readonly sizeBytes: number;
+}
+
+/**
+ * Per-job manifest of canonical-JSON harness artifacts. Persisted as
+ * `harness-artifact-manifest.json` next to the artifacts it indexes.
+ * The {@link HarnessArtifactManifest.digest} is a sha256 over the
+ * canonical-JSON of the sorted `entries` array, so the evidence verify
+ * route can reproduce every artifact hash offline by re-reading the
+ * referenced files and recomputing each row.
+ */
+export interface HarnessArtifactManifest {
+  readonly schemaVersion: typeof HARNESS_ARTIFACT_MANIFEST_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly jobId: string;
+  readonly generatedAt: string;
+  /** Entries sorted by `filename` ascending. */
+  readonly entries: readonly HarnessArtifactManifestEntry[];
+  /** sha256-hex over `canonicalJson(entries)`. */
+  readonly digest: string;
+}
+
+/**
+ * Issue #2128 — schema version for {@link DpBudgetConsumedManifest}.
+ */
+export const DP_BUDGET_CONSUMED_MANIFEST_SCHEMA_VERSION = "1.0.0" as const;
+
+/**
+ * Issue #2128 — canonical filename for the per-job differential-privacy
+ * budget-accounting manifest. Written into the per-job runDir when the
+ * policy profile enables `trainingInfluenceDpBudget`. The filename is also
+ * a member of {@link ALLOWED_HARNESS_ARTIFACT_FILENAMES} so the harness
+ * artifact manifest pins its sha256 + size for audit replay.
+ */
+export const DP_BUDGET_CONSUMED_MANIFEST_ARTIFACT_FILENAME =
+  "dp-budget-consumed.json" as const;
+
+/**
+ * Issue #2128 — default per-input-token epsilon estimate used by
+ * `estimateJobDpCharge`. Conservative ceiling chosen so a 200 000-token job
+ * (the `eu-banking-default` `test_generation` request cap) is charged
+ * `epsilon = 20` against the tenant budget. Operators tighten this on a
+ * derived policy profile when contractually required.
+ */
+export const DP_BUDGET_DEFAULT_PER_TOKEN_EPSILON = 1e-4 as const;
+
+/**
+ * Issue #2128 — default per-job delta estimate. Constant per job (does not
+ * scale with token count) per the additive-composition accounting model
+ * documented in the ADR.
+ */
+export const DP_BUDGET_DEFAULT_DELTA_PER_JOB = 1e-6 as const;
+
+/**
+ * Issue #2128 — closed list of decisions {@link applyDpCharge} can return.
+ * Adding a member is an additive minor bump.
+ */
+export const ALLOWED_DP_BUDGET_DECISIONS = [
+  "accepted",
+  "rejected_budget_exhausted",
+  "skipped_disabled",
+] as const;
+
+/** Discriminated alias for {@link ALLOWED_DP_BUDGET_DECISIONS}. */
+export type DpBudgetDecision = (typeof ALLOWED_DP_BUDGET_DECISIONS)[number];
+
+/**
+ * Issue #2128 — operator-controlled training-influence DP budget policy.
+ * Opt-in: when the policy profile omits `trainingInfluenceDpBudget` (the
+ * default) the gate is fully inactive and no manifest is written.
+ *
+ * The numbers in this config are NOT cryptographic differential-privacy
+ * guarantees — they are an operator-facing accounting layer that bounds
+ * how much input content a tenant may contribute to provider gateways
+ * inside a single cycle. See the ADR for the mathematical model.
+ */
+export interface TrainingInfluenceDpBudgetConfig {
+  /** Master switch. When `false`, the gate is inactive. */
+  readonly enabled: boolean;
+  /**
+   * Epsilon contribution charged per input token. Default
+   * {@link DP_BUDGET_DEFAULT_PER_TOKEN_EPSILON}.
+   */
+  readonly perTokenEpsilon?: number;
+  /**
+   * Delta contribution charged per job (constant, independent of token
+   * count). Default {@link DP_BUDGET_DEFAULT_DELTA_PER_JOB}.
+   */
+  readonly deltaPerJob?: number;
+  /** Tenant-level epsilon cap across all jobs in the current cycle. */
+  readonly tenantEpsilonBudget: number;
+  /** Tenant-level delta cap across all jobs in the current cycle. */
+  readonly tenantDeltaBudget: number;
+}
+
+/**
+ * Issue #2128 — durable per-tenant accounting state. The harness reads
+ * this before each job, calls {@link applyDpCharge}, and persists the
+ * returned `newState` for the next job. `cycleId` is opaque to the
+ * accountant — operators advance it on their preferred cadence (per
+ * day, per quarter, per audit window) by calling
+ * {@link resetTenantDpBudgetCycle}.
+ */
+export interface TenantDpBudgetState {
+  readonly schemaVersion: typeof DP_BUDGET_CONSUMED_MANIFEST_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly tenantId: string;
+  readonly cycleId: string;
+  readonly cycleStartedAt: string;
+  readonly epsilonBudget: number;
+  readonly deltaBudget: number;
+  readonly epsilonConsumed: number;
+  readonly deltaConsumed: number;
+  readonly jobsCharged: number;
+}
+
+/**
+ * Issue #2128 — estimated per-job charge produced by
+ * `estimateJobDpCharge`. The values are deterministic functions of the
+ * inputs; two byte-identical jobs estimate to byte-identical charges.
+ */
+export interface DpBudgetCharge {
+  readonly epsilon: number;
+  readonly delta: number;
+  readonly inputTokens: number;
+  readonly perTokenEpsilon: number;
+  readonly deltaPerJob: number;
+}
+
+/**
+ * Issue #2128 — per-job manifest carrying `dpBudgetConsumed` for audit.
+ * Persisted as `dp-budget-consumed.json` next to the other harness
+ * artifacts. The {@link HarnessArtifactManifest} pins its sha256 + size
+ * so the evidence-verify route reproduces the audit trail offline.
+ */
+export interface DpBudgetConsumedManifest {
+  readonly schemaVersion: typeof DP_BUDGET_CONSUMED_MANIFEST_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly tenantId: string;
+  readonly jobId: string;
+  readonly cycleId: string;
+  readonly generatedAt: string;
+  readonly decision: DpBudgetDecision;
+  /** Charge applied to the tenant budget by this job. */
+  readonly dpBudgetConsumed: {
+    readonly epsilon: number;
+    readonly delta: number;
+    readonly inputTokens: number;
+  };
+  /** Running cycle totals AFTER this job's charge was applied. */
+  readonly cycleTotals: {
+    readonly epsilonConsumed: number;
+    readonly deltaConsumed: number;
+    readonly epsilonBudget: number;
+    readonly deltaBudget: number;
+    readonly jobsCharged: number;
+  };
+  /** Parameters that produced the estimate, for replay. */
+  readonly parameters: {
+    readonly perTokenEpsilon: number;
+    readonly deltaPerJob: number;
+  };
+}
+
+/**
+ * Known PII-like categories detected in mock form data and Jira payloads.
+ *
+ * Wave 4.B (Issue #1432) extended this union with three Jira-aware
+ * categories: `internal_hostname` (corporate hostname patterns surfaced
+ * inside ADF text), `jira_mention` (Confluence/Jira `@user` mentions and
+ * raw account ids), and `customer_name_placeholder` (full-name-shaped
+ * values pulled from common Jira customer-facing custom-field names).
+ *
+ * Adding new union members is treated as a minor contract bump per
+ * `CONTRACT_CHANGELOG.md`'s versioning rules — consumers reading the IR
+ * may receive previously-unseen `kind` values.
+ */
+export type PiiKind =
+  | "iban"
+  | "bic"
+  | "pan"
+  | "tax_id"
+  | "email"
+  | "phone"
+  | "full_name"
+  | "internal_hostname"
+  | "jira_mention"
+  | "customer_name_placeholder"
+  // Issue #1668 (audit-2026-05): GDPR Art. 5(1)(c) data-minimization
+  // categories that the May 2026 audit identified as previously
+  // uncovered. Each is a hand-rolled detector (no runtime deps per
+  // repo policy). Adding union members is a minor contract bump per
+  // CONTRACT_CHANGELOG.md.
+  | "postal_address"
+  | "date_of_birth"
+  | "account_number"
+  | "national_id"
+  | "special_category";
+
+/** Where a detected element came from during reconciliation. */
+export type IntentProvenance = "figma_node" | "visual_sidecar" | "reconciled";
+
+/**
+ * Location within the input that held a PII-like match.
+ *
+ * Wave 4.B (Issue #1432) extends this union with Jira-IR-specific
+ * locations so adversarial-fixture and audit code can attribute every
+ * indicator back to the exact field it was sourced from.
+ */
+export type PiiMatchLocation =
+  | "field_label"
+  | "field_default_value"
+  | "screen_text"
+  | "action_label"
+  | "trace_node_name"
+  | "trace_node_path"
+  | "screen_name"
+  | "screen_path"
+  | "validation_rule"
+  | "navigation_target"
+  | "jira_summary"
+  | "jira_description"
+  | "jira_acceptance_criterion"
+  | "jira_comment_body"
+  | "jira_custom_field_name"
+  | "jira_custom_field_value"
+  | "jira_attachment_filename"
+  | "jira_link_relationship"
+  | "jira_label"
+  | "jira_component"
+  | "custom_context_markdown"
+  | "custom_context_attribute";
+
+/**
+ * Reference to the Figma node that produced an intent element.
+ *
+ * Wave 4 (Issue #1431) extends this trace with an optional array of
+ * contributing {@link TestIntentSourceRef} entries so a single trace may
+ * record multiple sources that agreed on (or conflicted over) a field.
+ * The legacy `nodeId` / `nodeName` / `nodePath` fields keep working for
+ * single-source Figma traces.
+ */
+export interface IntentTraceRef {
+  nodeId?: string;
+  nodeName?: string;
+  nodePath?: string;
+  /**
+   * Contributing source references for this trace (Issue #1431).
+   * Optional — omitted for legacy single-source Figma jobs to keep
+   * artifacts byte-stable. When present, each entry MUST match an entry
+   * in the surrounding {@link MultiSourceTestIntentEnvelope.sources}
+   * array by `sourceId`.
+   */
+  sourceRefs?: TestIntentSourceRef[];
+  /**
+   * Original Figma component name for an instance/component-shaped node
+   * whose visible label was synthesised from a descendant TEXT node
+   * (Issue #1902). Provenance-only — preserved so a downstream judge can
+   * always recover the raw component identity.
+   */
+  componentName?: string;
+}
+
+/** Ambiguity note attached to a detected element or PII indicator. */
+export interface IntentAmbiguity {
+  reason: string;
+}
+
+/** PII indicator attached to a detected element. Original values are never persisted. */
+export interface PiiIndicator {
+  id: string;
+  kind: PiiKind;
+  confidence: number;
+  matchLocation: PiiMatchLocation;
+  redacted: string;
+  screenId?: string;
+  elementId?: string;
+  traceRef?: IntentTraceRef;
+}
+
+/** Record describing a single redaction decision. */
+export interface IntentRedaction {
+  id: string;
+  indicatorId: string;
+  kind: PiiKind;
+  reason: string;
+  replacement: string;
+}
+
+/**
+ * Input field inferred from a screen.
+ *
+ * Wave 4 (Issue #1431) adds the optional `sourceRefs` array so the
+ * derivation pipeline can record every source that contributed to this
+ * field. The legacy singular `trace` and `provenance` fields keep
+ * working unchanged for single-source jobs.
+ */
+export interface DetectedField {
+  id: string;
+  screenId: string;
+  trace: IntentTraceRef;
+  provenance: IntentProvenance;
+  confidence: number;
+  label: string;
+  type: string;
+  defaultValue?: string;
+  ambiguity?: IntentAmbiguity;
+  /** Contributing sources (Issue #1431). Optional, additive. */
+  sourceRefs?: TestIntentSourceRef[];
+  /**
+   * How the visible label was derived (Issue #1902). Optional, additive.
+   * - `node_text`: TEXT node `characters` (default).
+   * - `node_name`: fallback to the Figma node name.
+   * - `sibling_text`: synthesised from a spatially-paired TEXT node.
+   */
+  labelSource?: LabelSource;
+  /**
+   * Confidence in the synthesised label (Issue #1902). Optional, additive.
+   * `0` signals a generic/weak label that downstream judges may treat as a
+   * `weak_label` finding. Omitted for trivially derived labels.
+   */
+  labelConfidence?: number;
+  /**
+   * Spatial cluster id (Issue #1902). Optional, additive. Fields whose bboxes
+   * sit close together (label/value pairs, summary blocks) share the same
+   * cluster id so the generator can write coherent cases.
+   */
+  clusterId?: string;
+}
+
+/**
+ * Action/control inferred from a screen (e.g. Submit button).
+ *
+ * Wave 4 (Issue #1431) adds the optional `sourceRefs` array; see
+ * {@link DetectedField} for backward-compat semantics.
+ */
+export interface DetectedAction {
+  id: string;
+  screenId: string;
+  trace: IntentTraceRef;
+  provenance: IntentProvenance;
+  confidence: number;
+  label: string;
+  kind: string;
+  ambiguity?: IntentAmbiguity;
+  /** Contributing sources (Issue #1431). Optional, additive. */
+  sourceRefs?: TestIntentSourceRef[];
+  /**
+   * How the visible label was derived (Issue #1902). Optional, additive.
+   * See {@link DetectedField.labelSource} for semantics.
+   */
+  labelSource?: LabelSource;
+  /**
+   * Confidence in the synthesised label (Issue #1902). Optional, additive.
+   * `0` signals a generic component-instance label (e.g. `<Button>`) that
+   * could not be paired with a sibling TEXT node — downstream judges may
+   * surface this as a `weak_label` finding.
+   */
+  labelConfidence?: number;
+}
+
+/**
+ * Origin of the visible label for a detected element (Issue #1902).
+ * Closed enum so judge code can pattern-match safely without sniffing strings.
+ */
+export type LabelSource = "node_text" | "node_name" | "sibling_text";
+
+/**
+ * Validation rule inferred from design hints.
+ *
+ * Wave 4 (Issue #1431) adds the optional `sourceRefs` array; see
+ * {@link DetectedField} for backward-compat semantics.
+ */
+export interface DetectedValidation {
+  id: string;
+  screenId: string;
+  trace: IntentTraceRef;
+  provenance: IntentProvenance;
+  confidence: number;
+  rule: string;
+  targetFieldId?: string;
+  ambiguity?: IntentAmbiguity;
+  /** Contributing sources (Issue #1431). Optional, additive. */
+  sourceRefs?: TestIntentSourceRef[];
+}
+
+/**
+ * Navigation edge inferred from prototype links or equivalent.
+ *
+ * Wave 4 (Issue #1431) adds the optional `sourceRefs` array; see
+ * {@link DetectedField} for backward-compat semantics.
+ */
+export interface DetectedNavigation {
+  id: string;
+  screenId: string;
+  trace: IntentTraceRef;
+  provenance: IntentProvenance;
+  confidence: number;
+  targetScreenId: string;
+  triggerElementId?: string;
+  ambiguity?: IntentAmbiguity;
+  /** Contributing sources (Issue #1431). Optional, additive. */
+  sourceRefs?: TestIntentSourceRef[];
+}
+
+/**
+ * Business-object cluster inferred across one or more fields.
+ *
+ * Wave 4 (Issue #1431) adds the optional `sourceRefs` array; see
+ * {@link DetectedField} for backward-compat semantics.
+ */
+export interface InferredBusinessObject {
+  id: string;
+  screenId: string;
+  trace: IntentTraceRef;
+  provenance: IntentProvenance;
+  confidence: number;
+  name: string;
+  fieldIds: string[];
+  ambiguity?: IntentAmbiguity;
+  /** Contributing sources (Issue #1431). Optional, additive. */
+  sourceRefs?: TestIntentSourceRef[];
+}
+
+/**
+ * EU-banking locales supported by per-locale Platt-curve calibration.
+ *
+ * Initial six locales were added in Issue #2117
+ * (DE-DE / DE-AT / DE-CH / EN-IE / FR-FR / IT-IT).  Issue #2188 extended
+ * the corpus with five additional locales (PL-PL, ES-ES, NL-NL, CS-CZ,
+ * HU-HU) driven by concrete EU-banking customer pipeline demand.
+ *
+ * Referenced by `BusinessTestIntentScreen.locale` so that consumers can
+ * correlate per-screen locale with the per-locale calibration curves
+ * without importing from the test-intelligence submodule.
+ */
+export type SupportedLocale =
+  | "DE-DE"
+  | "DE-AT"
+  | "DE-CH"
+  | "EN-IE"
+  | "FR-FR"
+  | "IT-IT"
+  | "PL-PL"
+  | "ES-ES"
+  | "NL-NL"
+  | "CS-CZ"
+  | "HU-HU";
+
+/** Per-screen slice of the intent. */
+export interface BusinessTestIntentScreen {
+  screenId: string;
+  screenName: string;
+  screenPath?: string;
+  trace: IntentTraceRef;
+  /**
+   * Optional locale tag for this screen (Issue #2117).  When present it is
+   * one of the six `SupportedLocale` codes; absent for screens whose locale
+   * could not be resolved at the import stage.  Consumers derive the locale
+   * using `deriveLocaleFromBusinessTestIntentScreen` from
+   * `locale-calibration.ts` when they need a best-effort value.
+   */
+  locale?: SupportedLocale;
+}
+
+/**
+ * Metadata about the input that produced the IR.
+ *
+ * Wave 4 (Issue #1431) generalises this single-source descriptor into a
+ * discriminated union of seven source kinds carried inside the
+ * {@link MultiSourceTestIntentEnvelope}. The legacy `source` field on
+ * {@link BusinessTestIntentIr} is kept additive for one minor cycle so
+ * single-source Figma jobs that have not opted into the multi-source gate
+ * keep producing bit-identical artifacts.
+ */
+export interface BusinessTestIntentIrSource {
+  kind: "figma_local_json" | "figma_plugin" | "figma_rest" | "hybrid";
+  contentHash: string;
+}
+
+/**
+ * Redacted, deterministic test-design IR for a job.
+ *
+ * Wave 4 (Issue #1431) introduces an additive {@link sourceEnvelope} field
+ * carrying the multi-source aggregate. The legacy {@link source} singleton
+ * is preserved for backward-compat: single-source Figma jobs that have not
+ * opted into the multi-source gate keep emitting it as-is.
+ */
+export interface BusinessTestIntentIr {
+  version: typeof BUSINESS_TEST_INTENT_IR_SCHEMA_VERSION;
+  source: BusinessTestIntentIrSource;
+  screens: BusinessTestIntentScreen[];
+  detectedFields: DetectedField[];
+  detectedActions: DetectedAction[];
+  detectedValidations: DetectedValidation[];
+  detectedNavigation: DetectedNavigation[];
+  inferredBusinessObjects: InferredBusinessObject[];
+  risks: string[];
+  assumptions: string[];
+  openQuestions: string[];
+  piiIndicators: PiiIndicator[];
+  redactions: IntentRedaction[];
+  /**
+   * Aggregate envelope of contributing test-design sources (Issue #1431).
+   *
+   * Optional and additive: omitted for legacy single-source Figma jobs to
+   * preserve byte-stable artifacts and replay-cache hits. Populated only
+   * when both the parent {@link TEST_INTELLIGENCE_ENV} gate and the
+   * {@link TEST_INTELLIGENCE_MULTISOURCE_ENV} gate are enabled, and the
+   * parent test-intelligence startup option allows multi-source ingestion.
+   */
+  sourceEnvelope?: MultiSourceTestIntentEnvelope;
+  /**
+   * Additive conflict/report payload emitted by the deterministic multi-source
+   * reconciliation engine (Issue #1436). Omitted for legacy single-source
+   * jobs so existing artifacts remain byte-stable.
+   */
+  multiSourceConflicts?: MultiSourceConflict[];
+}
+
+/**
+ * Compact, versioned projection of `BusinessTestIntentIr` plus optional
+ * visual-sidecar evidence. This additive artifact gives downstream prompt
+ * compilation a bounded, test-design-oriented surface without replacing the
+ * source IR.
+ */
+export interface TestDesignModel {
+  schemaVersion: typeof TEST_DESIGN_MODEL_SCHEMA_VERSION;
+  jobId: string;
+  sourceHash: string;
+  screens: TestDesignScreen[];
+  businessRules: TestDesignRule[];
+  calculationConstraints: TestDesignCalculationConstraint[];
+  assumptions: TestDesignAssumption[];
+  openQuestions: TestDesignOpenQuestion[];
+  riskSignals: TestDesignRiskSignal[];
+}
+
+export interface TestDesignScreen {
+  screenId: string;
+  name: string;
+  purpose?: string;
+  elements: TestDesignElement[];
+  actions: TestDesignAction[];
+  validations: TestDesignValidation[];
+  calculations: TestDesignCalculation[];
+  visualRefs: string[];
+  sourceRefs: string[];
+}
+
+export interface TestDesignElement {
+  elementId: string;
+  label: string;
+  kind: string;
+  defaultValue?: string;
+  ambiguity?: string;
+}
+
+export interface TestDesignAction {
+  actionId: string;
+  label: string;
+  kind: string;
+  targetScreenId?: string;
+  ambiguity?: string;
+}
+
+export interface TestDesignValidation {
+  validationId: string;
+  rule: string;
+  targetElementId?: string;
+  ambiguity?: string;
+}
+
+export interface TestDesignCalculation {
+  calculationId: string;
+  name: string;
+  inputElementIds: string[];
+  resultElementId?: string;
+  ambiguity?: string;
+}
+
+export interface TestDesignCalculationConstraint {
+  constraintId: string;
+  kind: "exclude_component" | "include_component";
+  subject: "financing_need";
+  component: "vat";
+  evidenceText: string;
+  screenId?: string;
+}
+
+export interface TestDesignRule {
+  ruleId: string;
+  description: string;
+  screenId?: string;
+  sourceRefs: string[];
+}
+
+export interface TestDesignAssumption {
+  assumptionId: string;
+  text: string;
+}
+
+export interface TestDesignOpenQuestion {
+  openQuestionId: string;
+  text: string;
+}
+
+export interface TestDesignRiskSignal {
+  riskSignalId: string;
+  text: string;
+  screenId?: string;
+  sourceRefs: string[];
+}
+
+/**
+ * Source kinds recognised by the multi-source Test Intent ingestion
+ * pipeline (Issue #1431). The first three are existing Figma kinds; the
+ * remaining four are introduced by Wave 4 issues 4.B–4.E. `custom_markdown`
+ * is added by Issue #1441 as a dedicated Markdown supporting source kind.
+ */
+export const ALLOWED_TEST_INTENT_SOURCE_KINDS = [
+  "figma_local_json",
+  "figma_plugin",
+  "figma_rest",
+  "jira_rest",
+  "jira_paste",
+  "custom_text",
+  "custom_structured",
+  "custom_markdown",
+] as const;
+
+/** Discriminated source-kind alias derived from {@link ALLOWED_TEST_INTENT_SOURCE_KINDS}. */
+export type TestIntentSourceKind =
+  (typeof ALLOWED_TEST_INTENT_SOURCE_KINDS)[number];
+
+/**
+ * Primary source kinds — at least one of these must be present in any
+ * envelope. A custom-only envelope must fail validation with
+ * `primary_source_required` (Issue #1431, source-mix hardening addendum).
+ */
+export const PRIMARY_TEST_INTENT_SOURCE_KINDS = [
+  "figma_local_json",
+  "figma_plugin",
+  "figma_rest",
+  "jira_rest",
+  "jira_paste",
+] as const;
+
+/** Subset alias for primary source kinds. */
+export type PrimaryTestIntentSourceKind =
+  (typeof PRIMARY_TEST_INTENT_SOURCE_KINDS)[number];
+
+/**
+ * Supporting (non-primary) source kinds — may only appear alongside at
+ * least one primary source. `custom_markdown` is a dedicated Markdown
+ * supporting source kind (Issue #1441); it always carries
+ * `redactedMarkdownHash` + `plainTextDerivativeHash` and never requires
+ * `inputFormat` since its format is intrinsically Markdown.
+ */
+export const SUPPORTING_TEST_INTENT_SOURCE_KINDS = [
+  "custom_text",
+  "custom_structured",
+  "custom_markdown",
+] as const;
+
+/** Subset alias for supporting source kinds. */
+export type SupportingTestIntentSourceKind =
+  (typeof SUPPORTING_TEST_INTENT_SOURCE_KINDS)[number];
+
+/**
+ * Conflict-resolution policy discriminant carried on every envelope.
+ *
+ * - `priority` — apply {@link MultiSourceTestIntentEnvelope.priorityOrder}
+ *   when sources disagree on a field. The aggregate hash MUST encode the
+ *   priority order so swapping it forces a cache miss.
+ * - `reviewer_decides` — surface conflicts to the reviewer and keep both
+ *   variants until the reviewer chooses one.
+ * - `keep_both` — emit independent test cases per source without merging.
+ */
+export const ALLOWED_CONFLICT_RESOLUTION_POLICIES = [
+  "priority",
+  "reviewer_decides",
+  "keep_both",
+] as const;
+
+/** Conflict-resolution policy alias. */
+export type ConflictResolutionPolicy =
+  (typeof ALLOWED_CONFLICT_RESOLUTION_POLICIES)[number];
+
+/**
+ * Recognised input formats for `custom_text` / `custom_structured` sources
+ * (Markdown-aware addendum, 2026-04-26). Markdown is treated as
+ * user-provided supporting evidence and is NEVER trusted as instructions
+ * to the model or runtime.
+ */
+export const ALLOWED_TEST_INTENT_CUSTOM_INPUT_FORMATS = [
+  "plain_text",
+  "markdown",
+  "structured_json",
+] as const;
+
+/** Custom input-format alias. */
+export type TestIntentCustomInputFormat =
+  (typeof ALLOWED_TEST_INTENT_CUSTOM_INPUT_FORMATS)[number];
+
+/**
+ * Reference to a single contributing source inside a
+ * {@link MultiSourceTestIntentEnvelope}. References are stable per envelope
+ * and never carry raw source bytes — only redacted hashes and structured
+ * provenance hints.
+ */
+export interface TestIntentSourceRef {
+  /** Stable identifier per envelope, e.g. `"src.0"`, `"src.1"`. */
+  sourceId: string;
+  /** Discriminated source kind. */
+  kind: TestIntentSourceKind;
+  /** SHA-256 of the canonicalised source bytes (lowercase hex, 64 chars). */
+  contentHash: string;
+  /** ISO-8601 UTC capture timestamp (millisecond precision, `Z` suffix). */
+  capturedAt: string;
+  /**
+   * Opaque, non-PII operator handle for paste/custom sources. Never store
+   * raw email addresses or full names — callers MUST redact before set.
+   */
+  authorHandle?: string;
+  /**
+   * Input format for `custom_text` / `custom_structured`. Required for
+   * those kinds, MUST be omitted for primary kinds.
+   */
+  inputFormat?: TestIntentCustomInputFormat;
+  /**
+   * Note-entry id for Markdown-authored custom sources (Markdown
+   * addendum). Lets provenance references identify the source row in the
+   * reviewer note store. Optional, ignored for non-Markdown sources.
+   */
+  noteEntryId?: string;
+  /**
+   * Markdown section path (heading / table / list context) for Markdown
+   * custom sources, e.g. `"# Risks > ## PII handling"`. Optional and
+   * ignored for non-Markdown sources.
+   */
+  markdownSectionPath?: string;
+  /**
+   * Canonical Jira issue key for `jira_rest` / `jira_paste` sources, e.g.
+   * `"PAY-1234"`. When both REST and paste sources carry the same key, the
+   * validator reports `duplicate_jira_paste_collision` so downstream Wave 4.D
+   * routing can resolve the paste collision explicitly.
+   */
+  canonicalIssueKey?: string;
+  /**
+   * SHA-256 hash of the canonical redacted Markdown for Markdown-authored
+   * custom sources. Raw Markdown is never stored in the envelope.
+   */
+  redactedMarkdownHash?: string;
+  /**
+   * SHA-256 hash of the deterministic plain-text derivative produced from the
+   * redacted Markdown. This lets prompt-isolation code audit what evidence was
+   * made available without treating Markdown as instructions.
+   */
+  plainTextDerivativeHash?: string;
+}
+
+/** PII-redacted Markdown note persisted as custom supporting context. */
+export interface CustomContextNoteEntry {
+  entryId: string;
+  authorHandle: string;
+  capturedAt: string;
+  inputFormat: "markdown";
+  /** Canonical allowlist Markdown after PII redaction. */
+  bodyMarkdown: string;
+  /** Deterministic plain-text derivative of {@link bodyMarkdown}. */
+  bodyPlain: string;
+  markdownContentHash: string;
+  plainContentHash: string;
+  piiIndicators: PiiIndicator[];
+  redactions: IntentRedaction[];
+}
+
+/** Validated machine-checkable custom supporting attributes. */
+export interface CustomContextStructuredEntry {
+  entryId: string;
+  authorHandle: string;
+  capturedAt: string;
+  attributes: Array<{ key: string; value: string }>;
+  contentHash: string;
+  piiIndicators: PiiIndicator[];
+  redactions: IntentRedaction[];
+}
+
+/** Persisted custom-context source artifact. */
+export interface CustomContextSource {
+  version: typeof CUSTOM_CONTEXT_SCHEMA_VERSION;
+  sourceKind: "custom_text" | "custom_structured";
+  noteEntries: CustomContextNoteEntry[];
+  structuredEntries: CustomContextStructuredEntry[];
+  aggregateContentHash: string;
+}
+
+/** Recognized custom attribute and its intended downstream consumer. */
+export interface SuggestedCustomContextAttribute {
+  key: string;
+  label: string;
+  downstreamConsumer: string;
+  description: string;
+}
+
+/** Curated structured-attribute schema surfaced to API and UI consumers. */
+export const SUGGESTED_CUSTOM_CONTEXT_ATTRIBUTES: readonly SuggestedCustomContextAttribute[] =
+  [
+    {
+      key: "regulatory_scope",
+      label: "regulatoryScope",
+      downstreamConsumer: "policy_gate.risk_classifier",
+      description: "Regulatory scope hints such as PSD2 or GDPR.",
+    },
+    {
+      key: "test_environment",
+      label: "testEnvironment",
+      downstreamConsumer: "prompt_context",
+      description: "Target execution environment such as preprod-eu.",
+    },
+    {
+      key: "data_class",
+      label: "dataClass",
+      downstreamConsumer: "policy_gate.risk_classifier",
+      description: "Sensitive data classification such as PCI-DSS-3.",
+    },
+    {
+      key: "priority_hint",
+      label: "priorityHint",
+      downstreamConsumer: "prompt_context",
+      description: "Reviewer priority hint for generated coverage.",
+    },
+    {
+      key: "feature_flag",
+      label: "featureFlag",
+      downstreamConsumer: "prompt_context.qc_export",
+      description: "Feature flag context such as NEW_CHECKOUT=on.",
+    },
+    {
+      key: "non_functional_profile",
+      label: "nonFunctionalProfile",
+      downstreamConsumer: "prompt_context",
+      description: "Non-functional testing profile such as latency or a11y.",
+    },
+  ];
+
+/** Policy signal derived from recognized custom structured attributes. */
+export interface CustomContextPolicySignal {
+  sourceId: string;
+  entryId: string;
+  attributeKey: string;
+  attributeValue: string;
+  riskCategory: TestCaseRiskCategory;
+  reason: string;
+  contentHash: string;
+}
+
+/**
+ * Forward reference for source-mix orchestration owned by Issue #1441. Wave
+ * 4.A validates the shape only; pipeline routing and reconciliation remain in
+ * the downstream source-mix issue.
+ */
+export interface MultiSourceTestIntentSourceMixPlanRef {
+  /** Stable hash of the source-mix plan payload owned by Issue #1441. */
+  planHash: string;
+  /** Ownership marker for downstream orchestration. */
+  ownerIssue: "#1441";
+}
+
+/**
+ * Aggregate envelope of contributing sources (Issue #1431).
+ *
+ * The envelope is a pure value object; ingestion logic, reconciliation,
+ * and orchestration live in downstream Wave 4 issues (4.B / 4.C / 4.D /
+ * 4.E / 4.F / 4.H). The envelope guarantees:
+ *
+ *   1. At least one source.
+ *   2. At least one primary source (primary-source-required rule).
+ *   3. Stable {@link aggregateContentHash} that is invariant under source
+ *      reordering when {@link conflictResolutionPolicy} is not `priority`,
+ *      and changes when source content actually changes.
+ *   4. When `conflictResolutionPolicy="priority"`, a non-empty
+ *      {@link priorityOrder} listing every source kind present in the
+ *      envelope (no extras).
+ */
+export interface MultiSourceTestIntentEnvelope {
+  /** Schema version stamp. */
+  version: typeof MULTI_SOURCE_TEST_INTENT_ENVELOPE_SCHEMA_VERSION;
+  /** Ordered list of contributing sources (length ≥ 1). */
+  sources: TestIntentSourceRef[];
+  /**
+   * Stable aggregate hash of the contributing sources. Computed via
+   * `sha256Hex` of the canonical-sorted (`contentHash`, `kind`) pairs by
+   * default, with the `priorityOrder` mixed in when the resolution policy
+   * is `priority`.
+   */
+  aggregateContentHash: string;
+  /** Resolution discriminant for cross-source disagreement. */
+  conflictResolutionPolicy: ConflictResolutionPolicy;
+  /**
+   * Required when {@link conflictResolutionPolicy} is `priority`: an
+   * ordered, deduplicated list of source kinds covering every kind that
+   * appears in {@link sources}. The list participates in the aggregate
+   * hash so a different priority order produces a different hash.
+   */
+  priorityOrder?: TestIntentSourceKind[];
+  /** Optional source-mix plan hook owned by Issue #1441. */
+  sourceMixPlan?: MultiSourceTestIntentSourceMixPlanRef;
+}
+
+/** Schema version for `multi-source-conflicts.json` (Issue #1436). */
+export const MULTI_SOURCE_RECONCILIATION_REPORT_SCHEMA_VERSION =
+  "1.0.0" as const;
+
+/** Canonical filename for the deterministic multi-source conflict artifact. */
+export const MULTI_SOURCE_CONFLICT_REPORT_ARTIFACT_FILENAME =
+  "multi-source-conflicts.json" as const;
+
+/** Kinds of cross-source disagreement recognized by Issue #1436. */
+export type MultiSourceConflictKind =
+  | "field_label_mismatch"
+  | "validation_rule_mismatch"
+  | "risk_category_mismatch"
+  | "test_data_example_mismatch"
+  | "duplicate_acceptance_criterion"
+  | "paste_collision";
+
+/** One deterministic conflict row emitted by the reconciliation engine. */
+export interface MultiSourceConflict {
+  /** SHA-256 of `{ kind, sourceRefs, normalizedValues }`. */
+  conflictId: string;
+  kind: MultiSourceConflictKind;
+  participatingSourceIds: string[];
+  /** Sorted, redacted, canonical values that disagreed. */
+  normalizedValues: string[];
+  resolution:
+    | "auto_priority"
+    | "deferred_to_reviewer"
+    | "kept_both"
+    | "unresolved";
+  /** Stable IR ids affected by this conflict, when known. */
+  affectedElementIds?: string[];
+  /** Stable screen ids affected by this conflict, when known. */
+  affectedScreenIds?: string[];
+  /** Optional sanitized detail suitable for reviewer inspection. */
+  detail?: string;
+  resolvedBy?: string;
+  resolvedAt?: string;
+}
+
+/** Stable transcript row describing one merge decision taken by the engine. */
+export interface MultiSourceReconciliationTranscriptEntry {
+  decisionId: string;
+  sourceIds: string[];
+  action:
+    | "accepted"
+    | "merged"
+    | "conflict_recorded"
+    | "alternative_emitted"
+    | "source_unmatched";
+  rationale: string;
+  affectedElementIds: string[];
+}
+
+/** Aggregate deterministic conflict artifact emitted for a reconciled run. */
+export interface MultiSourceReconciliationReport {
+  version: typeof MULTI_SOURCE_RECONCILIATION_REPORT_SCHEMA_VERSION;
+  envelopeHash: string;
+  conflicts: MultiSourceConflict[];
+  /** Sources that were present but contributed no accepted or conflict rows. */
+  unmatchedSources: string[];
+  /**
+   * Stable conceptual-case mapping used by downstream reviewers. Each id is a
+   * deterministic synthetic case key produced by the reconciliation engine.
+   */
+  contributingSourcesPerCase: Array<{
+    testCaseId: string;
+    sourceIds: string[];
+  }>;
+  policyApplied: ConflictResolutionPolicy;
+  transcript: MultiSourceReconciliationTranscriptEntry[];
+}
+
+/**
+ * Refusal codes emitted by the multi-source envelope validator
+ * (Issue #1431). Stable, locale-independent strings safe to ship to
+ * automation.
+ */
+export const ALLOWED_MULTI_SOURCE_ENVELOPE_REFUSAL_CODES = [
+  "envelope_missing",
+  "envelope_version_mismatch",
+  "sources_empty",
+  "duplicate_source_id",
+  "invalid_source_id",
+  "invalid_source_kind",
+  "invalid_content_hash",
+  "invalid_captured_at",
+  "invalid_author_handle",
+  "primary_source_required",
+  "duplicate_jira_paste_collision",
+  "custom_input_format_required",
+  "custom_input_format_invalid",
+  "primary_source_input_format_invalid",
+  "markdown_metadata_only_for_custom",
+  "markdown_hash_required",
+  "markdown_hash_only_for_markdown",
+  "jira_issue_key_invalid",
+  "jira_issue_key_only_for_jira",
+  "invalid_conflict_resolution_policy",
+  "priority_order_required",
+  "priority_order_invalid_kind",
+  "priority_order_incomplete",
+  "priority_order_duplicate",
+  "aggregate_hash_mismatch",
+  "source_mix_plan_invalid",
+] as const;
+
+/** Refusal code alias for the multi-source envelope validator. */
+export type MultiSourceEnvelopeRefusalCode =
+  (typeof ALLOWED_MULTI_SOURCE_ENVELOPE_REFUSAL_CODES)[number];
+
+/**
+ * A single validation issue surfaced by the multi-source envelope
+ * validator. `path` is a JS property-path-like locator (e.g.
+ * `"sources[2].contentHash"`).
+ */
+export interface MultiSourceEnvelopeIssue {
+  code: MultiSourceEnvelopeRefusalCode;
+  path?: string;
+  detail?: string;
+}
+
+/**
+ * Result of multi-source envelope validation (Issue #1431). Hand-rolled
+ * to keep workspace-dev free of external schema libraries.
+ */
+export type MultiSourceEnvelopeValidationResult =
+  | { ok: true; envelope: MultiSourceTestIntentEnvelope }
+  | { ok: false; issues: MultiSourceEnvelopeIssue[] };
+
+/**
+ * Refusal codes for the multi-source mode gate (Issue #1431). The gate
+ * enforces three nested invariants before any multi-source ingestion is
+ * permitted:
+ *
+ *   1. Parent test-intelligence env + startup option enabled.
+ *   2. Multi-source env + startup option enabled.
+ *   3. `llmCodegenMode === "deterministic"`.
+ *
+ * Any failed check fails closed with zero side effects and surfaces a
+ * structured diagnostic.
+ */
+export const ALLOWED_MULTI_SOURCE_MODE_GATE_REFUSAL_CODES = [
+  "test_intelligence_disabled",
+  "multi_source_env_disabled",
+  "multi_source_startup_option_disabled",
+  "llm_codegen_mode_locked",
+] as const;
+
+/** Refusal-code alias for the multi-source mode gate. */
+export type MultiSourceModeGateRefusalCode =
+  (typeof ALLOWED_MULTI_SOURCE_MODE_GATE_REFUSAL_CODES)[number];
+
+/** Inputs accepted by `evaluateMultiSourceModeGate`. */
+export interface MultiSourceModeGateInput {
+  testIntelligenceEnvEnabled: boolean;
+  testIntelligenceStartupEnabled: boolean;
+  multiSourceEnvEnabled: boolean;
+  multiSourceStartupEnabled: boolean;
+  llmCodegenMode?: string;
+}
+
+/** Single refusal entry on a {@link MultiSourceModeGateDecision}. */
+export interface MultiSourceModeGateRefusal {
+  code: MultiSourceModeGateRefusalCode;
+  detail: string;
+}
+
+/** Decision produced by `evaluateMultiSourceModeGate`. */
+export interface MultiSourceModeGateDecision {
+  allowed: boolean;
+  refusals: MultiSourceModeGateRefusal[];
+}
+
+/**
+ * Jira issue intermediate representation (Issue #1432, Wave 4.B).
+ *
+ * The Jira IR is the canonical, PII-redacted, deterministically-hashed
+ * surface produced from raw Jira issue payloads — independent of whether
+ * the payload arrived via REST (Wave 4.C) or copy-paste (Wave 4.D). Wave
+ * 4.F's reconciliation engine and the LLM prompt compiler consume only
+ * this IR; raw Jira payloads, raw ADF rich-text, attachment bytes, user
+ * account IDs, internal hostnames, and Jira `self`/avatar/download URLs
+ * MUST never reach a persisted artifact or a model prompt.
+ *
+ * The IR is data-minimized by default: comments, attachments, linked
+ * issues, and unknown custom fields are excluded unless the caller
+ * explicitly opts each field group in. Every inclusion / exclusion /
+ * cap / redaction decision is recorded in {@link JiraIssueIrDataMinimization}
+ * so audits can prove what was collected and why.
+ */
+
+/** Schema version stamp for the {@link JiraIssueIr} artifact. */
+export const JIRA_ISSUE_IR_SCHEMA_VERSION = "1.0.0" as const;
+
+/**
+ * Run-dir-relative subdirectory under which per-source Jira IR artifacts
+ * are persisted, namespaced by {@link TestIntentSourceRef.sourceId}.
+ *
+ * Layout: `<runDir>/sources/<sourceId>/jira-issue-ir.json`.
+ */
+export const JIRA_ISSUE_IR_ARTIFACT_DIRECTORY = "sources" as const;
+
+/** Canonical filename for the persisted Jira IR artifact. */
+export const JIRA_ISSUE_IR_ARTIFACT_FILENAME = "jira-issue-ir.json" as const;
+
+/**
+ * Hard pre-parse byte cap on the serialized ADF JSON document. Inputs
+ * exceeding this are rejected with `jira_adf_payload_too_large` before
+ * any tree traversal — the parser MUST NOT allocate proportional to the
+ * payload above this bound.
+ */
+export const MAX_JIRA_ADF_INPUT_BYTES = 1_048_576 as const;
+
+/**
+ * Hard cap on the UTF-8 byte length of {@link JiraIssueIr.descriptionPlain}
+ * after ADF normalization + PII redaction. Over-cap descriptions are
+ * truncated and the truncation is recorded in {@link JiraIssueIrDataMinimization.descriptionTruncated}.
+ */
+export const MAX_JIRA_DESCRIPTION_PLAIN_BYTES = 32_768 as const;
+
+/**
+ * Hard cap on the UTF-8 byte length of any single normalized + redacted
+ * Jira comment body. Over-cap comments are truncated and counted in
+ * {@link JiraIssueIrDataMinimization.commentsCapped}.
+ */
+export const MAX_JIRA_COMMENT_BODY_BYTES = 4_096 as const;
+
+/**
+ * Hard cap on the number of Jira comments persisted in a single IR.
+ * Over-cap comments are dropped and counted in
+ * {@link JiraIssueIrDataMinimization.commentsDropped}.
+ */
+export const MAX_JIRA_COMMENT_COUNT = 50 as const;
+
+/**
+ * Hard cap on the number of Jira attachments persisted in a single IR.
+ * Attachment bytes are NEVER persisted — only metadata.
+ */
+export const MAX_JIRA_ATTACHMENT_COUNT = 50 as const;
+
+/** Hard cap on the number of Jira linked-issue refs persisted in a single IR. */
+export const MAX_JIRA_LINK_COUNT = 50 as const;
+
+/** Hard cap on the number of custom fields persisted in a single IR. */
+export const MAX_JIRA_CUSTOM_FIELD_COUNT = 50 as const;
+
+/** Hard cap on the UTF-8 byte length of a single normalized + redacted custom-field value. */
+export const MAX_JIRA_CUSTOM_FIELD_VALUE_BYTES = 2_048 as const;
+
+/**
+ * Allow-listed Jira issue type discriminants. Anything outside this set
+ * collapses to `"other"` so the IR cannot be tricked into smuggling a
+ * free-form issue-type string into the prompt or downstream prompts.
+ */
+export const ALLOWED_JIRA_ISSUE_TYPES = [
+  "story",
+  "task",
+  "bug",
+  "epic",
+  "subtask",
+  "other",
+] as const;
+
+/** Discriminated alias for {@link ALLOWED_JIRA_ISSUE_TYPES}. */
+export type JiraIssueType = (typeof ALLOWED_JIRA_ISSUE_TYPES)[number];
+
+/**
+ * Allow-listed Atlassian Document Format node `type` discriminants. The
+ * parser fails closed on any node whose `type` is not in this set
+ * (`jira_adf_unknown_node_type`).
+ */
+export const ALLOWED_JIRA_ADF_NODE_TYPES = [
+  "doc",
+  "paragraph",
+  "heading",
+  "blockquote",
+  "bulletList",
+  "orderedList",
+  "listItem",
+  "codeBlock",
+  "rule",
+  "panel",
+  "table",
+  "tableRow",
+  "tableHeader",
+  "tableCell",
+  "mediaSingle",
+  "mediaGroup",
+  "media",
+  "text",
+  "hardBreak",
+  "mention",
+  "emoji",
+  "inlineCard",
+  "status",
+  "date",
+] as const;
+
+/** Discriminated alias for {@link ALLOWED_JIRA_ADF_NODE_TYPES}. */
+export type JiraAdfNodeType = (typeof ALLOWED_JIRA_ADF_NODE_TYPES)[number];
+
+/**
+ * Allow-listed Atlassian Document Format `mark.type` discriminants. Marks
+ * carry inline annotation (e.g. `strong`, `link`) on `text` nodes. Marks
+ * outside this set are rejected with `jira_adf_unknown_mark_type`.
+ */
+export const ALLOWED_JIRA_ADF_MARK_TYPES = [
+  "strong",
+  "em",
+  "code",
+  "strike",
+  "underline",
+  "link",
+  "subsup",
+  "textColor",
+] as const;
+
+/** Discriminated alias for {@link ALLOWED_JIRA_ADF_MARK_TYPES}. */
+export type JiraAdfMarkType = (typeof ALLOWED_JIRA_ADF_MARK_TYPES)[number];
+
+/**
+ * Refusal codes emitted by the ADF parser (`parseJiraAdfDocument`). The
+ * parser never throws — it returns a discriminated union and these codes
+ * are stable, locale-independent strings safe to ship to automation.
+ */
+export const ALLOWED_JIRA_ADF_REJECTION_CODES = [
+  "jira_adf_payload_too_large",
+  "jira_adf_input_not_string",
+  "jira_adf_input_not_json",
+  "jira_adf_root_not_object",
+  "jira_adf_root_type_invalid",
+  "jira_adf_unknown_node_type",
+  "jira_adf_unknown_mark_type",
+  "jira_adf_node_shape_invalid",
+  "jira_adf_text_node_invalid",
+  "jira_adf_max_depth_exceeded",
+  "jira_adf_max_node_count_exceeded",
+] as const;
+
+/** Discriminated alias for {@link ALLOWED_JIRA_ADF_REJECTION_CODES}. */
+export type JiraAdfRejectionCode =
+  (typeof ALLOWED_JIRA_ADF_REJECTION_CODES)[number];
+
+/**
+ * Refusal codes emitted by the Jira IR builder (`buildJiraIssueIr`) and
+ * by the Jira-issue-key / JQL-fragment validators. Stable and
+ * locale-independent.
+ */
+export const ALLOWED_JIRA_IR_REFUSAL_CODES = [
+  "jira_issue_key_invalid",
+  "jira_issue_key_too_long",
+  "jira_issue_type_invalid",
+  "jira_summary_invalid",
+  "jira_description_invalid",
+  "jira_acceptance_criterion_invalid",
+  "jira_comment_invalid",
+  "jira_attachment_invalid",
+  "jira_link_invalid",
+  "jira_custom_field_invalid",
+  "jira_custom_field_id_invalid",
+  "jira_status_invalid",
+  "jira_priority_invalid",
+  "jira_field_selection_profile_invalid",
+  "jira_captured_at_invalid",
+  "jira_field_unknown_excluded",
+  "jira_jql_fragment_disallowed_token",
+  "jira_jql_fragment_control_character",
+  "jira_jql_fragment_too_long",
+] as const;
+
+/** Discriminated alias for {@link ALLOWED_JIRA_IR_REFUSAL_CODES}. */
+export type JiraIrRefusalCode = (typeof ALLOWED_JIRA_IR_REFUSAL_CODES)[number];
+
+/** Single normalized acceptance criterion derived from a Jira issue. */
+export interface JiraAcceptanceCriterion {
+  /** Stable per-issue id, e.g. `"ac.0"`, `"ac.1"`. */
+  id: string;
+  /** Plain-text criterion body, PII-redacted. */
+  text: string;
+  /** Original Jira field id this criterion was sourced from (e.g. `"customfield_10042"`). */
+  sourceFieldId?: string;
+}
+
+/** Single PII-redacted Jira comment carried into the IR (opt-in only). */
+export interface JiraComment {
+  /** Stable per-issue id, e.g. `"comment.0"`. */
+  id: string;
+  /**
+   * Opaque non-PII author handle (never raw email, full name, or Jira
+   * accountId). Resolution is the caller's responsibility before the
+   * comment reaches the builder.
+   */
+  authorHandle?: string;
+  /** ISO-8601 UTC timestamp of the original Jira comment. */
+  createdAt: string;
+  /** PII-redacted comment body. May be truncated to the configured byte cap. */
+  body: string;
+  /** True when the body was truncated to fit {@link MAX_JIRA_COMMENT_BODY_BYTES}. */
+  bodyTruncated: boolean;
+}
+
+/**
+ * Metadata reference to a Jira attachment. The IR NEVER carries
+ * attachment bytes — only the redacted filename, MIME type, and byte
+ * size. Download URLs are stripped by the builder.
+ */
+export interface JiraAttachmentRef {
+  /** Stable per-issue id, e.g. `"attachment.0"`. */
+  id: string;
+  /** PII-redacted attachment filename. */
+  filename: string;
+  /** Reported MIME type, normalised to lowercase. */
+  mimeType?: string;
+  /** Reported byte size, if known. */
+  byteSize?: number;
+}
+
+/** Reference to another Jira issue linked from this one (opt-in). */
+export interface JiraLinkRef {
+  /** Stable per-issue id, e.g. `"link.0"`. */
+  id: string;
+  /** Validated Jira issue key of the linked issue. */
+  targetIssueKey: string;
+  /** Normalized link relationship label (e.g. `"blocks"`, `"relates_to"`). */
+  relationship: string;
+}
+
+/** Single PII-redacted custom field included in the IR (opt-in only). */
+export interface JiraIssueIrCustomField {
+  /** Jira custom-field id (e.g. `"customfield_10042"`). */
+  id: string;
+  /** PII-redacted custom-field display name. */
+  nameRedacted: string;
+  /** PII-redacted, byte-capped, normalized scalar value. */
+  valuePlain: string;
+  /** True when the value was truncated to fit {@link MAX_JIRA_CUSTOM_FIELD_VALUE_BYTES}. */
+  valueTruncated: boolean;
+}
+
+/**
+ * Field-selection profile applied by the Jira IR builder. The default is
+ * data-minimized: comments, attachments, linked issues, and custom fields
+ * are excluded unless the caller opts each group in. Unknown custom-field
+ * ids are always excluded — there is no opt-in path for "all custom
+ * fields".
+ */
+export interface JiraFieldSelectionProfile {
+  /** Include the description body (default `true`). */
+  includeDescription: boolean;
+  /** Include comments (default `false`). */
+  includeComments: boolean;
+  /** Include attachment metadata (default `false`). */
+  includeAttachments: boolean;
+  /** Include linked-issue refs (default `false`). */
+  includeLinks: boolean;
+  /**
+   * Allow-list of Jira custom-field ids whose values are persisted on
+   * the IR. Anything outside this list is excluded and counted in
+   * {@link JiraIssueIrDataMinimization.unknownCustomFieldsExcluded}.
+   */
+  customFieldAllowList: readonly string[];
+  /**
+   * Allow-list of Jira custom-field ids interpreted as acceptance
+   * criteria. The builder reads these fields, parses them as ADF when
+   * appropriate, and emits {@link JiraAcceptanceCriterion} entries.
+   */
+  acceptanceCriterionFieldIds: readonly string[];
+}
+
+/**
+ * Default Jira field selection profile — data-minimized by default. No
+ * comments, no attachments, no linked issues, no unknown custom fields.
+ * Description is included; acceptance criteria require explicit
+ * configuration.
+ */
+export const DEFAULT_JIRA_FIELD_SELECTION_PROFILE: JiraFieldSelectionProfile =
+  Object.freeze({
+    includeDescription: true,
+    includeComments: false,
+    includeAttachments: false,
+    includeLinks: false,
+    customFieldAllowList: Object.freeze([]) as readonly string[],
+    acceptanceCriterionFieldIds: Object.freeze([]) as readonly string[],
+  });
+
+/**
+ * Audit metadata recording how the data-minimization profile was applied
+ * to a single IR build. Lets reviewers verify that opt-in field groups
+ * were turned on intentionally, that over-large bodies were capped before
+ * persistence, and that unknown custom fields were excluded by default.
+ */
+export interface JiraIssueIrDataMinimization {
+  /** True when the description body was included on the IR. */
+  descriptionIncluded: boolean;
+  /** True when the description body was truncated to fit the byte cap. */
+  descriptionTruncated: boolean;
+  /** True when comments were included on the IR (opt-in). */
+  commentsIncluded: boolean;
+  /** Count of comments dropped because the count cap was exceeded. */
+  commentsDropped: number;
+  /** Count of comments whose body was truncated to fit the byte cap. */
+  commentsCapped: number;
+  /** True when attachment metadata was included on the IR (opt-in). */
+  attachmentsIncluded: boolean;
+  /** Count of attachments dropped because the count cap was exceeded. */
+  attachmentsDropped: number;
+  /** True when linked-issue refs were included on the IR (opt-in). */
+  linksIncluded: boolean;
+  /** Count of links dropped because the count cap was exceeded. */
+  linksDropped: number;
+  /** Count of custom fields included via the explicit allow-list. */
+  customFieldsIncluded: number;
+  /** Count of custom fields excluded because they were not on the allow-list. */
+  unknownCustomFieldsExcluded: number;
+  /** Count of custom-field values truncated to fit the per-field byte cap. */
+  customFieldsCapped: number;
+}
+
+/**
+ * Canonical, PII-redacted, deterministically-hashed Jira issue IR. Wave
+ * 4.F's reconciliation engine and the LLM prompt compiler consume only
+ * this IR — raw Jira payloads never reach prompt compilation.
+ *
+ * Hard invariants enforced by the builder:
+ *
+ *   1. `issueKey` is validated (`^[A-Z][A-Z0-9_]+-[1-9][0-9]*$`, ≤ 64 chars).
+ *   2. `descriptionPlain`, `summary`, comment bodies, custom-field values,
+ *      attachment filenames, and link relationships are all PII-redacted
+ *      before persistence.
+ *   3. No Jira `self` URL, account id, avatar URL, attachment download
+ *      URL, or raw `names`/`schema` map is present anywhere on the IR.
+ *   4. `contentHash` is the SHA-256 of the canonical JSON serialization
+ *      of the IR with `contentHash` itself stripped.
+ *   5. Audit/data-minimization metadata is always present.
+ */
+export interface JiraIssueIr {
+  /** Schema version stamp. */
+  version: typeof JIRA_ISSUE_IR_SCHEMA_VERSION;
+  /** Validated Jira issue key, e.g. `"PAY-1234"`. */
+  issueKey: string;
+  /** Allow-listed issue type discriminant. Free-form types collapse to `"other"`. */
+  issueType: JiraIssueType;
+  /** PII-redacted summary line. */
+  summary: string;
+  /** PII-redacted plain-text description, capped at {@link MAX_JIRA_DESCRIPTION_PLAIN_BYTES}. */
+  descriptionPlain: string;
+  /** Acceptance criteria parsed from explicitly configured custom fields. */
+  acceptanceCriteria: JiraAcceptanceCriterion[];
+  /** Sorted, deduplicated, PII-redacted labels. */
+  labels: string[];
+  /** Sorted, deduplicated, PII-redacted component names. */
+  components: string[];
+  /** Sorted, deduplicated fix-version names. */
+  fixVersions: string[];
+  /** Issue status name (e.g. `"In Progress"`). */
+  status: string;
+  /** Optional priority name (e.g. `"High"`). */
+  priority?: string;
+  /** Allow-listed custom fields with PII-redacted values (opt-in). */
+  customFields: JiraIssueIrCustomField[];
+  /** PII-redacted comments (opt-in only). */
+  comments: JiraComment[];
+  /** Attachment metadata only — NEVER bytes (opt-in only). */
+  attachments: JiraAttachmentRef[];
+  /** Linked-issue refs (opt-in only). */
+  links: JiraLinkRef[];
+  /** PII indicators surfaced during redaction. */
+  piiIndicators: PiiIndicator[];
+  /** Redaction records corresponding to {@link piiIndicators}. */
+  redactions: IntentRedaction[];
+  /** Data-minimization audit metadata. */
+  dataMinimization: JiraIssueIrDataMinimization;
+  /** ISO-8601 UTC timestamp at which the IR was built (`Z` suffix). */
+  capturedAt: string;
+  /** SHA-256 of the canonical IR with `contentHash` stripped. Lowercase, 64 hex. */
+  contentHash: string;
+}
+
+/** Visual-sidecar description produced by a multimodal vision model (Issue #1386). */
+export interface VisualScreenDescription {
+  screenId: string;
+  sidecarDeployment: SidecarDeployment;
+  regions: Array<{
+    regionId: string;
+    confidence: number;
+    label?: string;
+    controlType?: string;
+    visibleText?: string;
+    stateHints?: string[];
+    validationHints?: string[];
+    ambiguity?: IntentAmbiguity;
+  }>;
+  confidenceSummary: { min: number; max: number; mean: number };
+  screenName?: string;
+  capturedAt?: string;
+  piiFlags?: Array<{
+    regionId: string;
+    kind: PiiKind;
+    confidence: number;
+  }>;
+}
+
+/**
+ * Generated test case surface (Issue #1362).
+ *
+ * The generator-side artifacts described below model the JSON the LLM is
+ * asked to produce, the redacted compiled prompt request that is persisted
+ * in evidence, and the replay-cache key used to short-circuit identical
+ * jobs without ever reaching the gateway.
+ */
+
+/** ISO/IEC/IEEE 29119-4 technique tags supported by the generator. */
+export type TestCaseTechnique29119 =
+  | "equivalence_partitioning"
+  | "boundary_value_analysis"
+  | "decision_table"
+  | "state_transition"
+  | "use_case"
+  | "exploratory"
+  | "error_guessing"
+  | "syntax_testing"
+  | "classification_tree";
+
+/** Coarse-grain test level. */
+export type TestCaseLevel =
+  | "unit"
+  | "component"
+  | "integration"
+  | "system"
+  | "acceptance";
+
+/** Coarse-grain test type. */
+export type TestCaseType =
+  | "functional"
+  | "negative"
+  | "boundary"
+  | "validation"
+  | "navigation"
+  | "regression"
+  | "exploratory"
+  | "accessibility";
+
+/** Risk band attached to a generated test case. */
+export type TestCaseRiskCategory =
+  | "low"
+  | "medium"
+  | "high"
+  | "regulated_data"
+  | "financial_transaction";
+
+/** Priority band attached to a generated test case. */
+export type TestCasePriority = "p0" | "p1" | "p2" | "p3";
+
+/** Persisted polarity label consumed by downstream exports and evals. */
+export type GeneratedTestCasePolarity =
+  (typeof ALLOWED_GENERATED_TEST_CASE_POLARITIES)[number];
+
+/** Persisted customer-eval rubric category for downstream consumers. */
+export type GeneratedTestCaseCategory =
+  (typeof ALLOWED_GENERATED_TEST_CASE_CATEGORIES)[number];
+
+/** Review state at the moment the test case is emitted. */
+export type GeneratedTestCaseReviewState =
+  | "draft"
+  | "auto_approved"
+  | "needs_review"
+  | "rejected";
+
+/** Single ordered step inside a generated test case. */
+export interface GeneratedTestCaseStep {
+  index: number;
+  action: string;
+  data?: string;
+  expected?: string;
+  /**
+   * Stable workflow-topology field lifecycle transition id exercised by this
+   * step (Issue #2072). Every step must anchor to one deterministic
+   * field-level transition when a workflow topology with field lifecycles is
+   * available.
+   */
+  fieldLifecycleTransitionId?: string;
+}
+
+/** Reference back to a Figma trace path that motivated a test case. */
+export interface GeneratedTestCaseFigmaTrace {
+  screenId: string;
+  nodeId?: string;
+  nodeName?: string;
+  nodePath?: string;
+}
+
+/** QC/ALM mapping preview emitted alongside the test case. */
+export interface GeneratedTestCaseQcMapping {
+  /** Canonical test-case folder hint inside QC/ALM. */
+  folderHint?: string;
+  /** Canonical mapping profile id this preview was rendered for. */
+  mappingProfileId?: string;
+  /**
+   * Optional hardening stamp clarifying that `exportable` is only a
+   * mapping-preview signal and NOT the final policy/review export decision.
+   */
+  decisionBasis?: "mapping_preview_only";
+  /** Whether the case is exportable as-is under the mapping profile. */
+  exportable: boolean;
+  /** Human-readable reasons when exportable=false. */
+  blockingReasons?: string[];
+}
+
+/** Quality signal fields attached to each generated test case. */
+export interface GeneratedTestCaseQualitySignals {
+  coveredFieldIds: string[];
+  coveredActionIds: string[];
+  coveredValidationIds: string[];
+  coveredNavigationIds: string[];
+  /** 0..1 — generator-side confidence in the produced case. */
+  confidence: number;
+  /** Optional ambiguity note. */
+  ambiguity?: IntentAmbiguity;
+}
+
+/** Auditable raw inputs that feed the per-case confidence calibration. */
+export interface GeneratedTestCaseConfidenceComponents {
+  /** Cross-judge agreement proxy in [0, 1]. */
+  judgePanelAgreement: number;
+  /** Per-case faithfulness score in [0, 1]. */
+  faithfulnessScore: number;
+  /** Per-case self-consistency agreement in [0, 1]. */
+  selfConsistencyAgreement: number;
+  /** Historical anchor strength in [0, 1]. */
+  ragHitStrength: number;
+  /** Whether deterministic test-data oracle evidence resolved at least one field. */
+  oracleResolved: boolean;
+  /** Weighted pre-calibration raw score in [0, 1]. */
+  rawScore: number;
+}
+
+/** Schema version for persisted `workflow-topology.json` artifacts. */
+export const WORKFLOW_TOPOLOGY_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the deterministic workflow-topology artifact. */
+export const WORKFLOW_TOPOLOGY_ARTIFACT_FILENAME =
+  "workflow-topology.json" as const;
+
+/** Allowed per-field lifecycle states emitted in workflow topology. */
+export const ALLOWED_WORKFLOW_FIELD_LIFECYCLE_STATES = [
+  "initial",
+  "focused",
+  "in_progress",
+  "validated",
+  "error",
+  "terminal",
+] as const;
+export type WorkflowFieldLifecycleState =
+  (typeof ALLOWED_WORKFLOW_FIELD_LIFECYCLE_STATES)[number];
+
+/** Allowed per-field lifecycle triggers emitted in workflow topology. */
+export const ALLOWED_WORKFLOW_FIELD_LIFECYCLE_TRIGGERS = [
+  "user_focus",
+  "user_input",
+  "validation_pass",
+  "validation_fail",
+  "form_commit",
+] as const;
+export type WorkflowFieldLifecycleTrigger =
+  (typeof ALLOWED_WORKFLOW_FIELD_LIFECYCLE_TRIGGERS)[number];
+
+/** One stable workflow action emitted by the action-topology agent. */
+export interface WorkflowTopologyAction {
+  readonly actionId: string;
+  readonly screenId: string;
+  readonly label: string;
+  readonly kind:
+    | "enter_value"
+    | "select_option"
+    | "review_result"
+    | "review_copy"
+    | "confirm_state";
+  readonly targetIds: readonly string[];
+  readonly sourceRefs: readonly string[];
+}
+
+/** One stable workflow state emitted by the action-topology agent. */
+export interface WorkflowTopologyState {
+  readonly stateId: string;
+  readonly screenId: string;
+  readonly label: string;
+  readonly sourceRefs: readonly string[];
+}
+
+/** One workflow transition between stable states. */
+export interface WorkflowTopologyTransition {
+  readonly transitionId: string;
+  readonly from: string;
+  readonly to: string;
+  readonly guard: string;
+  readonly actions: readonly string[];
+}
+
+/** One per-field lifecycle transition emitted by the action-topology agent. */
+export interface WorkflowFieldLifecycleTransition {
+  readonly transitionId: string;
+  readonly from: WorkflowFieldLifecycleState;
+  readonly to: WorkflowFieldLifecycleState;
+  readonly trigger: WorkflowFieldLifecycleTrigger;
+}
+
+/** One stable per-field lifecycle emitted by the action-topology agent. */
+export interface WorkflowFieldLifecycle {
+  readonly fieldId: string;
+  readonly states: readonly WorkflowFieldLifecycleState[];
+  readonly transitions: readonly WorkflowFieldLifecycleTransition[];
+}
+
+/** Deterministic workflow topology derived from the test-design model. */
+export interface WorkflowTopology {
+  readonly schemaVersion: typeof WORKFLOW_TOPOLOGY_SCHEMA_VERSION;
+  readonly jobId: string;
+  readonly actions: readonly WorkflowTopologyAction[];
+  readonly states: readonly WorkflowTopologyState[];
+  readonly transitions: readonly WorkflowTopologyTransition[];
+  readonly fieldLifecycles: readonly WorkflowFieldLifecycle[];
+  readonly entryStates: readonly string[];
+  readonly exitStates: readonly string[];
+}
+
+/**
+ * Per-test-case rubric quality signal emitted by the self-verify pass
+ * (Issue #1379). The signal is reported via the `self-verify-rubric.json`
+ * artifact rather than mutated onto the cached `GeneratedTestCase` so
+ * the strict generated-test-case JSON schema and the replay-cache
+ * identity remain byte-stable. Each row mirrors one
+ * `SelfVerifyRubricCaseEvaluation` from the rubric report and is
+ * surfaced on the inspector + the audit-timeline as a quality signal of
+ * the underlying test case.
+ */
+export interface TestCaseQualitySignalRubric {
+  testCaseId: string;
+  /** 0..1 aggregate rubric score for this case (rounded to 6 digits). */
+  rubricScore: number;
+}
+
+/**
+ * Regulatory-domain enum for {@link RegulatoryRelevance.domain}
+ * (Issue #1735, contract bump 4.27.0).
+ *
+ * Drives the banking/insurance prompt-augmentation pass in the production
+ * runner. The enum is intentionally narrow — generic-compliance language
+ * only (no specific paragraph numbers / regulatory-text citations).
+ *
+ * - `"banking"` — semantic banking node names ("Antrag", "Auszahlung",
+ *   "Bonität", IBAN/BIC inputs, four-eyes-state-changing actions, ...).
+ * - `"insurance"` — semantic insurance node names ("Versicherung", "Police",
+ *   "Schadensfall", "Risikoprüfung", ...).
+ * - `"general"` — flagged as compliance-relevant but not specific to the
+ *   above two industries (e.g. PII boundary cases).
+ */
+export const ALLOWED_REGULATORY_RELEVANCE_DOMAINS = [
+  "banking",
+  "insurance",
+  "general",
+] as const;
+export type RegulatoryRelevanceDomain =
+  (typeof ALLOWED_REGULATORY_RELEVANCE_DOMAINS)[number];
+
+/**
+ * Banking / insurance semantic keywords surfaced in screen / node names that
+ * trigger the regulatory-prompt augmentation pass. The list is intentionally
+ * narrow: generic banking + insurance flow vocabulary (German), no specific
+ * regulatory-text citations.
+ *
+ * Exposed as a frozen contract export so callers (production runner +
+ * inspector tooling) share one source of truth for "is this screen regulated".
+ */
+export const BANKING_INSURANCE_SEMANTIC_KEYWORDS = [
+  "Versicherung",
+  "Police",
+  "Schadensfall",
+  "Risikoprüfung",
+  "Bonität",
+  "Antrag",
+  "Abschluss",
+  "Auszahlung",
+  "Kündigung",
+] as const;
+export type BankingInsuranceSemanticKeyword =
+  (typeof BANKING_INSURANCE_SEMANTIC_KEYWORDS)[number];
+
+/**
+ * Optional per-test-case regulatory-relevance signal (Issue #1735, contract
+ * bump 4.27.0). Populated by the production runner when the source screen
+ * matches a banking / insurance semantic keyword (see
+ * {@link BANKING_INSURANCE_SEMANTIC_KEYWORDS}) or when the prompt-augmentation
+ * pass produced a compliance-flavoured case (PII / IBAN rejection,
+ * four-eyes / audit-trail, regulated-data boundary).
+ *
+ * The field is optional — non-banking/insurance Figma sources do not emit
+ * it, which means existing artifacts and replay-cache entries from contract
+ * version 4.26.0 remain valid (additive, backwards-compatible field).
+ */
+export interface RegulatoryRelevance {
+  domain: RegulatoryRelevanceDomain;
+  /**
+   * Free-form German rationale (≤ 240 chars) explaining why the case carries
+   * regulatory weight. Generic compliance language only; the prompt
+   * augmentation forbids the model from citing specific paragraphs.
+   */
+  rationale: string;
+}
+
+/** Audit metadata attached to a generated test case. */
+export interface GeneratedTestCaseAuditMetadata {
+  jobId: string;
+  generatedAt: string;
+  contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  schemaVersion: typeof GENERATED_TEST_CASE_SCHEMA_VERSION;
+  promptTemplateVersion: typeof TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION;
+  redactionPolicyVersion: typeof REDACTION_POLICY_VERSION;
+  visualSidecarSchemaVersion: typeof VISUAL_SIDECAR_SCHEMA_VERSION;
+  /** Whether the artifact came from a replay-cache hit. */
+  cacheHit: boolean;
+  cacheKey: string;
+  inputHash: string;
+  promptHash: string;
+  schemaHash: string;
+  /** Number of upstream repair instructions clipped before regeneration. */
+  truncatedInstructionCount?: number;
+}
+
+/** Single generated test case. */
+export interface GeneratedTestCase {
+  id: string;
+  sourceJobId: string;
+  contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  schemaVersion: typeof GENERATED_TEST_CASE_SCHEMA_VERSION;
+  promptTemplateVersion: typeof TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION;
+  title: string;
+  objective: string;
+  level: TestCaseLevel;
+  type: TestCaseType;
+  /**
+   * Optional additive Issue #2030 field. New emissions always populate it;
+   * older artifacts may omit it and are classified on read-path fallback.
+   */
+  polarity?: GeneratedTestCasePolarity;
+  /**
+   * Optional additive Issue #2030 field. New emissions always populate it;
+   * older artifacts may omit it and are classified on read-path fallback.
+   */
+  category?: GeneratedTestCaseCategory;
+  priority: TestCasePriority;
+  riskCategory: TestCaseRiskCategory;
+  technique: TestCaseTechnique29119;
+  preconditions: string[];
+  testData: string[];
+  steps: GeneratedTestCaseStep[];
+  expectedResults: string[];
+  figmaTraceRefs: GeneratedTestCaseFigmaTrace[];
+  assumptions: string[];
+  openQuestions: string[];
+  qcMappingPreview: GeneratedTestCaseQcMapping;
+  qualitySignals: GeneratedTestCaseQualitySignals;
+  /** Optional calibrated per-case acceptance probability (Issue #2074). */
+  confidence?: number;
+  /** Optional auditable raw inputs used to derive `confidence`. */
+  confidenceComponents?: GeneratedTestCaseConfidenceComponents;
+  reviewState: GeneratedTestCaseReviewState;
+  audit: GeneratedTestCaseAuditMetadata;
+  /**
+   * Optional regulatory-relevance signal (Issue #1735, contract bump
+   * 4.27.0). Populated by the production runner when the source screen
+   * matches banking/insurance semantic keywords or when prompt augmentation
+   * produced a compliance-flavoured case.
+   */
+  regulatoryRelevance?: RegulatoryRelevance;
+}
+
+/** Wrapper produced by the generator for a single job. */
+export interface GeneratedTestCaseList {
+  schemaVersion: typeof GENERATED_TEST_CASE_SCHEMA_VERSION;
+  jobId: string;
+  testCases: GeneratedTestCase[];
+}
+
+/** Reason a fallback visual sidecar deployment was selected, if any. */
+export type VisualSidecarFallbackReason =
+  | "primary_unavailable"
+  | "primary_quota_exceeded"
+  | "primary_disabled"
+  | "policy_downgrade"
+  | "none";
+
+/**
+ * Schema version for the persisted multimodal visual sidecar result
+ * artifact emitted by the visual sidecar client (Issue #1386). Bumped
+ * independently from `VISUAL_SIDECAR_SCHEMA_VERSION` (which describes the
+ * sidecar's per-screen output) because this version covers the wrapping
+ * envelope plus capture identities, attempts, and failure classes.
+ */
+export const VISUAL_SIDECAR_RESULT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the persisted visual sidecar result artifact. */
+export const VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME =
+  "visual-sidecar-result.json" as const;
+
+/**
+ * Canonical directory for per-attempt visual sidecar diagnostic artifacts
+ * (Issue #2017). Each failed attempt writes a single JSON file under this
+ * directory with the raw normalized response shape, redacted gateway
+ * message, and structured parser error so a reviewer can debug the model
+ * response after the fact without re-running the live LLM call.
+ */
+export const VISUAL_SIDECAR_DIAGNOSTICS_ARTIFACT_DIRECTORY =
+  "visual-sidecar-diagnostics" as const;
+
+/** Stable schema version for the persisted visual sidecar diagnostic artifact. */
+export const VISUAL_SIDECAR_DIAGNOSTIC_ARTIFACT_SCHEMA_VERSION =
+  "1.0.0" as const;
+
+/**
+ * Persisted form of a single visual sidecar attempt diagnostic. Carries
+ * sanitized, bounded fragments of the gateway response so the failure
+ * can be debugged from the artifact alone.
+ */
+export interface VisualSidecarDiagnosticArtifact {
+  schemaVersion: typeof VISUAL_SIDECAR_DIAGNOSTIC_ARTIFACT_SCHEMA_VERSION;
+  contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  visualSidecarSchemaVersion: typeof VISUAL_SIDECAR_SCHEMA_VERSION;
+  jobId: string;
+  generatedAt: string;
+  /** 1-based attempt index across primary + fallback. Matches `VisualSidecarAttempt.attempt`. */
+  attempt: number;
+  /** Deployment that produced the response. */
+  deployment: SidecarDeployment;
+  /** Wall-clock duration of the attempt in milliseconds. */
+  durationMs: number;
+  /** Error class for the attempt. */
+  errorClass: LlmGatewayErrorClass | "schema_invalid_response";
+  /** Bounded, sanitized parser-error description (matches `VisualSidecarAttempt.normalizedParserError`). */
+  normalizedParserError?: string;
+  /** Bounded, sanitized gateway error message captured from the failed `LlmGenerationFailure`. */
+  gatewayMessage?: string;
+  /**
+   * Coarse shape classification of the response payload:
+   *   - `"string"` — gateway returned a string (e.g. raw JSON text).
+   *   - `"object"` — gateway returned a JSON object payload.
+   *   - `"array"` — gateway returned a JSON array payload.
+   *   - `"null"` — gateway returned an explicit JSON `null` payload.
+   *   - `"missing"` — the attempt failed before any content was produced
+   *     (transport, timeout, canceled, refusal, etc.).
+   */
+  responseShape: "string" | "object" | "array" | "null" | "missing";
+  /**
+   * Bounded, redacted slice of the gateway response. Capped at
+   * `VISUAL_SIDECAR_DIAGNOSTIC_RAW_TEXT_BYTE_LIMIT` bytes (UTF-8). String
+   * payloads are persisted verbatim; object/array payloads are
+   * canonical-JSON-stringified first. Absent when no content is
+   * available (transport / canceled / refusal failures, or when
+   * serialization fails).
+   */
+  rawTextContent?: string;
+  /** Hard invariant — image bytes are never embedded in this artifact. */
+  rawScreenshotsIncluded: false;
+}
+
+/**
+ * UTF-8 byte cap on `rawTextContent` of a diagnostic artifact. Five
+ * kilobytes is enough to fit a typical malformed sidecar envelope plus
+ * the surrounding chatter, while small enough to keep the artifact
+ * well below filesystem and review-tool friction thresholds.
+ */
+export const VISUAL_SIDECAR_DIAGNOSTIC_RAW_TEXT_BYTE_LIMIT = 5_120 as const;
+
+/**
+ * Allowed failure classes for the visual sidecar client. The classes are
+ * disjoint and policy-readable: a downstream policy gate can refuse a job
+ * by inspecting the failure class without reading sanitized free-form
+ * messages.
+ */
+export const ALLOWED_VISUAL_SIDECAR_FAILURE_CLASSES = [
+  "primary_unavailable",
+  "primary_quota_exceeded",
+  "both_sidecars_failed",
+  "schema_invalid_response",
+  "image_payload_too_large",
+  "image_mime_unsupported",
+  "duplicate_screen_id",
+  "empty_screen_capture_set",
+] as const;
+
+/** Discriminant of a `VisualSidecarFailure`. */
+export type VisualSidecarFailureClass =
+  (typeof ALLOWED_VISUAL_SIDECAR_FAILURE_CLASSES)[number];
+
+/**
+ * Allowed input MIME types for visual sidecar captures. SVG is intentionally
+ * NOT in the allowlist because SVG is XML and exposes a parser/injection
+ * surface that the multimodal sidecar should never have to evaluate.
+ */
+export const ALLOWED_VISUAL_SIDECAR_INPUT_MIME_TYPES = [
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+] as const;
+
+/** Discriminant of an allowed visual sidecar input MIME type. */
+export type VisualSidecarInputMimeType =
+  (typeof ALLOWED_VISUAL_SIDECAR_INPUT_MIME_TYPES)[number];
+
+/**
+ * Maximum decoded byte size of a single visual sidecar capture. The bound
+ * is enforced AFTER base64 decoding (i.e. on the actual image bytes the
+ * gateway would forward). Five MiB matches the conservative ceiling Azure
+ * OpenAI imposes on multimodal payloads.
+ */
+export const MAX_VISUAL_SIDECAR_INPUT_BYTES: number = 5 * 1024 * 1024;
+
+/**
+ * In-memory capture handed to the visual sidecar client. The bytes never
+ * touch disk: only the SHA-256 hash is persisted into the result artifact.
+ */
+export interface VisualSidecarCaptureInput {
+  /** Stable identifier matching a `BusinessTestIntentScreen.screenId`. */
+  screenId: string;
+  /** MIME type of the encoded bytes. Must be in the allowlist. */
+  mimeType: VisualSidecarInputMimeType;
+  /** Base64-encoded image bytes. Decoded length must be <= the byte bound. */
+  base64Data: string;
+  /** Optional human-readable label. */
+  screenName?: string;
+  /** Optional ISO-8601 capture timestamp (sourced from a screenshot pipeline). */
+  capturedAt?: string;
+  /**
+   * Optional decoded pixel dimensions. When present they are forwarded into
+   * {@link LlmImageInput.widthPx}/{@link LlmImageInput.heightPx} so the
+   * gateway's input-budget guard can apply tile-based token estimation
+   * (Issue #1930) instead of charging the raw base64 byte length.
+   */
+  widthPx?: number;
+  heightPx?: number;
+}
+
+/**
+ * Identity record for a single capture, persisted alongside the sidecar
+ * result. Carries no image bytes — only a SHA-256 of the decoded bytes
+ * plus the byte length. Re-validating a result against the original
+ * captures requires re-hashing, never re-loading raw screenshot bytes.
+ */
+export interface VisualSidecarCaptureIdentity {
+  screenId: string;
+  mimeType: VisualSidecarInputMimeType;
+  byteLength: number;
+  /** SHA-256 hex of the decoded image bytes (NOT of the base64 string). */
+  sha256: string;
+}
+
+/**
+ * Single attempt against a sidecar deployment. Composes with the gateway
+ * surface so the policy gate can correlate attempts with the gateway's
+ * own circuit-breaker telemetry without a translation layer.
+ */
+export interface VisualSidecarAttempt {
+  /** Sidecar deployment that was attempted. */
+  deployment: SidecarDeployment;
+  /** Sequence index, 1-based across both primary and fallback attempts. */
+  attempt: number;
+  /** Wall-clock duration of the attempt in milliseconds. */
+  durationMs: number;
+  /**
+   * Circuit-breaker state observed immediately before this attempt was
+   * dispatched. Absent when the caller did not wire a caller-side breaker.
+   */
+  circuitBreakerState?: "closed" | "open" | "half_open";
+  /** Error class when the attempt failed. Absent on a success. */
+  errorClass?: LlmGatewayErrorClass | "schema_invalid_response";
+  /**
+   * Issue #2017: bounded, sanitized parser-error description for failed
+   * attempts. Populated whenever the sidecar response could be obtained
+   * but failed structural normalization (e.g. missing `screens`, wrong
+   * length, schema-invalid record). Always passes through
+   * `redactHighRiskSecrets` and is capped to a small byte budget so the
+   * field is safe to surface in artifacts and dashboards.
+   */
+  normalizedParserError?: string;
+  /**
+   * Issue #2017: relative path (within the run directory) of the
+   * persisted raw-response diagnostic artifact for a failed attempt.
+   * Always points to a JSON file under
+   * `visual-sidecar-diagnostics/`. Absent on success and on pre-flight
+   * failures where no gateway round-trip occurred.
+   */
+  rawResponseArtifactPath?: string;
+}
+
+/**
+ * Successful sidecar outcome — primary or fallback. The downstream
+ * `VisualScreenDescription[]` is structurally validated by the existing
+ * `validateVisualSidecar` gate; this type carries the validation report
+ * verbatim so the caller can persist or refuse on it.
+ */
+export interface VisualSidecarSuccess {
+  outcome: "success";
+  /** Deployment that produced the descriptions. */
+  selectedDeployment: SidecarDeployment;
+  fallbackReason: VisualSidecarFallbackReason;
+  visual: VisualScreenDescription[];
+  captureIdentities: VisualSidecarCaptureIdentity[];
+  attempts: VisualSidecarAttempt[];
+  /** Aggregated confidence summary across every screen description. */
+  confidenceSummary: { min: number; max: number; mean: number };
+  /**
+   * Verbatim validation report produced by `validateVisualSidecar`. The
+   * client does NOT silently strip findings — when the report says
+   * `blocked: true`, the success surfaces the report so the caller can
+   * persist it for the policy gate to inspect.
+   */
+  validationReport: VisualSidecarValidationReport;
+}
+
+/**
+ * Failure outcome — both primary and fallback exhausted, or pre-flight
+ * rejected the captures. The `failureClass` is policy-readable so
+ * upstream gates can decide between "retry later" and "refuse the job".
+ */
+export interface VisualSidecarFailure {
+  outcome: "failure";
+  failureClass: VisualSidecarFailureClass;
+  /** Sanitized human-readable message — never carries tokens or PII. */
+  failureMessage: string;
+  attempts: VisualSidecarAttempt[];
+  captureIdentities: VisualSidecarCaptureIdentity[];
+}
+
+/** Discriminated union returned by `describeVisualScreens`. */
+export type VisualSidecarResult = VisualSidecarSuccess | VisualSidecarFailure;
+
+/**
+ * Persisted form of the visual sidecar result. Carries schema/contract
+ * stamps and the hard `rawScreenshotsIncluded: false` literal so that any
+ * downstream consumer can verify the artifact never re-introduced raw
+ * screenshot bytes.
+ */
+export interface VisualSidecarResultArtifact {
+  schemaVersion: typeof VISUAL_SIDECAR_RESULT_SCHEMA_VERSION;
+  contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  visualSidecarSchemaVersion: typeof VISUAL_SIDECAR_SCHEMA_VERSION;
+  jobId: string;
+  generatedAt: string;
+  result: VisualSidecarResult;
+  /**
+   * Deterministic derivative evidence refs extracted from the validation
+   * report. Each ref hashes the canonical tuple
+   * `(screenId|deployment|sortedOutcomes|roundedConfidence)` so downstream
+   * audit consumers can correlate prompt-time visual evidence without relying
+   * on raw screenshot-byte hashes.
+   */
+  visualEvidenceRefs?: {
+    screenId: string;
+    modelDeployment: string;
+    evidenceHash: string;
+  }[];
+  /** Hard invariant — image bytes are never embedded in this artifact. */
+  rawScreenshotsIncluded: false;
+}
+
+/**
+ * Identity of the visual sidecar that produced a `VisualScreenDescription`
+ * batch. The compiler hashes this object into the replay-cache key so that
+ * a fallback model swap forces a cache miss.
+ */
+export interface CompiledPromptVisualBinding {
+  schemaVersion: typeof VISUAL_SIDECAR_SCHEMA_VERSION;
+  selectedDeployment: SidecarDeployment;
+  fallbackReason: VisualSidecarFallbackReason;
+  /** Hex digest of the screenshot/fixture used for visual analysis, if any. */
+  fixtureImageHash?: string;
+  /** Number of screens covered by the visual binding. */
+  screenCount: number;
+}
+
+/** Identity of the structured-test-case generator gateway/model pair. */
+export interface CompiledPromptModelBinding {
+  modelRevision: string;
+  gatewayRelease: string;
+  /** Optional deterministic seed the model accepts (provider-dependent). */
+  seed?: number;
+}
+
+/** Hash bundle attached to a compiled prompt. */
+export interface CompiledPromptHashes {
+  inputHash: string;
+  promptHash: string;
+  schemaHash: string;
+  cacheKey: string;
+  cacheablePrefixHash: string;
+  contextBudgetHash?: string;
+}
+
+/** Sanitized custom supporting context visible to prompt compilation. */
+export interface CompiledPromptCustomContext {
+  markdownSections: Array<{
+    sourceId: string;
+    entryId: string;
+    bodyMarkdown: string;
+    bodyPlain: string;
+    markdownContentHash: string;
+    plainContentHash: string;
+  }>;
+  structuredAttributes: Array<{
+    sourceId: string;
+    entryId: string;
+    key: string;
+    value: string;
+    contentHash: string;
+  }>;
+}
+
+/** Persisted, fully-redacted artifact form of a compiled prompt. */
+export interface CompiledPromptArtifacts {
+  contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  promptTemplateVersion: typeof TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION;
+  schemaVersion: typeof GENERATED_TEST_CASE_SCHEMA_VERSION;
+  redactionPolicyVersion: typeof REDACTION_POLICY_VERSION;
+  jobId: string;
+  systemPrompt: string;
+  userPrompt: string;
+  /** Redacted JSON payload that the model will reason over. */
+  payload: {
+    intent: BusinessTestIntentIr;
+    visual: VisualScreenDescription[];
+    testDesignModel?: TestDesignModel;
+    coveragePlan?: CoveragePlan;
+    workflowTopology?: WorkflowTopology;
+    riskRanking?: RiskRanking;
+    customerRubric?: Record<string, unknown>;
+    customContext?: CompiledPromptCustomContext;
+    sourceMixPlan?: SourceMixPlan;
+  };
+  hashes: CompiledPromptHashes;
+  promptLayout: {
+    prefix: string;
+    suffix: string;
+    prefixEndMarker: "--- prefix end ---";
+  };
+  visualBinding: CompiledPromptVisualBinding;
+  modelBinding: CompiledPromptModelBinding;
+  policyBundleVersion: string;
+}
+
+/** Wire-shaped request handed to the LLM gateway client. */
+export interface CompiledPromptRequest {
+  jobId: string;
+  modelBinding: CompiledPromptModelBinding;
+  systemPrompt: string;
+  userPrompt: string;
+  /** JSON schema the gateway must enforce on the response (structured output). */
+  responseSchema: Record<string, unknown>;
+  /** Stable schema name used by some gateways. */
+  responseSchemaName: string;
+  hashes: CompiledPromptHashes;
+}
+
+/**
+ * Multi-tenant scope (Issue #1944).
+ *
+ * Identifies the tenant + environment + (optional) project that owns a cache
+ * partition. Filesystem caches under
+ * `<root>/replay-cache/<tenantId>/<environmentId>/<projectId>/…` are bound to
+ * exactly one `TenantScope` at construction time; cross-tenant reads are
+ * impossible because the loader has no API to address paths outside its
+ * scope. Existing single-tenant deployments map to {@link DEFAULT_TENANT_SCOPE}.
+ *
+ * Each segment is treated as a single path component. The runtime rejects
+ * empty values and any segment containing a path separator (`/`, `\`) or the
+ * `..` traversal token — see `resolveTenantScopeSegments` in
+ * `src/test-intelligence/replay-cache.ts`.
+ */
+export interface TenantScope {
+  /** Stable, non-PII tenant identifier (e.g. customer org id). */
+  readonly tenantId: string;
+  /** Environment identifier (e.g. `prod`, `staging`, `dev`). */
+  readonly environmentId: string;
+  /**
+   * Optional project identifier within the tenant. When omitted the loader
+   * substitutes `"default"` so the on-disk path is always three segments
+   * deep — preventing accidental collision when a project id is later added.
+   */
+  readonly projectId?: string;
+}
+
+/**
+ * Sentinel `TenantScope` used by single-tenant callers that have not yet
+ * adopted the structured scope (Issue #1944). Keeps the on-disk layout
+ * `<root>/default/default/default/…` so an unscoped caller's cache is
+ * isolated from any scoped caller's cache by directory boundary.
+ */
+export const DEFAULT_TENANT_SCOPE: TenantScope = {
+  tenantId: "default",
+  environmentId: "default",
+  projectId: "default",
+};
+
+/** Replay-cache key — the only deterministic-bit-identical replay anchor. */
+export interface ReplayCacheKey {
+  inputHash: string;
+  promptHash: string;
+  schemaHash: string;
+  /** sha256 hex digest of the canonical resolved model-routing policy. */
+  routingPolicyDigest: string;
+  modelRevision: string;
+  gatewayRelease: string;
+  policyBundleVersion: string;
+  redactionPolicyVersion: typeof REDACTION_POLICY_VERSION;
+  visualSidecarSchemaVersion: typeof VISUAL_SIDECAR_SCHEMA_VERSION;
+  visualSelectedDeployment: CompiledPromptVisualBinding["selectedDeployment"];
+  visualFallbackReason: VisualSidecarFallbackReason;
+  fixtureImageHash?: string;
+  promptTemplateVersion: typeof TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION;
+  cacheablePrefixHash: string;
+  seed?: number;
+  sourceMixPlanHash?: string;
+  contextBudgetHash?: string;
+  constrainedDecodingAdapterId?: LlmConstrainedDecodingAdapterId;
+  constrainedDecodingAdapterVersion?: string;
+  constrainedDecodingFallbackReason?: string;
+}
+
+/** Minimal persisted metadata for one compiled role-step prompt run. */
+export interface AgentRoleRunArtifact {
+  schemaVersion: typeof AGENT_ROLE_RUN_SCHEMA_VERSION;
+  jobId: string;
+  roleRunId: string;
+  roleStepId: string;
+  parentJobId?: string;
+  roleLineageDepth?: number;
+  promptTemplateVersion: typeof TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION;
+  cacheablePrefixHash: string;
+  promptHash: string;
+  schemaHash: string;
+  inputHash: string;
+  cacheKeyDigest: string;
+  rawPromptsIncluded: false;
+}
+
+export interface GenealogyArtifactNode {
+  readonly jobId: string;
+  readonly roleStepId: string;
+  readonly artifactFilename: string;
+  readonly parentJobId?: string;
+  readonly roleLineageDepth?: number;
+}
+
+export interface GenealogyArtifact {
+  readonly schemaVersion: typeof GENEALOGY_SCHEMA_VERSION;
+  readonly generatedAt: string;
+  readonly nodes: readonly GenealogyArtifactNode[];
+}
+
+/** Stored cache entry. */
+export interface ReplayCacheEntry {
+  key: string;
+  storedAt: string;
+  testCases: GeneratedTestCaseList;
+}
+
+/** Cache lookup outcome consumed by the orchestration layer. */
+export type ReplayCacheLookupResult =
+  | { hit: true; entry: ReplayCacheEntry }
+  | { hit: false; key: string };
+
+/**
+ * Review gate + export-only QC artifact surface (Issue #1365 / #1376).
+ *
+ * The review gate persists per-test-case lifecycle decisions made by a
+ * reviewer (or by the policy gate, when policy auto-approves) so that
+ * downstream export operations can refuse to produce QC/ALM artifacts
+ * for cases that have not been approved. Wave 1 (#1365) ships:
+ *
+ *   - in-memory state machine (`generated → needs_review → approved |
+ *     rejected | edited → exported → transferred`),
+ *   - file-system review store (event log + snapshot),
+ *   - bearer-protected handler that mirrors the import-session
+ *     governance pattern (`validateImportSessionEventWriteAuth`),
+ *   - deterministic export pipeline emitting `testcases.json`,
+ *     `testcases.csv`, `testcases.alm.xml`, `qc-mapping-preview.json`,
+ *     `export-report.json`, plus optional `testcases.xlsx`.
+ *
+ * Wave 2 (#1376) adds server-side four-eyes enforcement for cases whose
+ * risk category is configured as high-risk OR whose multimodal visual
+ * sidecar workflow surfaced low-confidence / fallback / PII /
+ * prompt-injection / Figma-conflict signals. When four-eyes is
+ * enforced, two distinct authenticated principals must approve before
+ * the case may transition to `approved`. The intermediate state
+ * `pending_secondary_approval` records the first approval; export and
+ * ALM transfer paths refuse cases that did not reach `approved`.
+ *
+ * No production QC/ALM API write is performed; the surface only
+ * persists artifacts to disk for downstream operators to upload.
+ */
+
+/**
+ * Allowed lifecycle states for a generated test case under review.
+ *
+ * `pending_secondary_approval` (added in #1376) is the intermediate
+ * state a four-eyes-enforced case occupies after the first approval and
+ * before the second distinct approval. Cases not subject to four-eyes
+ * skip this state entirely.
+ */
+export const ALLOWED_REVIEW_STATES = [
+  "generated",
+  "needs_review",
+  "pending_secondary_approval",
+  "approved",
+  "rejected",
+  "edited",
+  "exported",
+  "transferred",
+] as const;
+export type ReviewState = (typeof ALLOWED_REVIEW_STATES)[number];
+
+/**
+ * Allowed event kinds appended to the review-gate event log.
+ *
+ * `primary_approved` and `secondary_approved` (added in #1376) are
+ * emitted in lockstep with four-eyes enforcement: the first distinct
+ * approver records `primary_approved`; the second distinct approver
+ * records `secondary_approved`. Clients may also continue to send the
+ * generic `approved` kind — when the snapshot indicates four-eyes is
+ * enforced, the store routes the request to the correct primary or
+ * secondary event kind based on current state, which keeps wire-level
+ * audit clarity without forcing UI rewrites.
+ */
+export const ALLOWED_REVIEW_EVENT_KINDS = [
+  "generated",
+  "review_started",
+  "approved",
+  "primary_approved",
+  "secondary_approved",
+  "rejected",
+  "edited",
+  "exported",
+  "transferred",
+  "note",
+] as const;
+export type ReviewEventKind = (typeof ALLOWED_REVIEW_EVENT_KINDS)[number];
+
+/**
+ * Reasons four-eyes review is enforced for a single test case (#1376).
+ *
+ * Multiple reasons may apply (e.g. a `regulated_data` case whose visual
+ * sidecar reported low confidence). Reasons are reported deterministic-
+ * sorted on the `ReviewSnapshot.fourEyesReasons` field.
+ */
+export const ALLOWED_FOUR_EYES_ENFORCEMENT_REASONS = [
+  "risk_category",
+  "visual_low_confidence",
+  "visual_fallback_used",
+  "visual_possible_pii",
+  "visual_prompt_injection",
+  "visual_metadata_conflict",
+  "multi_source_conflict_present",
+] as const;
+export type FourEyesEnforcementReason =
+  (typeof ALLOWED_FOUR_EYES_ENFORCEMENT_REASONS)[number];
+
+/**
+ * Default risk categories that require four-eyes review (#1376).
+ *
+ * The list spans the existing `TestCaseRiskCategory` taxonomy. Issue
+ * #1376 names the operator-facing risk classes as
+ * `payment / authorization / identity / regulatory`; those map onto the
+ * existing taxonomy as `financial_transaction` (payment) +
+ * `regulated_data` (identity, regulatory) + `high` (authorization /
+ * elevated-impact). Operators may override with
+ * `WorkspaceStartOptions.testIntelligence.fourEyesRequiredRiskCategories`.
+ */
+export const DEFAULT_FOUR_EYES_REQUIRED_RISK_CATEGORIES: readonly TestCaseRiskCategory[] =
+  ["financial_transaction", "regulated_data", "high"];
+
+/**
+ * Default visual-sidecar validation outcomes that trigger four-eyes
+ * enforcement (#1376, 2026-04-24 multimodal addendum).
+ *
+ * When ANY screen referenced by a test case carries one of these
+ * outcomes in `VisualSidecarValidationReport`, the case is enforced as
+ * four-eyes regardless of risk category.
+ */
+export const DEFAULT_FOUR_EYES_VISUAL_SIDECAR_TRIGGERS: readonly VisualSidecarValidationOutcome[] =
+  [
+    "low_confidence",
+    "fallback_used",
+    "possible_pii",
+    "prompt_injection_like_text",
+    "conflicts_with_figma_metadata",
+  ];
+
+/**
+ * Operator-tunable four-eyes policy (#1376).
+ *
+ * Resolved at startup from `WorkspaceStartOptions.testIntelligence`
+ * fields; the resolved policy is consulted at review-snapshot seed time
+ * to stamp `fourEyesEnforced` per test case.
+ */
+export interface FourEyesPolicy {
+  /** Risk categories that always require four-eyes. Sorted, deduplicated. */
+  requiredRiskCategories: readonly TestCaseRiskCategory[];
+  /**
+   * Visual-sidecar validation outcomes that trigger four-eyes regardless
+   * of risk category. Sorted, deduplicated.
+   */
+  visualSidecarTriggerOutcomes: readonly VisualSidecarValidationOutcome[];
+}
+
+/** Allowed reasons the export pipeline may refuse to emit QC artifacts. */
+export const ALLOWED_EXPORT_REFUSAL_CODES = [
+  "no_approved_test_cases",
+  "unapproved_test_cases_present",
+  "policy_blocked_cases_present",
+  "schema_invalid_cases_present",
+  "visual_sidecar_blocked",
+  "review_state_inconsistent",
+] as const;
+export type ExportRefusalCode = (typeof ALLOWED_EXPORT_REFUSAL_CODES)[number];
+
+/** Single immutable event appended to the review-gate event log. */
+export interface ReviewEvent {
+  schemaVersion: typeof REVIEW_GATE_SCHEMA_VERSION;
+  contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  /** Globally unique opaque identifier; generated server-side. */
+  id: string;
+  jobId: string;
+  /** Unset when the event is job-level (e.g. seed). */
+  testCaseId?: string;
+  kind: ReviewEventKind;
+  /** ISO-8601 UTC timestamp at the moment of persistence. */
+  at: string;
+  /** Optional opaque actor handle; never an email or token. */
+  actor?: string;
+  /** Optional human-readable note (length-bounded by the store). */
+  note?: string;
+  fromState?: ReviewState;
+  toState?: ReviewState;
+  /** Monotonic 1-based per-job sequence; gap-free. */
+  sequence: number;
+  /** Flat metadata (no nested objects). */
+  metadata?: Record<string, string | number | boolean | null>;
+}
+
+/** Per-test-case review-state snapshot. */
+export interface ReviewSnapshot {
+  testCaseId: string;
+  state: ReviewState;
+  policyDecision: TestCasePolicyDecision;
+  /** Identifier of the most recent event affecting this case. */
+  lastEventId: string;
+  lastEventAt: string;
+  /**
+   * Whether the resolved four-eyes policy requires two distinct
+   * authenticated principals before this case may reach `approved`.
+   * When `true`, the export pipeline refuses cases not in `approved`,
+   * `exported`, or `transferred` state (#1376).
+   */
+  fourEyesEnforced: boolean;
+  /**
+   * Set of distinct reviewer actors that have approved this case in
+   * sequence. Sorted, deduplicated. For four-eyes-enforced cases the
+   * first entry is the primary approver, the second the secondary.
+   */
+  approvers: string[];
+  /**
+   * Reasons four-eyes is enforced (#1376). Empty when
+   * `fourEyesEnforced=false`. Sorted deterministic. Optional for
+   * backward compatibility; consumers should treat absence as
+   * "no recorded reasons" (i.e. older snapshots before #1376 shipped).
+   */
+  fourEyesReasons?: FourEyesEnforcementReason[];
+  /**
+   * Identity of the first distinct approver, recorded when a four-eyes
+   * case transitions out of `needs_review`/`edited`. Optional for
+   * non-enforced cases and for snapshots written before any approval.
+   */
+  primaryReviewer?: string;
+  /** ISO-8601 UTC timestamp at which the primary approval was recorded. */
+  primaryApprovalAt?: string;
+  /**
+   * Identity of the second distinct approver, recorded when a four-eyes
+   * case transitions from `pending_secondary_approval` to `approved`.
+   */
+  secondaryReviewer?: string;
+  /** ISO-8601 UTC timestamp at which the secondary approval was recorded. */
+  secondaryApprovalAt?: string;
+  /**
+   * Identity of the actor who recorded the most recent `edited` event
+   * for this case, if any. Used by the four-eyes gate to refuse
+   * approvals submitted by the same principal that authored the edit
+   * (self-approval refusal).
+   */
+  lastEditor?: string;
+}
+
+/** Aggregate per-job review-gate snapshot. */
+export interface ReviewGateSnapshot {
+  schemaVersion: typeof REVIEW_GATE_SCHEMA_VERSION;
+  contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  jobId: string;
+  generatedAt: string;
+  /** Sorted by `testCaseId` for deterministic emission. */
+  perTestCase: ReviewSnapshot[];
+  /** Number of cases currently in `approved` (or `exported`/`transferred`) state. */
+  approvedCount: number;
+  /** Number of cases currently in `needs_review` state. */
+  needsReviewCount: number;
+  /** Number of cases currently in `rejected` state. */
+  rejectedCount: number;
+  /**
+   * Number of cases currently awaiting a second distinct approver
+   * (state = `pending_secondary_approval`). Optional for backward
+   * compatibility; consumers must treat absence as `0` (#1376).
+   */
+  pendingSecondaryApprovalCount?: number;
+  /**
+   * Resolved four-eyes policy that produced this snapshot. Optional for
+   * backward compatibility. When present, both arrays are sorted /
+   * deduplicated (#1376).
+   */
+  fourEyesPolicy?: FourEyesPolicy;
+}
+
+/** Visual provenance attached to a QC mapping preview entry (Issue #1386). */
+export interface QcMappingVisualProvenance {
+  deployment: SidecarDeployment | "none";
+  fallbackReason: VisualSidecarFallbackReason;
+  confidenceMean: number;
+  ambiguityCount: number;
+  /**
+   * SHA-256 hex of the derived validation-record identity tuple
+   * `(screenId|deployment|sortedOutcomes|roundedConfidence)`. This is not a
+   * raw screenshot hash and does not include request headers or secrets.
+   */
+  evidenceHash: string;
+}
+
+/** Single per-test-case mapping preview row consumed by QC/ALM operators. */
+export interface QcMappingPreviewEntry {
+  testCaseId: string;
+  /** Deterministic candidate external id used for idempotent later transfer. */
+  externalIdCandidate: string;
+  testName: string;
+  objective: string;
+  priority: TestCasePriority;
+  riskCategory: TestCaseRiskCategory;
+  /** Forward-slash-separated folder path under the profile root. */
+  targetFolderPath: string;
+  preconditions: string[];
+  testData: string[];
+  designSteps: GeneratedTestCaseStep[];
+  expectedResults: string[];
+  /** Subset of figmaTraceRefs sufficient for round-trip provenance. */
+  sourceTraceRefs: GeneratedTestCaseFigmaTrace[];
+  /** Clarifies that `exportable` is mapping-preview-only, not final export approval. */
+  decisionBasis?: "mapping_preview_only";
+  exportable: boolean;
+  blockingReasons: string[];
+  visualProvenance?: QcMappingVisualProvenance;
+}
+
+/** Aggregate QC mapping preview artifact. */
+export interface QcMappingPreviewArtifact {
+  schemaVersion: typeof QC_MAPPING_PREVIEW_SCHEMA_VERSION;
+  contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  jobId: string;
+  generatedAt: string;
+  profileId: string;
+  profileVersion: string;
+  /** Sorted by `testCaseId` for deterministic emission. */
+  entries: QcMappingPreviewEntry[];
+}
+
+/** Operator-tunable knobs of an OpenText ALM reference export profile. */
+export interface OpenTextAlmExportProfile {
+  id: string;
+  version: string;
+  description: string;
+  /** Folder path prepended to every per-case `targetFolderPath`. */
+  rootFolderPath: string;
+  /**
+   * Whether to wrap the test-case description in a CDATA block so that
+   * embedded markup survives ALM round-trips.
+   */
+  cdataDescription: boolean;
+}
+
+/** Allowed content types declared on an exported artifact record. */
+export const ALLOWED_EXPORT_ARTIFACT_CONTENT_TYPES = [
+  "application/json",
+  "text/csv",
+  "application/xml",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+] as const;
+export type ExportArtifactContentType =
+  (typeof ALLOWED_EXPORT_ARTIFACT_CONTENT_TYPES)[number];
+
+/** Single artifact bookkeeping row inside `export-report.json`. */
+export interface ExportArtifactRecord {
+  filename: string;
+  /** SHA-256 hex of the on-disk byte stream. */
+  sha256: string;
+  bytes: number;
+  contentType: ExportArtifactContentType;
+}
+
+/** Aggregate export-report artifact. */
+export interface ExportReportArtifact {
+  schemaVersion: typeof EXPORT_REPORT_SCHEMA_VERSION;
+  contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  jobId: string;
+  generatedAt: string;
+  profileId: string;
+  profileVersion: string;
+  /** Identity of the deployments behind the run. */
+  modelDeployments: {
+    testGeneration: string;
+    visualPrimary?: SidecarDeployment | "none";
+    visualFallback?: SidecarDeployment | "none";
+  };
+  exportedTestCaseCount: number;
+  /**
+   * Explicit final export decision derived from validation, policy, visual,
+   * and review-gate outcomes rather than from per-case mapping preview flags.
+   */
+  finalExportDecision: "approved_for_export" | "refused";
+  /** True when the pipeline refused to emit any non-report artifact. */
+  refused: boolean;
+  refusalCodes: ExportRefusalCode[];
+  /** Sorted by filename for deterministic emission. */
+  artifacts: ExportArtifactRecord[];
+  /** Sorted, de-duplicated. */
+  visualEvidenceHashes: string[];
+  /** Hard invariant: raw screenshots are never embedded into export artifacts. */
+  rawScreenshotsIncluded: false;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Wave 1 Validation evidence manifest + evaluation report (Issue #1366)     */
+/* ------------------------------------------------------------------ */
+
+/** Schema version for the Wave 1 Validation evidence manifest envelope. */
+export const WAVE1_VALIDATION_EVIDENCE_MANIFEST_SCHEMA_VERSION =
+  "1.0.0" as const;
+
+/** Filename used for the Wave 1 Validation evidence manifest artifact. */
+export const WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME =
+  "wave1-validation-evidence-manifest.json";
+
+/** Filename used for the persisted per-run W3C PROV JSON-LD graph. */
+export const PROVENANCE_ARTIFACT_FILENAME = "provenance.jsonld" as const;
+
+/** Schema version for the persisted test-intelligence provenance artifact. */
+export const TEST_INTELLIGENCE_PROVENANCE_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Filename used for the Wave 1 Validation evidence manifest digest witness. */
+export const WAVE1_VALIDATION_EVIDENCE_MANIFEST_DIGEST_FILENAME =
+  "wave1-validation-evidence-manifest.sha256";
+
+/** Schema version for the Wave 1 Validation evaluation report envelope. */
+export const WAVE1_VALIDATION_EVAL_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Filename used for the Wave 1 Validation evaluation report artifact. */
+export const WAVE1_VALIDATION_EVAL_REPORT_ARTIFACT_FILENAME =
+  "wave1-validation-eval-report.json";
+
+/** Schema version for the AgentLessons eval report envelope. */
+export const AGENT_LESSONS_EVAL_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Filename used for the AgentLessons eval report artifact. */
+export const AGENT_LESSONS_EVAL_REPORT_ARTIFACT_FILENAME =
+  "agent-lessons-eval-report.json" as const;
+
+/**
+ * Allowed Wave 1 Validation fixture identifiers.
+ *
+ * `validation-onboarding` — synthetic onboarding-style sign-up flow.
+ * `validation-payment-auth` — synthetic payment + 3-D Secure authorisation flow.
+ *
+ * Both fixtures are public, contain only synthetic data, and ship with a
+ * companion visual sidecar fixture so the Figma → Visual Sidecar →
+ * Business Test Intent IR → structured generation chain is exercised
+ * end-to-end against an air-gapped mock LLM.
+ */
+export const WAVE1_VALIDATION_FIXTURE_IDS = [
+  "validation-onboarding",
+  "validation-payment-auth",
+] as const;
+
+/** Identifier of a Wave 1 Validation fixture. */
+export type Wave1ValidationFixtureId =
+  (typeof WAVE1_VALIDATION_FIXTURE_IDS)[number];
+
+/** Categorisation of an artifact attested by the evidence manifest. */
+export type Wave1ValidationEvidenceArtifactCategory =
+  | "intent"
+  | "validation"
+  | "review"
+  | "export"
+  | "manifest"
+  | "genealogy"
+  | "visual_sidecar"
+  | "finops"
+  | "attestation"
+  | "signature"
+  | "lbom"
+  | "ml_bom"
+  | "self_verify_rubric"
+  | "intent_delta"
+  | "dedupe_report"
+  | "traceability_matrix"
+  | "multi_source_reconciliation"
+  | "source_ir"
+  | "source_provenance"
+  | "multi_source_conflicts"
+  | "production_readiness_eval";
+
+/** Single artifact attested by the Wave 1 Validation evidence manifest. */
+export interface Wave1ValidationEvidenceArtifact {
+  /** Relative filename inside the run directory. */
+  filename: string;
+  /** SHA-256 of the on-disk byte stream. */
+  sha256: string;
+  /** Byte length on disk at manifest creation time. */
+  bytes: number;
+  category: Wave1ValidationEvidenceArtifactCategory;
+  /**
+   * Issue #2177 — per-artifact EU data-residency attestations. One entry per
+   * LLM call or cache hit that contributed to the artifact.
+   */
+  regionAttestations?: readonly RegionAttestation[];
+}
+
+/**
+ * Result of `verifyWave1ValidationEvidenceManifest` against a directory of artifacts.
+ * Determines whether ALL attested artifacts still hash to the values stored
+ * in the manifest. Any mismatch fails the verification fail-closed.
+ */
+export interface Wave1ValidationEvidenceVerificationResult {
+  ok: boolean;
+  /** Filenames listed in the manifest that are missing on disk. */
+  missing: string[];
+  /** Filenames whose on-disk SHA-256 differs from the manifest. */
+  mutated: string[];
+  /** Filenames whose on-disk byte length differs from the manifest. */
+  resized: string[];
+  /** Filenames present on disk but not attested by the manifest. */
+  unexpected: string[];
+  /**
+   * Manifest self-attestation result when the manifest carries a
+   * `manifestIntegrity` block, or when a current-version manifest is missing
+   * the block and therefore fails closed.
+   */
+  manifestIntegrity?: Wave1ValidationEvidenceManifestIntegrityVerification;
+}
+
+/** Self-attestation stamped into the Wave 1 evidence manifest. */
+export interface Wave1ValidationEvidenceManifestIntegrity {
+  algorithm: "sha256";
+  /** SHA-256 of canonical manifest JSON with `manifestIntegrity` omitted. */
+  hash: string;
+}
+
+/** Structured verification result for the manifest self-attestation. */
+export interface Wave1ValidationEvidenceManifestIntegrityVerification {
+  algorithm: "sha256";
+  actualHash: string;
+  expectedHash?: string;
+  ok: boolean;
+}
+
+/** Visual-sidecar summary duplicated into the Wave 1 evidence manifest. */
+export interface Wave1ValidationEvidenceVisualSidecarSummary {
+  selectedDeployment: SidecarDeployment;
+  fallbackReason: VisualSidecarFallbackReason;
+  confidenceSummary: { min: number; max: number; mean: number };
+  /** SHA-256 hex of the persisted `visual-sidecar-result.json` artifact. */
+  resultArtifactSha256: string;
+}
+
+/**
+ * Wave 1 Validation evidence manifest. Frozen, deterministic, byte-identical
+ * across runs of the same fixture and mock output. Lists every artifact
+ * the harness emits with its SHA-256 hash and byte length, plus the
+ * contract / template / schema / policy / model identities used during
+ * the run. The manifest itself is also written to disk; verifying its
+ * integrity is performed against the stored copy plus the artifact bytes.
+ *
+ * Two negative invariants are stamped explicitly so they appear in the
+ * evidence audit trail rather than being inferred from absence:
+ *
+ *   - `rawScreenshotsIncluded: false` — no raw screenshot bytes are ever
+ *     embedded in any exported artifact.
+ *   - `imagePayloadSentToTestGeneration: false` — the structured-test-case
+ *     generator deployment (e.g. `gpt-oss-120b`) never received an image
+ *     payload during the run; image-bearing payloads only flow into the
+ *     visual sidecar role.
+ */
+export interface Wave1ValidationEvidenceManifest {
+  schemaVersion: typeof WAVE1_VALIDATION_EVIDENCE_MANIFEST_SCHEMA_VERSION;
+  /** workspace-dev contract version that produced the artifacts. */
+  contractVersion: string;
+  /** Test-intelligence subsurface contract version. */
+  testIntelligenceContractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  /** Identifier of the fixture or runner profile exercised. */
+  fixtureId: string;
+  jobId: string;
+  generatedAt: string;
+  /** Versions used to compile the prompt and validate the output. */
+  promptTemplateVersion: typeof TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION;
+  generatedTestCaseSchemaVersion: typeof GENERATED_TEST_CASE_SCHEMA_VERSION;
+  visualSidecarSchemaVersion: typeof VISUAL_SIDECAR_SCHEMA_VERSION;
+  redactionPolicyVersion: typeof REDACTION_POLICY_VERSION;
+  /**
+   * Version of the subprocessor register + cross-border transfer ADR
+   * (`docs/dora/subprocessor-register.md`, `docs/dpia/cross-border-transfer.md`)
+   * active for the run. Carries DORA Art. 28 / GDPR Ch. V documentation
+   * identity into the replay artifact (Issue #2113).
+   */
+  subprocessorRegisterVersion: typeof SUBPROCESSOR_REGISTER_VERSION;
+  /** Policy profile identity used by the validation pipeline. */
+  policyProfileId: string;
+  policyProfileVersion: string;
+  /** OpenText ALM (or override) export profile identity. */
+  exportProfileId: string;
+  exportProfileVersion: string;
+  /** Identities of the deployments behind the run. */
+  modelDeployments: {
+    testGeneration: string;
+    visualPrimary?: SidecarDeployment | "none";
+    visualFallback?: SidecarDeployment | "none";
+  };
+  /**
+   * Active model-binding summary attested for the run. Under banking
+   * profiles every active binding must carry `ictRegisterRef`.
+   */
+  activeModelBindings?: readonly ActiveModelBinding[];
+  /** Replay-cache identity hashes for the run (mirrors compiled prompt). */
+  promptHash: string;
+  schemaHash: string;
+  inputHash: string;
+  cacheKeyDigest: string;
+  /** Direct visual-sidecar evidence summary when the opt-in sidecar path ran. */
+  visualSidecar?: Wave1ValidationEvidenceVisualSidecarSummary;
+  /**
+   * Persisted screenshot capture identities when the visual sidecar ran.
+   * Carries only SHA-256 identities plus MIME type and byte length; raw
+   * screenshot bytes are never embedded in the manifest.
+   */
+  visualSidecarCaptureIdentities?: VisualSidecarCaptureIdentity[];
+  /**
+   * Self-attestation over the canonical manifest metadata and artifact list.
+   * New manifests stamp this field; it remains optional so legacy manifests can
+   * still be parsed and verified with their existing digest witness.
+   */
+  manifestIntegrity?: Wave1ValidationEvidenceManifestIntegrity;
+  /** Sorted-by-filename, de-duplicated artifact list. */
+  artifacts: Wave1ValidationEvidenceArtifact[];
+  /**
+   * Per-source provenance records added when the multi-source pipeline ran.
+   * Present only when `multiSourceEnabled` is `true`. Each entry records the
+   * SHA-256 + bytes of the per-source IR artifact under
+   * `<runDir>/sources/<sourceId>/`. Never includes raw Jira API responses,
+   * raw paste bytes, or PII.
+   */
+  sourceProvenanceRecords?: MultiSourceSourceProvenanceRecord[];
+  /** `true` when the Wave 4 multi-source pipeline produced this manifest. */
+  multiSourceEnabled?: boolean;
+  /** Hard invariant: no raw screenshot bytes leak into export artifacts. */
+  rawScreenshotsIncluded: false;
+  /**
+   * Hard invariant: the structured-test-case generator deployment never
+   * received an image payload during the run.
+   */
+  imagePayloadSentToTestGeneration: false;
+  /** Hard invariant on multi-source manifests: raw Jira responses not persisted. */
+  rawJiraResponsePersisted?: false;
+  /** Hard invariant on multi-source manifests: raw paste bytes not persisted. */
+  rawPasteBytesPersisted?: false;
+}
+
+/**
+ * Numeric thresholds applied by the Wave 1 Validation evaluation gate. Each
+ * threshold is enforced on a per-fixture basis. Fractions are in `[0, 1]`.
+ */
+export interface Wave1ValidationEvalThresholds {
+  /** Fraction of detected fields covered by at least one approved test case. */
+  minTraceCoverageFields: number;
+  /** Fraction of detected actions covered by at least one approved test case. */
+  minTraceCoverageActions: number;
+  /** Fraction of detected validations covered by at least one approved test case. */
+  minTraceCoverageValidations: number;
+  /** Fraction of approved cases whose `qcMappingPreview.exportable` is true. */
+  minQcMappingExportableFraction: number;
+  /**
+   * Maximum allowed pairwise duplicate similarity across all generated cases.
+   * Computed by `detectDuplicateTestCases` on case fingerprints.
+   */
+  maxDuplicateSimilarity: number;
+  /** Minimum number of `expectedResults` entries required per approved case. */
+  minExpectedResultsPerCase: number;
+  /** Minimum number of approved cases required after the review gate. */
+  minApprovedCases: number;
+  /** Validation pipeline must not block. */
+  requirePolicyPass: boolean;
+  /** Visual sidecar gate must not block (when sidecar is present). */
+  requireVisualSidecarPass: boolean;
+  /**
+   * Optional minimum job-level self-verify rubric score in `[0, 1]`
+   * (Issue #1379). When set, the eval gate fails the run if the rubric
+   * pass produced a `jobLevelRubricScore` strictly below this threshold.
+   * When omitted, the rubric job-level score is informational only.
+   */
+  minJobRubricScore?: number;
+  /**
+   * When `true`, the eval gate also fails when the self-verify rubric
+   * pass attached a `refusal` to its report. Defaulted to `false` so
+   * the eval gate stays byte-stable for fixtures that do not exercise
+   * the opt-in pass.
+   */
+  requireRubricPass?: boolean;
+}
+
+/** Failure record describing a single threshold breach. */
+export interface Wave1ValidationEvalFailure {
+  rule:
+    | "min_trace_coverage_fields"
+    | "min_trace_coverage_actions"
+    | "min_trace_coverage_validations"
+    | "min_qc_mapping_exportable_fraction"
+    | "max_duplicate_similarity"
+    | "min_expected_results_per_case"
+    | "min_approved_cases"
+    | "policy_blocked"
+    | "visual_sidecar_blocked"
+    | "validation_blocked"
+    | "export_refused"
+    | "min_job_rubric_score"
+    | "rubric_pass_refused";
+  /** Numeric or boolean observed value (encoded as number for comparators). */
+  actual: number;
+  /** Numeric or boolean threshold that was breached. */
+  threshold: number;
+  message: string;
+}
+
+/** Per-fixture metrics computed by the Wave 1 Validation evaluation gate. */
+export interface Wave1ValidationEvalFixtureMetrics {
+  fixtureId: string;
+  totalGeneratedCases: number;
+  approvedCases: number;
+  blockedCases: number;
+  needsReviewCases: number;
+  detectedFields: number;
+  coveredFields: number;
+  detectedActions: number;
+  coveredActions: number;
+  detectedValidations: number;
+  coveredValidations: number;
+  exportableApprovedCases: number;
+  maxObservedDuplicateSimilarity: number;
+  minObservedExpectedResultsPerCase: number;
+  policyBlocked: boolean;
+  validationBlocked: boolean;
+  visualSidecarBlocked: boolean;
+  exportRefused: boolean;
+  /**
+   * Optional job-level self-verify rubric score (Issue #1379). Only
+   * present when the rubric pass ran for the fixture. Mirrors the value
+   * stored on `coverage-report.json#rubricScore` (rounded to 6 digits).
+   */
+  jobRubricScore?: number;
+  /**
+   * Whether the rubric pass attached a `refusal` to its report
+   * (Issue #1379). `true` when the LLM gateway refused, the response
+   * failed schema validation, or the per-case score set was incomplete.
+   */
+  rubricRefused?: boolean;
+}
+
+/** Per-fixture evaluation outcome. */
+export interface Wave1ValidationEvalFixtureReport {
+  fixtureId: string;
+  pass: boolean;
+  metrics: Wave1ValidationEvalFixtureMetrics;
+  failures: Wave1ValidationEvalFailure[];
+}
+
+/**
+ * Aggregate evaluation report covering one or more fixtures. This artifact
+ * is byte-stable: fixtures and failures are sorted, hashes are not embedded,
+ * and timestamps are caller-provided.
+ */
+export interface Wave1ValidationEvalReport {
+  schemaVersion: typeof WAVE1_VALIDATION_EVAL_REPORT_SCHEMA_VERSION;
+  contractVersion: string;
+  testIntelligenceContractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  generatedAt: string;
+  thresholds: Wave1ValidationEvalThresholds;
+  fixtures: Wave1ValidationEvalFixtureReport[];
+  pass: boolean;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Wave 1 Validation in-toto attestation + Sigstore signing (Issue #1377)    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Schema version for the in-toto v1 attestation envelope produced per
+ * job by the Wave 1 Validation harness. Bumped on any breaking change to the
+ * statement payload, predicate shape, or DSSE encoding.
+ */
+export const WAVE1_VALIDATION_ATTESTATION_SCHEMA_VERSION = "1.0.0" as const;
+
+/** in-toto v1 statement type URI. */
+export const WAVE1_VALIDATION_ATTESTATION_STATEMENT_TYPE =
+  "https://in-toto.io/Statement/v1" as const;
+
+/**
+ * Predicate type URI identifying the Wave 1 Validation evidence shape. Bumped
+ * in lockstep with the schema version when the predicate fields change.
+ */
+export const WAVE1_VALIDATION_ATTESTATION_PREDICATE_TYPE =
+  "https://workspace-dev.figmapipe.dev/test-intelligence/wave1-validation-evidence/v1" as const;
+
+/**
+ * DSSE `payloadType` stamped onto every in-toto attestation. The pre-
+ * authentication encoding (PAE) hashes this value alongside the payload
+ * bytes so it is bound to the signature.
+ */
+export const WAVE1_VALIDATION_ATTESTATION_PAYLOAD_TYPE =
+  "application/vnd.in-toto+json" as const;
+
+/** Filename of the persisted in-toto DSSE envelope. */
+export const WAVE1_VALIDATION_ATTESTATION_ARTIFACT_FILENAME =
+  "wave1-validation-attestation.intoto.json" as const;
+
+/** Filename of the persisted Sigstore bundle when signing is enabled. */
+export const WAVE1_VALIDATION_ATTESTATION_BUNDLE_FILENAME =
+  "wave1-validation-attestation.bundle.json" as const;
+
+/** Subdirectory under a run dir where attestation envelopes are persisted. */
+export const WAVE1_VALIDATION_ATTESTATIONS_DIRECTORY =
+  "evidence/attestations" as const;
+
+/** Subdirectory under a run dir where Sigstore signature bundles are persisted. */
+export const WAVE1_VALIDATION_SIGNATURES_DIRECTORY =
+  "evidence/signatures" as const;
+
+/** Sigstore bundle media type — pinned to the v0.3 envelope shape. */
+export const WAVE1_VALIDATION_ATTESTATION_BUNDLE_MEDIA_TYPE =
+  "application/vnd.dev.sigstore.bundle.v0.3+json" as const;
+
+/**
+ * Allowed signing modes for the Wave 1 Validation attestation.
+ *
+ * - `unsigned` (default) — emit DSSE envelope with empty `signatures`,
+ *   no Sigstore bundle. Always works air-gapped without network access.
+ * - `sigstore` — emit DSSE envelope with one or more signatures and a
+ *   Sigstore bundle alongside. The signer is operator-supplied; the
+ *   built-in key-bound signer uses ECDSA P-256 from `node:crypto` so
+ *   tests and verifiers run without external network calls. A keyless
+ *   flow (Fulcio + Rekor) plugs into the same signer interface but is
+ *   never invoked by default.
+ */
+export const ALLOWED_WAVE1_VALIDATION_ATTESTATION_SIGNING_MODES = [
+  "unsigned",
+  "sigstore",
+] as const;
+
+/** Discriminant of the active signing mode. */
+export type Wave1ValidationAttestationSigningMode =
+  (typeof ALLOWED_WAVE1_VALIDATION_ATTESTATION_SIGNING_MODES)[number];
+
+/** Subject record inside the in-toto v1 statement. */
+export interface Wave1ValidationAttestationSubject {
+  /** Relative artifact path inside the run directory (no leading slash). */
+  name: string;
+  /** Subject digest map. Always populated with at least `sha256`. */
+  digest: { sha256: string };
+}
+
+/**
+ * Visual-sidecar identity carried into the attestation predicate so an
+ * auditor can verify the multimodal chain of custody (Issue #1386
+ * addendum to #1377). Mirrors the fields already attested on the
+ * evidence manifest but pinned to the predicate version.
+ */
+export interface Wave1ValidationAttestationVisualSidecarIdentity {
+  selectedDeployment: SidecarDeployment;
+  fallbackReason: VisualSidecarFallbackReason;
+  visualPrimary?: SidecarDeployment | "none";
+  visualFallback?: SidecarDeployment | "none";
+  resultArtifactSha256: string;
+}
+
+/**
+ * Predicate body of the Wave 1 Validation attestation. The predicate carries
+ * pipeline-identity facts (model deployments, prompt template, schema,
+ * policy, export profile) plus the manifest's own SHA-256 so the
+ * statement attests both the artifact subjects and the metadata
+ * envelope used to produce them. No secrets, prompts, or response
+ * bodies are embedded — only identity hashes and version stamps.
+ */
+export interface Wave1ValidationAttestationPredicate {
+  schemaVersion: typeof WAVE1_VALIDATION_ATTESTATION_SCHEMA_VERSION;
+  contractVersion: string;
+  testIntelligenceContractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  fixtureId: string;
+  jobId: string;
+  generatedAt: string;
+  /** Versions stamped by the harness at run time. */
+  promptTemplateVersion: typeof TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION;
+  generatedTestCaseSchemaVersion: typeof GENERATED_TEST_CASE_SCHEMA_VERSION;
+  visualSidecarSchemaVersion: typeof VISUAL_SIDECAR_SCHEMA_VERSION;
+  redactionPolicyVersion: typeof REDACTION_POLICY_VERSION;
+  /** Policy bundle identity (validation gate). */
+  policyProfileId: string;
+  policyProfileVersion: string;
+  /** Export profile identity (export-only QC pipeline). */
+  exportProfileId: string;
+  exportProfileVersion: string;
+  /** Replay-cache identity hashes. */
+  promptHash: string;
+  schemaHash: string;
+  inputHash: string;
+  cacheKeyDigest: string;
+  /** Identity of every model role active during the run. */
+  modelDeployments: {
+    testGeneration: string;
+    visualPrimary?: SidecarDeployment | "none";
+    visualFallback?: SidecarDeployment | "none";
+  };
+  /** Visual-sidecar chain-of-custody identity (when present). */
+  visualSidecar?: Wave1ValidationAttestationVisualSidecarIdentity;
+  /** Active signing mode; mirrored from the run input for auditability. */
+  signingMode: Wave1ValidationAttestationSigningMode;
+  /** SHA-256 of the canonical evidence manifest the attestation covers. */
+  manifestSha256: string;
+  /**
+   * SHA-256 of the canonical per-source FinOps breakdown embedded in the
+   * FinOps report. Present when the run emitted `finops/budget-report.json`.
+   */
+  bySourceHash?: string;
+  /** Filename of the manifest artifact (relative to the run dir). */
+  manifestFilename: typeof WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME;
+  /** Hard invariant — no raw screenshot bytes attested. */
+  rawScreenshotsIncluded: false;
+  /** Hard invariant — no API keys / bearer tokens attested. */
+  secretsIncluded: false;
+  /** Hard invariant — test_generation never received an image payload. */
+  imagePayloadSentToTestGeneration: false;
+}
+
+/** in-toto v1 statement envelope (the DSSE payload after base64 decode). */
+export interface Wave1ValidationAttestationStatement {
+  _type: typeof WAVE1_VALIDATION_ATTESTATION_STATEMENT_TYPE;
+  predicateType: typeof WAVE1_VALIDATION_ATTESTATION_PREDICATE_TYPE;
+  /** Sorted-by-name, de-duplicated subject list. */
+  subject: Wave1ValidationAttestationSubject[];
+  predicate: Wave1ValidationAttestationPredicate;
+}
+
+/** A single signature attached to a DSSE envelope. */
+export interface Wave1ValidationAttestationSignature {
+  /** Stable, non-secret identifier for the signing key. */
+  keyid: string;
+  /** Base64 (RFC 4648 §4) encoded signature bytes. */
+  sig: string;
+}
+
+/**
+ * DSSE envelope (canonical form). When `signatures` is empty the
+ * envelope represents an unsigned attestation. When populated, each
+ * signature is an ECDSA P-256 signature over the PAE-encoded
+ * (payloadType, payload) tuple, base64-encoded into `sig`.
+ */
+export interface Wave1ValidationAttestationDsseEnvelope {
+  /** Base64 (RFC 4648 §4) encoded `Wave1ValidationAttestationStatement` JSON. */
+  payload: string;
+  payloadType: typeof WAVE1_VALIDATION_ATTESTATION_PAYLOAD_TYPE;
+  signatures: Wave1ValidationAttestationSignature[];
+}
+
+/**
+ * Public-key verification material. Used by the key-bound Sigstore
+ * signing flow (and by air-gapped verifiers that pin a single signer
+ * key). The PEM-encoded public key MUST be a SubjectPublicKeyInfo over
+ * the prime256v1 (P-256) curve.
+ */
+export interface Wave1ValidationAttestationPublicKeyMaterial {
+  /** Stable, non-secret signer reference (matches `Wave1ValidationAttestationSignature.keyid`). */
+  hint: string;
+  /** PEM-encoded SubjectPublicKeyInfo for the matching public key. */
+  publicKeyPem: string;
+  /** Signing algorithm used to produce the DSSE signatures. */
+  algorithm: "ecdsa-p256-sha256";
+}
+
+/**
+ * X.509 certificate-chain verification material. Used by the Sigstore
+ * keyless signing flow: the leaf certificate carries the OIDC-bound
+ * subject identity and is signed by Fulcio. Verifiers reconstruct the
+ * public key from the leaf certificate, then validate it through the
+ * chain to a trust root the operator pins.
+ *
+ * The repo does not vendor Fulcio root certificates — operators wire
+ * the trust root themselves. The cert-chain shape is provided here as
+ * a load-bearing type so the Sigstore bundle media type can carry
+ * keyless signatures end-to-end without breaking changes.
+ */
+export interface Wave1ValidationAttestationCertificateChainMaterial {
+  /** Stable, non-secret signer reference (matches `Wave1ValidationAttestationSignature.keyid`). */
+  hint: string;
+  /**
+   * PEM-encoded certificate chain, leaf first. The leaf certificate's
+   * subject public key is used to verify the DSSE signature. Operators
+   * wiring full Sigstore keyless flow include the Fulcio-issued leaf
+   * (with the OIDC subject as a SAN extension) and any intermediate(s)
+   * up to a trust root.
+   */
+  certificateChainPem: string;
+  /** Signing algorithm used to produce the DSSE signatures. */
+  algorithm: "ecdsa-p256-sha256";
+  /**
+   * Optional Rekor transparency-log inclusion proof reference. When
+   * present, a verifier MAY consult its trusted Rekor instance to
+   * confirm the entry is logged. The repo never fetches Rekor by
+   * default; the field is opaque metadata.
+   */
+  rekorLogIndex?: number;
+}
+
+/**
+ * Sigstore bundle verification material. Discriminated by which form
+ * the operator wires: `publicKey` for key-bound signing (the repo's
+ * default), `x509CertificateChain` for keyless signing (operator-
+ * supplied integration with Fulcio + Rekor).
+ */
+export type Wave1ValidationAttestationVerificationMaterial =
+  | { publicKey: Wave1ValidationAttestationPublicKeyMaterial }
+  | {
+      x509CertificateChain: Wave1ValidationAttestationCertificateChainMaterial;
+    };
+
+/** Sigstore-shaped bundle persisted alongside a signed attestation. */
+export interface Wave1ValidationAttestationBundle {
+  mediaType: typeof WAVE1_VALIDATION_ATTESTATION_BUNDLE_MEDIA_TYPE;
+  /**
+   * The DSSE envelope this bundle witnesses. Identical bytes to the
+   * `evidence/attestations/...` artifact; duplication is intentional so
+   * the bundle is self-contained.
+   */
+  dsseEnvelope: Wave1ValidationAttestationDsseEnvelope;
+  /** Verification material — public key OR x509 certificate chain. */
+  verificationMaterial: Wave1ValidationAttestationVerificationMaterial;
+}
+
+/**
+ * Audit-timeline summary surfaced on the harness result. Carries only
+ * non-secret identifiers and digests so callers can render signing
+ * provenance without re-reading on-disk artifacts.
+ */
+export interface Wave1ValidationAttestationSummary {
+  signingMode: Wave1ValidationAttestationSigningMode;
+  /** Stable signer identifier (matches `keyid`). `undefined` when unsigned. */
+  signerReference?: string;
+  /** Relative path of the persisted in-toto envelope. */
+  attestationFilename: string;
+  /** SHA-256 of the canonical envelope bytes. */
+  attestationSha256: string;
+  /** Relative path of the Sigstore bundle. `undefined` when unsigned. */
+  bundleFilename?: string;
+  /** SHA-256 of the canonical bundle bytes. `undefined` when unsigned. */
+  bundleSha256?: string;
+}
+
+/**
+ * Failure record produced by `verifyWave1ValidationAttestation`. Each failure
+ * names the specific subject / signature / metadata field that failed
+ * so an auditor can pinpoint the mismatch without re-running the
+ * harness.
+ */
+export interface Wave1ValidationAttestationVerificationFailure {
+  /** Stable failure code. */
+  code:
+    | "envelope_unparseable"
+    | "envelope_payload_type_mismatch"
+    | "envelope_payload_decode_failed"
+    | "statement_unparseable"
+    | "statement_type_mismatch"
+    | "statement_predicate_type_mismatch"
+    | "statement_predicate_invalid"
+    | "subject_missing_artifact"
+    | "subject_digest_mismatch"
+    | "subject_unattested_artifact"
+    | "signing_mode_mismatch"
+    | "signature_required"
+    | "signature_unsigned_envelope_carries_signatures"
+    | "signature_invalid_keyid"
+    | "signature_invalid_encoding"
+    | "signature_unverified"
+    | "bundle_missing"
+    | "bundle_envelope_mismatch"
+    | "bundle_public_key_missing"
+    | "manifest_sha256_mismatch"
+    | "bySource_hash_mismatch";
+  /** Subject / artifact / field that triggered the failure. */
+  reference: string;
+  /** Human-readable diagnostic. Never includes secrets. */
+  message: string;
+}
+
+/** Result of `verifyWave1ValidationAttestation`. */
+export interface Wave1ValidationAttestationVerificationResult {
+  ok: boolean;
+  signingMode: Wave1ValidationAttestationSigningMode;
+  /** Number of signatures present (0 for unsigned). */
+  signatureCount: number;
+  /** True iff every present signature verified against `publicKey`. */
+  signaturesVerified: boolean;
+  /** Structured failure list — empty when `ok === true`. */
+  failures: Wave1ValidationAttestationVerificationFailure[];
+}
+
+/* ------------------------------------------------------------------ */
+/*  QC adapter + dry-run report (Issue #1368)                          */
+/* ------------------------------------------------------------------ */
+
+/** Schema version for the persisted dry-run report artifact (Issue #1368). */
+export const DRY_RUN_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the persisted dry-run report artifact. */
+export const DRY_RUN_REPORT_ARTIFACT_FILENAME = "dry-run-report.json" as const;
+
+/**
+ * Allowed transfer modes recognised by the QC adapter façade.
+ *
+ * - `export_only` — produce on-disk artifacts; no QC API touched.
+ * - `dry_run` — validate target mapping (folder, fields, schema) without
+ *   creating tests in the QC tool.
+ * - `api_transfer` — controlled OpenText ALM write path implemented by the
+ *   Wave 3 transfer orchestrator. The dry-run adapter still throws
+ *   `mode_not_implemented` when called directly with this mode.
+ */
+export const ALLOWED_QC_ADAPTER_MODES = [
+  "export_only",
+  "dry_run",
+  "api_transfer",
+] as const;
+export type QcAdapterMode = (typeof ALLOWED_QC_ADAPTER_MODES)[number];
+
+/**
+ * Allowed QC adapter provider discriminators. Wave 2 ships `opentext_alm`;
+ * the rest are stub identifiers reserved so future adapters plug in
+ * without contract churn.
+ */
+export const ALLOWED_QC_ADAPTER_PROVIDERS = [
+  "opentext_alm",
+  "opentext_octane",
+  "opentext_valueedge",
+  "xray",
+  "testrail",
+  "azure_devops_test_plans",
+  "qtest",
+  "custom",
+] as const;
+export type QcAdapterProvider = (typeof ALLOWED_QC_ADAPTER_PROVIDERS)[number];
+
+/**
+ * Allowed mapping-profile validation issue codes (Issue #1368). Tracks the
+ * `ValidationIssue[]` style used elsewhere in test-intelligence.
+ */
+export const ALLOWED_QC_MAPPING_PROFILE_ISSUE_CODES = [
+  "missing_base_url_alias",
+  "invalid_base_url_alias",
+  "missing_domain",
+  "missing_project",
+  "missing_target_folder_path",
+  "invalid_target_folder_path",
+  "missing_test_entity_type",
+  "unsupported_test_entity_type",
+  "missing_required_fields",
+  "duplicate_required_field",
+  "missing_design_step_mapping",
+  "design_step_mapping_field_invalid",
+  "credential_like_field_present",
+  "provider_mismatch",
+  "profile_id_mismatch",
+] as const;
+export type QcMappingProfileIssueCode =
+  (typeof ALLOWED_QC_MAPPING_PROFILE_ISSUE_CODES)[number];
+
+/**
+ * Allowed reasons the QC adapter may refuse to produce a dry-run report.
+ *
+ * `provider_not_implemented` (Issue #1374) is appended at the end so the
+ * ordinal positions of prior codes stay byte-stable for callers that pin
+ * to a known index. The code is emitted by the dry-run-only stub adapter
+ * for non-ALM providers that have no real implementation yet.
+ */
+export const ALLOWED_DRY_RUN_REFUSAL_CODES = [
+  "no_mapped_test_cases",
+  "mapping_profile_invalid",
+  "provider_mismatch",
+  "mode_not_implemented",
+  "folder_resolution_failed",
+  "provider_not_implemented",
+] as const;
+export type DryRunRefusalCode = (typeof ALLOWED_DRY_RUN_REFUSAL_CODES)[number];
+
+/**
+ * Allowed QC provider operations (Issue #1374).
+ *
+ * Each builtin provider descriptor advertises which of these operations its
+ * adapter implements. The registry uses the matrix to surface "what does
+ * this provider support" without coupling to a concrete adapter:
+ *
+ *   - `validate_profile` — pure structural validator runs against the
+ *     supplied mapping profile.
+ *   - `resolve_target_folder` — adapter knows how to validate a target
+ *     folder path against its provider (read-only resolver).
+ *   - `dry_run` — adapter can produce a `DryRunReportArtifact` (potentially
+ *     a fail-closed stub).
+ *   - `export_only` — adapter can emit export-only artifacts.
+ *   - `api_transfer` — adapter can perform controlled API writes.
+ *   - `register_custom` — caller may register a custom adapter under this
+ *     provider id (only true for the reserved `custom` slot).
+ */
+export const ALLOWED_QC_PROVIDER_OPERATIONS = [
+  "validate_profile",
+  "resolve_target_folder",
+  "dry_run",
+  "export_only",
+  "api_transfer",
+  "register_custom",
+] as const;
+export type QcProviderOperation =
+  (typeof ALLOWED_QC_PROVIDER_OPERATIONS)[number];
+
+/** Allowed states of a target-folder resolution attempt under `dry_run`. */
+export const ALLOWED_DRY_RUN_FOLDER_RESOLUTION_STATES = [
+  "resolved",
+  "missing",
+  "simulated",
+  "invalid_path",
+] as const;
+export type DryRunFolderResolutionState =
+  (typeof ALLOWED_DRY_RUN_FOLDER_RESOLUTION_STATES)[number];
+
+/** Provider-neutral mapping profile shape consumed by all QC adapters. */
+export interface QcMappingProfile {
+  /** Profile identity (e.g. `opentext-alm-default`). */
+  id: string;
+  version: string;
+  /** QC provider this profile targets. */
+  provider: QcAdapterProvider;
+  /**
+   * Symbolic alias for the base URL of the target QC tenant. Adapters
+   * resolve the actual URL from operator-supplied secrets at call time;
+   * the alias never carries credentials and never embeds userinfo.
+   */
+  baseUrlAlias: string;
+  /** Tenant domain (e.g. `DEFAULT`). */
+  domain: string;
+  /** Tenant project (e.g. `payments-checkout`). */
+  project: string;
+  /** Forward-slash-separated `/Subject/...` folder path used as default root. */
+  targetFolderPath: string;
+  /** Test entity type string accepted by the QC tool (e.g. `MANUAL`). */
+  testEntityType: string;
+  /** Required field names enforced on each mapped case. Sorted, deduped. */
+  requiredFields: string[];
+  /**
+   * Per-design-step field mapping. The keys are the GeneratedTestCaseStep
+   * fields that participate in the QC step entity (`action`, `expected`,
+   * `data`); the values are the QC field names they map to.
+   */
+  designStepMapping: {
+    action: string;
+    expected: string;
+    data?: string;
+  };
+}
+
+/** Single mapping-profile validation issue. */
+export interface QcMappingProfileIssue {
+  path: string;
+  code: QcMappingProfileIssueCode;
+  severity: TestCaseValidationSeverity;
+  message: string;
+}
+
+/** Aggregate mapping-profile validation result. */
+export interface QcMappingProfileValidationResult {
+  ok: boolean;
+  errorCount: number;
+  warningCount: number;
+  issues: QcMappingProfileIssue[];
+}
+
+/**
+ * Capability matrix for a QC provider (Issue #1374).
+ *
+ * Each flag mirrors a `QcProviderOperation`. Wave 3 ships only the
+ * `opentext_alm` provider with the full matrix `true`; the other six
+ * builtin providers advertise dry-run + validate only and refuse writes.
+ * The reserved `custom` slot is published with every flag `false` until a
+ * caller registers a concrete adapter.
+ *
+ * The shape is a closed product type so a future operation cannot be
+ * silently introduced without a contract bump — every consumer reading the
+ * matrix today is guaranteed to see exactly these six fields.
+ */
+export interface QcProviderCapabilities {
+  /** Adapter exposes a structural `validateProfile` pass. */
+  validateProfile: boolean;
+  /** Adapter knows how to validate a target folder path (read-only). */
+  resolveTargetFolder: boolean;
+  /** Adapter can emit a `DryRunReportArtifact` (concrete or fail-closed stub). */
+  dryRun: boolean;
+  /** Adapter can emit export-only artifacts (CSV/XLSX/XML). */
+  exportOnly: boolean;
+  /** Adapter can perform controlled API writes against the live tool. */
+  apiTransfer: boolean;
+  /** Caller may register a concrete custom adapter under this provider id. */
+  registerCustom: boolean;
+}
+
+/**
+ * Descriptor for a builtin or custom-registered QC provider (Issue #1374).
+ *
+ * Descriptors are returned by the registry so a UI or operator audit can
+ * answer "which providers are wired up and what can they do?" without
+ * loading any adapter implementation. They carry no credentials, no URLs,
+ * and no runtime mutable state.
+ */
+export interface QcProviderDescriptor {
+  /** Provider discriminator from `ALLOWED_QC_ADAPTER_PROVIDERS`. */
+  provider: QcAdapterProvider;
+  /** Short human-readable label, e.g. `"OpenText ALM"`. */
+  label: string;
+  /** Semver-shaped descriptor version, bumped when the matrix changes. */
+  version: string;
+  /** True for the eight in-tree descriptors; false for caller-registered slots. */
+  builtin: boolean;
+  /** Capability matrix advertised for this provider. */
+  capabilities: QcProviderCapabilities;
+  /**
+   * Optional pointer to the mapping-profile factory id a caller can use to
+   * seed a fresh profile (e.g. `opentext-alm-default`). Absent when the
+   * provider has no in-tree default profile yet.
+   */
+  mappingProfileSeedId?: string;
+}
+
+/** Per-test-case completeness row inside the dry-run report. */
+export interface DryRunMappingCompletenessEntry {
+  testCaseId: string;
+  externalIdCandidate: string;
+  /** Required field names whose mapped value was missing on the case. */
+  missingRequiredFields: string[];
+  /** True when every required field is populated AND the entry is exportable. */
+  complete: boolean;
+}
+
+/** Aggregate mapping completeness summary. */
+export interface DryRunMappingCompletenessSummary {
+  totalCases: number;
+  completeCases: number;
+  incompleteCases: number;
+  /** Distinct missing-field names across all cases, sorted. */
+  missingFieldsAcrossCases: string[];
+  perCase: DryRunMappingCompletenessEntry[];
+}
+
+/** Outcome of attempting to resolve a target folder under `dry_run`. */
+export interface DryRunFolderResolution {
+  state: DryRunFolderResolutionState;
+  path: string;
+  /**
+   * Free-form, redacted evidence string supplied by the resolver (e.g.
+   * `"simulated:matched-segments=3"`). Never includes a URL or token.
+   */
+  evidence: string;
+}
+
+/** Per-test-case planned ALM entity payload preview (REDACTED). */
+export interface DryRunPlannedEntityPayload {
+  testCaseId: string;
+  externalIdCandidate: string;
+  testEntityType: string;
+  targetFolderPath: string;
+  /** Mapped QC fields (deterministic, redacted, no credentials). */
+  fields: { name: string; value: string }[];
+  /** Number of design steps in the planned payload. */
+  designStepCount: number;
+  /**
+   * Mean visual-sidecar confidence (0..1) across matching screen records,
+   * rounded to 4 decimals for byte-stability. Issue #1374 multimodal
+   * addendum (2026-04-24). Absent (no key set) when the case has no
+   * matching visual records or when emitted by the dry-run stub adapter.
+   */
+  visualConfidence?: number;
+  /**
+   * Sorted, de-duplicated set of non-`ok` outcome codes contributing to the
+   * matching visual records. Surfaces ambiguity reasons (`low_confidence`,
+   * `schema_invalid`, etc.) without re-emitting the raw issue text. Absent
+   * when no records match. Issue #1374.
+   */
+  visualAmbiguityFlags?: VisualSidecarValidationOutcome[];
+  /**
+   * True when at least one matching visual record carries the
+   * `fallback_used` outcome — i.e. the secondary multimodal deployment
+   * produced the description the case relies on. Absent when no records
+   * match. Issue #1374.
+   */
+  visualFallbackUsed?: boolean;
+  /**
+   * Sorted by `screenId`, `modelDeployment`, then `evidenceHash`.
+   * Each ref carries a derivative identity hash that lets a reviewer
+   * correlate the planned payload back to the per-screen validation record
+   * without re-importing raw screenshot bytes. Absent when no records match.
+   * Issue #1374.
+   *
+   * Field semantics:
+   *   - `screenId` — matching `VisualSidecarValidationRecord.screenId`.
+   *   - `modelDeployment` — sourced verbatim from
+   *     `VisualSidecarValidationRecord.deployment`. The contract historically
+   *     uses the field name `deployment` on the record; this ref re-exposes
+   *     it under `modelDeployment` to align with the broader replay-cache
+   *     idiom (see `SelfVerifyRubricReplayCacheKey.modelDeployment`).
+   *   - `evidenceHash` — `sha256` hex of the canonical validation-record
+   *     identity tuple `(screenId|deployment|sortedOutcomes|roundedConfidence)`.
+   *     Note this is NOT a hash of screenshot bytes — the dry-run adapter
+   *     never receives image bytes. The `VisualSidecarCaptureIdentity.sha256`
+   *     (image-byte hash) lives only on the upstream
+   *     `VisualSidecarSuccess` artifact, which dry-run does not consume.
+   */
+  visualEvidenceRefs?: {
+    screenId: string;
+    modelDeployment: string;
+    evidenceHash: string;
+  }[];
+}
+
+/**
+ * Visual evidence flag attached to a mapped case when the case's mapping
+ * derives from low-confidence visual-only sidecar observations (Issue
+ * #1386 / #1368).
+ */
+export interface DryRunVisualEvidenceFlag {
+  testCaseId: string;
+  /** Originating screen ids in the visual sidecar that drive the flag. */
+  screenIds: string[];
+  /** Mean sidecar confidence across the matching screen records (0..1). */
+  sidecarConfidence: number;
+  /** Per-screen ambiguity outcome counts contributing to the flag. */
+  ambiguityFlags: VisualSidecarValidationOutcome[];
+  /** Stable trace references — figmaTraceRefs subset that drove the mapping. */
+  traceRefs: GeneratedTestCaseFigmaTrace[];
+  /**
+   * Explicit reason classification:
+   *   - `visual_only_low_confidence_mapping` — mapping derives only from
+   *     sidecar observations whose confidence is below the configured
+   *     threshold; reviewer must validate before transfer.
+   */
+  reason: "visual_only_low_confidence_mapping";
+}
+
+/** Aggregate dry-run report artifact. */
+export interface DryRunReportArtifact {
+  schemaVersion: typeof DRY_RUN_REPORT_SCHEMA_VERSION;
+  contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  /** Deterministic id derived from job + adapter + profile + clock. */
+  reportId: string;
+  jobId: string;
+  generatedAt: string;
+  mode: QcAdapterMode;
+  adapter: { provider: QcAdapterProvider; version: string };
+  profile: { id: string; version: string };
+  /** True iff the adapter refused to produce a usable report. */
+  refused: boolean;
+  refusalCodes: DryRunRefusalCode[];
+  profileValidation: QcMappingProfileValidationResult;
+  completeness: DryRunMappingCompletenessSummary;
+  folderResolution: DryRunFolderResolution;
+  /** Sorted by `testCaseId`. Empty when the report is refused. */
+  plannedPayloads: DryRunPlannedEntityPayload[];
+  /** Sorted by `testCaseId`. */
+  visualEvidenceFlags: DryRunVisualEvidenceFlag[];
+  /** Hard invariant: raw screenshots are never embedded into dry-run payloads. */
+  rawScreenshotsIncluded: false;
+  /** Hard invariant: credentials are never embedded into dry-run payloads. */
+  credentialsIncluded: false;
+}
+
+/* ------------------------------------------------------------------ */
+/*  QC adapter API transfer report (Issue #1372 — Wave 3)              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Controlled OpenText ALM API transfer surface (Issue #1372).
+ *
+ * Wave 3 introduces the production-capable `api_transfer` mode for the
+ * QC adapter. Unlike `dry_run` (no I/O) or `export_only` (artifact write
+ * only), `api_transfer` performs real writes against an OpenText ALM
+ * tenant — but only after every Wave 1/2 gate has been satisfied:
+ *
+ *   1. Feature gate (`FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE=1`).
+ *   2. Admin/startup gate (`allowApiTransfer=true`).
+ *   3. Bearer token configured + accepted on the server-side caller.
+ *   4. Test cases reached `approved` (or already `exported`/`transferred`).
+ *   5. Policy decisions are not `blocked`.
+ *   6. Dry-run report for the same profile reports `refused: false`.
+ *   7. Visual-sidecar evidence present for visual-driven cases (#1386).
+ *   8. Four-eyes approval recorded when enforced (#1376).
+ *
+ * Transfer is idempotent: re-running on the same approved set never
+ * creates duplicates (lookup by `externalIdCandidate` + `targetFolderPath`).
+ *
+ * Hard invariants stamped at the type level on every emitted artifact:
+ *   - `rawScreenshotsIncluded: false`
+ *   - `credentialsIncluded: false`
+ *   - `transferUrlIncluded: false`
+ */
+
+/** Schema version for the persisted transfer-report artifact (Issue #1372). */
+export const TRANSFER_REPORT_SCHEMA_VERSION = "1.1.0" as const;
+
+/** Canonical filename for the persisted transfer-report artifact. */
+export const TRANSFER_REPORT_ARTIFACT_FILENAME =
+  "transfer-report.json" as const;
+
+/** Schema version for the persisted qc-created-entities artifact (Issue #1372). */
+export const QC_CREATED_ENTITIES_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the persisted qc-created-entities artifact. */
+export const QC_CREATED_ENTITIES_ARTIFACT_FILENAME =
+  "qc-created-entities.json" as const;
+
+/**
+ * Allowed reasons the QC adapter may refuse to perform an API transfer.
+ *
+ * These are evaluated in fail-closed order — the first refusal stops the
+ * pipeline before any state-mutating call leaves the process. The
+ * `transfer-report.json` artifact records every refusal that fired so
+ * the operator can address them all in one cycle.
+ */
+export const ALLOWED_TRANSFER_REFUSAL_CODES = [
+  "feature_disabled",
+  "admin_gate_disabled",
+  "bearer_token_missing",
+  "mapping_profile_invalid",
+  "provider_mismatch",
+  "no_mapped_test_cases",
+  "no_approved_test_cases",
+  "unapproved_test_cases_present",
+  "policy_blocked_cases_present",
+  "schema_invalid_cases_present",
+  "visual_sidecar_blocked",
+  "visual_sidecar_evidence_missing",
+  "review_state_inconsistent",
+  "four_eyes_pending",
+  "dry_run_refused",
+  "dry_run_missing",
+  "folder_resolution_failed",
+  "mode_not_implemented",
+] as const;
+export type TransferRefusalCode =
+  (typeof ALLOWED_TRANSFER_REFUSAL_CODES)[number];
+
+/**
+ * Per-test-case outcome of an API transfer attempt. Discriminated so
+ * report consumers can sort + count without re-deriving the state.
+ *
+ * - `created` — the entity did not exist; create call succeeded.
+ * - `skipped_duplicate` — the entity already exists for this
+ *   `externalIdCandidate` + folder; no write performed.
+ * - `failed` — adapter or transport error. When `qcEntityId` is
+ *   non-empty, the tenant may contain a partially created entity and the
+ *   rollback guidance must include it for operator cleanup.
+ * - `refused` — pipeline-level refusal (e.g. unapproved); no call
+ *   was attempted.
+ */
+export const ALLOWED_TRANSFER_ENTITY_OUTCOMES = [
+  "created",
+  "skipped_duplicate",
+  "failed",
+  "refused",
+] as const;
+export type TransferEntityOutcome =
+  (typeof ALLOWED_TRANSFER_ENTITY_OUTCOMES)[number];
+
+/**
+ * Allowed failure classes for a per-entity transfer failure. Mirrors the
+ * gateway taxonomy so transport faults stay distinguishable from
+ * server-side validation faults.
+ */
+export const ALLOWED_TRANSFER_FAILURE_CLASSES = [
+  "transport_error",
+  "auth_failed",
+  "permission_denied",
+  "validation_rejected",
+  "conflict_unresolved",
+  "rate_limited",
+  "server_error",
+  "unknown",
+] as const;
+export type TransferFailureClass =
+  (typeof ALLOWED_TRANSFER_FAILURE_CLASSES)[number];
+
+/** Hash-only evidence references that bind transfer to upstream artifacts. */
+export interface TransferEvidenceReferences {
+  /** SHA-256 hex of the QC mapping preview consumed by transfer. */
+  qcMappingPreviewHash: string;
+  /** SHA-256 hex of the dry-run report consumed by transfer. */
+  dryRunReportHash: string;
+  /** SHA-256 hex of the visual-sidecar validation report, when present. */
+  visualSidecarReportHash: string;
+  /** Sorted hash-only references to sidecar evidence used by mapped cases. */
+  visualSidecarEvidenceHashes: string[];
+  /** Optional SHA-256 hex of the generated test-case artifact. */
+  generationOutputHash?: string;
+  /** Optional SHA-256 hex of the reconciled intent IR artifact. */
+  reconciledIntentIrHash?: string;
+}
+
+/** Audit metadata describing the operator/principal that authorised the run. */
+export interface TransferAuditMetadata {
+  /** Opaque actor handle; never an email or token. */
+  actor: string;
+  /** Stable id for the operator-supplied bearer-token principal. */
+  authPrincipalId: string;
+  /**
+   * Whether the operator-supplied bearer token matched a configured
+   * principal. `true` is required for the transfer to proceed.
+   */
+  bearerTokenAccepted: boolean;
+  /** Reasons four-eyes review applied to one or more cases (sorted, deduped). */
+  fourEyesReasons: FourEyesEnforcementReason[];
+  /** Identity of the dry-run report consumed; binds the run to a validation. */
+  dryRunReportId: string;
+  /** Hash-only upstream artifact references; never raw prompts, screenshots, or credentials. */
+  evidenceReferences: TransferEvidenceReferences;
+}
+
+/** Per-entity record inside the transfer report. */
+export interface TransferEntityRecord {
+  testCaseId: string;
+  externalIdCandidate: string;
+  targetFolderPath: string;
+  outcome: TransferEntityOutcome;
+  /**
+   * Resolved QC entity id when the outcome is `created`, `skipped_duplicate`,
+   * or a failed attempt left a partial tenant entity. Empty for `refused`.
+   */
+  qcEntityId: string;
+  /** Number of design steps the adapter created for this entity. */
+  designStepsCreated: number;
+  /** Wall-clock timestamp at which the adapter recorded the outcome. */
+  recordedAt: string;
+  /** Failure class when `outcome === "failed"`; absent otherwise. */
+  failureClass?: TransferFailureClass;
+  /** Sanitised, length-bounded failure detail; never carries URLs/tokens. */
+  failureDetail?: string;
+}
+
+/** Single created QC entity row in `qc-created-entities.json`. */
+export interface QcCreatedEntity {
+  testCaseId: string;
+  externalIdCandidate: string;
+  qcEntityId: string;
+  /** Forward-slash-separated folder path under the profile root. */
+  targetFolderPath: string;
+  /** ISO-8601 UTC timestamp at which the entity was first created. */
+  createdAt: string;
+  /** Number of design steps persisted alongside the entity. */
+  designStepCount: number;
+  /**
+   * `true` when the entity already existed on a prior transfer run for
+   * the same `(externalIdCandidate, targetFolderPath)` tuple. Idempotent
+   * re-runs preserve this flag so audit logs document the lineage.
+   */
+  preExisting: boolean;
+}
+
+/** Aggregate `qc-created-entities.json` artifact (Issue #1372). */
+export interface QcCreatedEntitiesArtifact {
+  schemaVersion: typeof QC_CREATED_ENTITIES_SCHEMA_VERSION;
+  contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  jobId: string;
+  generatedAt: string;
+  profileId: string;
+  profileVersion: string;
+  /** Sorted by `testCaseId` for deterministic emission. */
+  entities: QcCreatedEntity[];
+  /** Hard invariant: never carries the resolved transfer URL. */
+  transferUrlIncluded: false;
+}
+
+/** Aggregate `transfer-report.json` artifact (Issue #1372). */
+export interface TransferReportArtifact {
+  schemaVersion: typeof TRANSFER_REPORT_SCHEMA_VERSION;
+  contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  /** Deterministic id derived from job + adapter + profile + clock. */
+  reportId: string;
+  jobId: string;
+  generatedAt: string;
+  mode: QcAdapterMode;
+  adapter: { provider: QcAdapterProvider; version: string };
+  profile: { id: string; version: string };
+  /** True iff the pipeline refused to perform any write. */
+  refused: boolean;
+  refusalCodes: TransferRefusalCode[];
+  /** Sorted by `testCaseId`. Empty when refused before any attempt. */
+  records: TransferEntityRecord[];
+  /** Number of records whose outcome is `created`. */
+  createdCount: number;
+  /** Number of records whose outcome is `skipped_duplicate`. */
+  skippedDuplicateCount: number;
+  /** Number of records whose outcome is `failed`. */
+  failedCount: number;
+  /** Number of records whose outcome is `refused`. */
+  refusedCount: number;
+  /** Audit metadata for the run. */
+  audit: TransferAuditMetadata;
+  /** Hard invariant: raw screenshots are never embedded into transfer payloads. */
+  rawScreenshotsIncluded: false;
+  /** Hard invariant: credentials are never embedded into transfer payloads. */
+  credentialsIncluded: false;
+  /** Hard invariant: never carries the resolved transfer URL. */
+  transferUrlIncluded: false;
+}
+
+/**
+ * Jira Write Workflow contract surface (Issue #1482, Wave 5).
+ *
+ * Approved test cases may be written back to Jira as sub-tasks of a
+ * specified parent issue. The pipeline is opt-in and fail-closed across
+ * eight stacked gates (feature flag, admin gate, bearer token, valid
+ * `parentIssueKey`, at least one approved case, no policy-blocked
+ * cases, no schema-invalid cases, no visual-sidecar-blocked cases). All
+ * gate violations are collected and reported in
+ * `jira-write-report.json` so an operator can address them in one cycle.
+ *
+ * Idempotency is enforced via a stable `externalId` derived from the
+ * `(jobId, testCaseId, parentIssueKey)` triple; lookups against the
+ * tenant short-circuit duplicates to `skipped_duplicate`.
+ *
+ * Hard invariants stamped at the type level on every emitted artifact:
+ *   - `rawScreenshotsIncluded: false`
+ *   - `credentialsIncluded: false`
+ *
+ * Markdown artifacts are written separately (per test case) and never
+ * embed bearer tokens, raw screenshots, or base64 image data.
+ */
+
+/** Schema version for the persisted Jira write report artifact (Issue #1482). */
+export const JIRA_WRITE_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the Jira write report artifact. */
+export const JIRA_WRITE_REPORT_ARTIFACT_FILENAME =
+  "jira-write-report.json" as const;
+
+/** Sub-directory under the run dir where Jira write artifacts are persisted. */
+export const JIRA_WRITE_REPORT_ARTIFACT_DIRECTORY = "jira-write" as const;
+
+/** Schema version for the persisted Jira created sub-tasks artifact (Issue #1482). */
+export const JIRA_CREATED_SUBTASKS_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the Jira created sub-tasks artifact. */
+export const JIRA_CREATED_SUBTASKS_ARTIFACT_FILENAME =
+  "jira-created-subtasks.json" as const;
+
+/**
+ * Allowed Jira write modes. Only `jira_subtasks` is shipped in Wave 5;
+ * the array is the source of truth so future modes plug in without
+ * changing call sites.
+ */
+export const ALLOWED_JIRA_WRITE_MODE_VALUES = ["jira_subtasks"] as const;
+export type JiraWriteMode = (typeof ALLOWED_JIRA_WRITE_MODE_VALUES)[number];
+
+/**
+ * Allowed reasons the Jira write pipeline may refuse to perform any
+ * sub-task creation. Evaluated in fail-closed order; every fired refusal
+ * is recorded so operators can address them all in one cycle.
+ */
+export const ALLOWED_JIRA_WRITE_REFUSAL_CODES = [
+  "feature_gate_disabled",
+  "admin_gate_disabled",
+  "bearer_token_missing",
+  "invalid_parent_issue_key",
+  "no_approved_test_cases",
+  "policy_blocked_cases_present",
+  "schema_invalid_cases_present",
+  "visual_sidecar_blocked",
+] as const;
+export type JiraWriteRefusalCode =
+  (typeof ALLOWED_JIRA_WRITE_REFUSAL_CODES)[number];
+
+/**
+ * Per-case outcome of a Jira sub-task write attempt.
+ *
+ * - `created` — sub-task did not exist; Jira create call succeeded.
+ * - `skipped_duplicate` — sub-task already exists for this `externalId`
+ *   on the parent; no write performed.
+ * - `failed` — adapter or transport error; pipeline continued with
+ *   subsequent cases (per-case failure isolation).
+ * - `dry_run` — pipeline was invoked with `dryRun=true`; no Jira call
+ *   was attempted.
+ */
+export const ALLOWED_JIRA_WRITE_ENTITY_OUTCOMES = [
+  "created",
+  "skipped_duplicate",
+  "failed",
+  "dry_run",
+] as const;
+export type JiraWriteEntityOutcome =
+  (typeof ALLOWED_JIRA_WRITE_ENTITY_OUTCOMES)[number];
+
+/**
+ * Allowed failure classes for a per-case Jira write failure. Mirrors the
+ * Jira gateway taxonomy so transport faults stay distinguishable from
+ * server-side validation faults.
+ */
+export const ALLOWED_JIRA_WRITE_FAILURE_CLASSES = [
+  "transport_error",
+  "auth_failed",
+  "permission_denied",
+  "validation_rejected",
+  "rate_limited",
+  "server_error",
+  "provider_not_implemented",
+  "unknown",
+] as const;
+export type JiraWriteFailureClass =
+  (typeof ALLOWED_JIRA_WRITE_FAILURE_CLASSES)[number];
+
+/**
+ * Per-test-case sub-task record persisted in `jira-created-subtasks.json`
+ * and embedded in the audit-shaped `jira-write-report.json`.
+ */
+export interface JiraSubTaskRecord {
+  /** Generated test case identifier this sub-task corresponds to. */
+  testCaseId: string;
+  /** Stable idempotency key SHA-256(`jobId|testCaseId|parentIssueKey`). */
+  externalId: string;
+  outcome: JiraWriteEntityOutcome;
+  /** Resolved Jira issue key for the created or pre-existing sub-task. */
+  jiraIssueKey?: string;
+  /** Failure classification when `outcome === "failed"`. */
+  failureClass?: JiraWriteFailureClass;
+  /**
+   * Whether the failed sub-task attempt is safe to retry later. Present only
+   * for failed outcomes so persisted status can distinguish transient
+   * transport/rate-limit/server failures from permanent validation/auth faults.
+   */
+  retryable?: boolean;
+  /** Sanitised, length-bounded failure detail; never carries URLs/tokens. */
+  failureDetail?: string;
+}
+
+/** Aggregate `jira-created-subtasks.json` artifact (Issue #1482). */
+export interface JiraCreatedSubtasksArtifact {
+  schemaVersion: typeof JIRA_CREATED_SUBTASKS_SCHEMA_VERSION;
+  contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  jobId: string;
+  parentIssueKey: string;
+  generatedAt: string;
+  /** Sorted by `testCaseId` for deterministic emission. */
+  subtasks: JiraSubTaskRecord[];
+  /** Hard invariant: raw screenshots are never embedded in Jira write payloads. */
+  rawScreenshotsIncluded: false;
+  /** Hard invariant: credentials are never embedded in Jira write payloads. */
+  credentialsIncluded: false;
+}
+
+/** Audit metadata persisted alongside the Jira write report. */
+export interface JiraWriteAuditMetadata {
+  /** Stable opaque principal id; never an email or token. */
+  principalId: string;
+  /** Whether a bearer token was configured for the run. */
+  bearerConfigured: boolean;
+  /** Whether the admin gate (`allowJiraWrite`) was enabled. */
+  adminEnabled: boolean;
+  /** Whether the run was a dry-run (no live Jira calls). */
+  dryRun: boolean;
+  /** Mode used by this run; only `jira_subtasks` is shipped in Wave 5. */
+  mode: JiraWriteMode;
+}
+
+/** Aggregate `jira-write-report.json` artifact (Issue #1482). */
+export interface JiraWriteReportArtifact {
+  schemaVersion: typeof JIRA_WRITE_REPORT_SCHEMA_VERSION;
+  contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  jobId: string;
+  parentIssueKey: string;
+  generatedAt: string;
+  /** True iff the pipeline refused to perform any write. */
+  refused: boolean;
+  /** Sorted, deduplicated refusal codes that fired. */
+  refusalCodes: JiraWriteRefusalCode[];
+  /** Total number of approved test cases supplied to the pipeline. */
+  totalCases: number;
+  /** Number of records whose outcome is `created`. */
+  createdCount: number;
+  /** Number of records whose outcome is `skipped_duplicate`. */
+  skippedDuplicateCount: number;
+  /** Number of records whose outcome is `failed`. */
+  failedCount: number;
+  /** Number of records whose outcome is `dry_run`. */
+  dryRunCount: number;
+  /** Audit metadata for the run. */
+  audit: JiraWriteAuditMetadata;
+  /** Hard invariant: raw screenshots are never embedded in Jira write payloads. */
+  rawScreenshotsIncluded: false;
+  /** Hard invariant: credentials are never embedded in Jira write payloads. */
+  credentialsIncluded: false;
+}
+
+/**
+ * FinOps budget + operational controls for test-intelligence LLM jobs (Issue #1371).
+ *
+ * The FinOps surface lets an operator bound an LLM job's input/output token
+ * usage, wall-clock duration, retry count, image payload size, and replay-cache
+ * miss rate per role (`test_generation`, `visual_primary`, `visual_fallback`),
+ * and persist a deterministic per-job `budget-report.json` under the job's
+ * `finops/` artifact directory. The artifact is local-only by default and
+ * never carries secrets, raw prompts, or image bytes.
+ *
+ * Hard invariants:
+ *   - Cache hits report zero token usage AND zero LLM call attempts.
+ *   - Wall-clock budget breach is FAIL CLOSED (`retryable: false`).
+ *   - Token / wall-clock budget breach STOPS the job before downstream work.
+ *   - The artifact records SHA-256 hashes of identity inputs only — never
+ *     prompt text, response content, or token strings.
+ */
+
+/** Schema version for the persisted FinOps budget report artifact (Issue #1371). */
+export const FINOPS_BUDGET_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Subdirectory under a run dir where FinOps artifacts are persisted. */
+export const FINOPS_ARTIFACT_DIRECTORY = "finops" as const;
+
+/** Canonical filename for the FinOps budget report artifact. */
+export const FINOPS_BUDGET_REPORT_ARTIFACT_FILENAME =
+  "budget-report.json" as const;
+
+/**
+ * Per-role discriminant used inside the FinOps surface. Mirrors the gateway
+ * roles but is exported as its own list so policy gates can iterate roles
+ * without depending on the gateway surface.
+ */
+export const ALLOWED_FINOPS_ROLES = [
+  "test_generation",
+  "visual_primary",
+  "visual_fallback",
+  "jira_api_requests",
+  "jira_paste_ingest",
+  "custom_context_ingest",
+] as const;
+
+/** Discriminant of an allowed FinOps role. */
+export type FinOpsRole = (typeof ALLOWED_FINOPS_ROLES)[number];
+
+/** Static source labels tracked inside the per-source FinOps breakdown. */
+export const ALLOWED_AGENT_SOURCE_LABELS = [
+  "manager",
+  "judge_primary",
+  "judge_secondary",
+  "visual_primary",
+  "visual_fallback",
+  "generator",
+  "coverage_planner",
+  "risk_ranker",
+  "adversarial_critic",
+  "gap_finder",
+  "repair_planner",
+  "ir_mutation_oracle",
+] as const;
+
+/** Discriminant of an allowed per-source FinOps label. */
+export type AgentSourceLabel =
+  | (typeof ALLOWED_AGENT_SOURCE_LABELS)[number]
+  | `hook:${string}`;
+
+/** Allowed budget breach reasons. Discriminated for policy-readable diagnostics. */
+export const ALLOWED_FINOPS_BUDGET_BREACH_REASONS = [
+  "max_input_tokens",
+  "max_output_tokens",
+  "max_wall_clock_ms",
+  "max_retries",
+  "max_attempts",
+  "max_image_bytes",
+  "max_total_input_tokens",
+  "max_total_output_tokens",
+  "max_total_wall_clock_ms",
+  "max_replay_cache_miss_rate",
+  "max_fallback_attempts",
+  "max_live_smoke_calls",
+  "max_estimated_cost",
+  "jira_api_quota_exceeded",
+  "jira_paste_quota_exceeded",
+  "custom_context_quota_exceeded",
+] as const;
+
+/** Discriminant of a FinOps budget breach reason. */
+export type FinOpsBudgetBreachReason =
+  (typeof ALLOWED_FINOPS_BUDGET_BREACH_REASONS)[number];
+
+/** Allowed terminal outcomes for a FinOps-tracked job. */
+export const ALLOWED_FINOPS_JOB_OUTCOMES = [
+  "completed",
+  "completed_cache_hit",
+  "budget_exceeded",
+  "policy_blocked",
+  "validation_blocked",
+  "visual_sidecar_failed",
+  "export_refused",
+  "gateway_failed",
+] as const;
+
+/** Discriminant of the terminal job outcome the FinOps report records. */
+export type FinOpsJobOutcome = (typeof ALLOWED_FINOPS_JOB_OUTCOMES)[number];
+
+/**
+ * Per-role budget envelope. Every limit is optional; `undefined` means the
+ * limit is not enforced for that role. Counters compare with `>` (strict
+ * exceedance) — a usage that exactly equals a limit is allowed.
+ */
+export interface FinOpsRoleBudget {
+  /** Cap on the gateway's pre-flight `estimateInputTokens` (per-request). */
+  maxInputTokensPerRequest?: number;
+  /** Cap on `max_completion_tokens` forwarded to the gateway (per-request). */
+  maxOutputTokensPerRequest?: number;
+  /** Aggregate input-token cap across every request the role makes. */
+  maxTotalInputTokens?: number;
+  /** Aggregate output-token cap across every request the role makes. */
+  maxTotalOutputTokens?: number;
+  /** Per-request wall-clock cap. Maps to `LlmGenerationRequest.maxWallClockMs`. */
+  maxWallClockMsPerRequest?: number;
+  /** Aggregate wall-clock cap across every request the role makes. */
+  maxTotalWallClockMs?: number;
+  /** Per-request retry cap. Maps to `LlmGenerationRequest.maxRetries`. */
+  maxRetriesPerRequest?: number;
+  /**
+   * Maximum number of gateway attempts the role may make in total
+   * (success-or-failure). Useful when the live smoke surface should
+   * fire only N times.
+   */
+  maxAttempts?: number;
+  /** Cap on the decoded image bytes per request (visual roles only). */
+  maxImageBytesPerRequest?: number;
+  /**
+   * Maximum number of fallback-deployment attempts the visual role may make.
+   * Enforced against `visual_fallback` only; ignored for other roles.
+   */
+  maxFallbackAttempts?: number;
+  /**
+   * Maximum number of live-smoke calls the role may make. Enforced when
+   * the operator wires a live-smoke counter into the recorder; otherwise
+   * treated as not-configured.
+   */
+  maxLiveSmokeCalls?: number;
+  /**
+   * Aggregate byte-ingest cap per job for non-LLM source-ingestion roles
+   * (`jira_paste_ingest`, `custom_context_ingest`). Ignored for LLM roles.
+   */
+  maxIngestBytesPerJob?: number;
+}
+
+/**
+ * Aggregate budget envelope for a job. The envelope is rendered into the
+ * FinOps report verbatim so an operator can read the limits applied without
+ * cross-referencing source code.
+ */
+export interface FinOpsBudgetEnvelope {
+  /** Stable identifier for the budget profile (operator-supplied). */
+  budgetId: string;
+  /** Free-form version label for the budget profile. */
+  budgetVersion: string;
+  /** Aggregate wall-clock cap across the entire job, all roles combined. */
+  maxJobWallClockMs?: number;
+  /**
+   * Maximum permitted replay-cache miss rate over the job (`misses / total`).
+   * `undefined` disables the check. Range `[0, 1]`.
+   */
+  maxReplayCacheMissRate?: number;
+  /**
+   * Optional per-job estimated cost cap (currency-agnostic — the recorder
+   * accepts caller-supplied per-1000-token rates). `undefined` disables the
+   * check.
+   */
+  maxEstimatedCost?: number;
+  /** Per-role budget records. Missing roles are unconstrained. */
+  roles: {
+    test_generation?: FinOpsRoleBudget;
+    visual_primary?: FinOpsRoleBudget;
+    visual_fallback?: FinOpsRoleBudget;
+    jira_api_requests?: FinOpsRoleBudget;
+    jira_paste_ingest?: FinOpsRoleBudget;
+    custom_context_ingest?: FinOpsRoleBudget;
+  };
+  /**
+   * Per-source quota caps for non-LLM ingestion roles. Checked before any
+   * ingestion begins; breach emits the source-specific breach reason and
+   * fails fast without writing any artifact.
+   */
+  sourceQuotas?: {
+    /** Maximum Jira REST API calls per job. Default: `MAX_JIRA_API_REQUESTS_PER_JOB`. */
+    maxJiraApiRequestsPerJob?: number;
+    /** Maximum raw paste bytes per job. Default: `MAX_JIRA_PASTE_BYTES_PER_JOB`. */
+    maxJiraPasteBytesPerJob?: number;
+    /** Maximum custom-context input bytes per job. Default: `MAX_CUSTOM_CONTEXT_BYTES_PER_JOB`. */
+    maxCustomContextBytesPerJob?: number;
+  };
+}
+
+/**
+ * Per-attempt cost-rate input. Operators can supply a flat per-1000-token
+ * rate and a per-attempt fixed cost; the recorder multiplies usage to
+ * produce `estimatedCost`. Cost is currency-agnostic (the operator chooses
+ * the unit, e.g. USD or "internal credits"), and the report stamps the
+ * caller-supplied label so consumers know what the number means.
+ */
+export interface FinOpsCostRate {
+  /** Cost per 1000 input tokens. */
+  inputTokenCostPer1k?: number;
+  /** Cost per 1000 output tokens. */
+  outputTokenCostPer1k?: number;
+  /** Fixed per-attempt cost (e.g. minimum-charge / API-call premium). */
+  fixedCostPerAttempt?: number;
+}
+
+/** Per-role cost rate map. Roles with no rate produce `estimatedCost = 0`. */
+export interface FinOpsCostRateMap {
+  /** Operator-supplied label describing the unit (e.g. "USD"). */
+  currencyLabel: string;
+  rates: {
+    test_generation?: FinOpsCostRate;
+    visual_primary?: FinOpsCostRate;
+    visual_fallback?: FinOpsCostRate;
+    jira_api_requests?: FinOpsCostRate;
+    jira_paste_ingest?: FinOpsCostRate;
+    custom_context_ingest?: FinOpsCostRate;
+  };
+}
+
+/**
+ * Per-role usage record. Aggregated across every gateway attempt the role
+ * made during the job. Cache hits do NOT increment any counter except
+ * `cacheHits`.
+ */
+export interface FinOpsRoleUsage {
+  role: FinOpsRole;
+  /** Deployment label observed (e.g. `gpt-oss-120b-mock`). Empty string when no attempt was made. */
+  deployment: string;
+  /** Last model revision observed for this role. Omitted when unknown. */
+  modelRevision?: string;
+  /** Last routing tier label observed for this role. Omitted when unknown. */
+  tierLabel?: ModelRoutingTierLabel;
+  /** Total LLM call attempts (success + failure). Cache hits do NOT increment. */
+  attempts: number;
+  /** Successful attempts. */
+  successes: number;
+  /** Failure attempts (any error class). */
+  failures: number;
+  /** Sum of input tokens reported by the gateway across all successful attempts. */
+  inputTokens: number;
+  /** Sum of output tokens reported by the gateway across all successful attempts. */
+  outputTokens: number;
+  /** Sum of decoded image-input bytes per request (visual roles only; 0 elsewhere). */
+  imageBytes: number;
+  /** Number of replay-cache hits attributed to this role. */
+  cacheHits: number;
+  /** Number of replay-cache misses attributed to this role. */
+  cacheMisses: number;
+  /** Number of attempts that selected a fallback deployment. */
+  fallbackAttempts: number;
+  /** Number of attempts that hit a non-mock gateway (live-smoke counter). */
+  liveSmokeCalls: number;
+  /** Sum of wall-clock duration across attempts, in milliseconds. */
+  durationMs: number;
+  /** Last finish reason observed (success path) — `undefined` if no success. */
+  lastFinishReason?: LlmFinishReason;
+  /** Last error class observed (failure path) — `undefined` if no failure. */
+  lastErrorClass?: LlmGatewayErrorClass | "schema_invalid_response";
+  /** Estimated cost contribution from this role (currency-agnostic). */
+  estimatedCost: number;
+  /**
+   * Total bytes ingested by non-LLM ingest roles (`jira_paste_ingest`,
+   * `custom_context_ingest`). Always `0` for LLM and visual roles.
+   */
+  ingestBytes: number;
+}
+
+/**
+ * Single budget breach record. Multiple breaches may be stamped on a
+ * single report; the consumer can pick the first by `rule` order.
+ */
+export interface FinOpsBudgetBreach {
+  rule: FinOpsBudgetBreachReason;
+  /** Affected role, or `undefined` for job-level rules. */
+  role?: FinOpsRole;
+  /** Numeric observed value (encoded as number for comparators). */
+  observed: number;
+  /** Numeric threshold that was breached. */
+  threshold: number;
+  /** Sanitized human-readable message — never carries tokens or PII. */
+  message: string;
+}
+
+export interface ResolvedFinOpsWallClockBudget {
+  readonly mode: "elastic" | "constant_override";
+  readonly role: "test_generation";
+  readonly resolvedMs: number;
+  readonly formulaMs: number;
+  readonly overrideMs?: number;
+  readonly caseCount: number;
+  readonly judgePanelSize: number;
+  readonly adversarialRounds: number;
+  readonly visualSidecarEnabled: boolean;
+  readonly coefficients: FinOpsWallClockBudgetPolicy;
+  readonly breakdown: {
+    readonly baseMs: number;
+    readonly caseMs: number;
+    readonly additionalJudgeMs: number;
+    readonly adversarialRoundMs: number;
+    readonly visualSidecarMs: number;
+    readonly unclampedMs: number;
+    readonly hardCeilingMs: number;
+  };
+}
+
+export interface FinOpsResolvedBudgetReport {
+  readonly testGenerationWallClock: ResolvedFinOpsWallClockBudget;
+}
+
+/**
+ * FinOps budget report artifact. Persisted under
+ * `<runDir>/finops/budget-report.json`. The artifact is byte-stable per job
+ * (sorted role list, deterministic breach order). Cache-hit jobs report no
+ * gateway usage; the `outcome` reflects this verbatim.
+ *
+ * Negative invariants stamped explicitly so absence cannot be inferred:
+ *   - `secretsIncluded: false`
+ *   - `rawPromptsIncluded: false`
+ *   - `rawScreenshotsIncluded: false`
+ */
+export interface FinOpsBudgetReport {
+  schemaVersion: typeof FINOPS_BUDGET_REPORT_SCHEMA_VERSION;
+  contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  jobId: string;
+  generatedAt: string;
+  /** Verbatim copy of the budget envelope applied to this job. */
+  budget: FinOpsBudgetEnvelope;
+  /** Audit trail for runtime-resolved budget inputs and coefficients. */
+  resolvedBudget?: FinOpsResolvedBudgetReport;
+  /** Caller-supplied currency label. `undefined` when no rate map was supplied. */
+  currencyLabel?: string;
+  /** Sorted by `role`. Always lists every role, even when usage is zero. */
+  roles: FinOpsRoleUsage[];
+  /** Deterministic per-agent-source attribution sealed in attestation. */
+  bySource: Readonly<
+    Record<
+      AgentSourceLabel,
+      {
+        costMinorUnits: number;
+        tokensIn: number;
+        tokensOut: number;
+        callCount: number;
+        inFlightDedupHits: number;
+        idempotentReplayHits: number;
+        /**
+         * Optional per-attempt identifiers surfaced when a source emits
+         * multiple logically-distinct attempts that share the same
+         * `AgentSourceLabel` (Issue #1936 diversity passes). Omitted for
+         * legacy single-pass runs so byte-stable FinOps artifacts stay
+         * unchanged unless the feature is enabled.
+         */
+        attemptIds?: readonly string[];
+        /**
+         * Optional circuit-breaker states recorded in dispatch order for this
+         * source. Present when callers surface per-attempt breaker decisions
+         * (Issue #2069) and omitted for sources that never supplied one.
+         */
+        circuitBreakerStates?: readonly ("closed" | "open" | "half_open")[];
+        /**
+         * Optional deployment label this source ran against (Issue
+         * #1932). Surfaces the **judge** deployment for
+         * `judge_primary` / `judge_secondary` when the operator wired
+         * a cross-model bundle so FinOps attribution distinguishes
+         * the judge family from the generator family. Omitted from
+         * the canonical-JSON wire payload when the source recorded
+         * no deployment, so the `bySource` hash stays stable for
+         * legacy single-model runs.
+         */
+        deployment?: string;
+        /** Optional model revision recorded for this source. */
+        modelRevision?: string;
+        /** Optional routing tier label recorded for this source. */
+        tierLabel?: ModelRoutingTierLabel;
+        /**
+         * Optional constrained-decoding attribution for this source. Present
+         * only when at least one attempt recorded schema-constrained decoding
+         * metadata, so legacy runs stay byte-stable.
+         */
+        constrainedDecoding?: {
+          adapterId: LlmConstrainedDecodingAdapterId;
+          enforcement: LlmConstrainedDecodingEnforcement;
+          activeCallCount: number;
+          fallbackCallCount: number;
+          fallbackReasons?: readonly string[];
+          adapterVersion?: string;
+        };
+        /**
+         * Issue #2177 — distinct attested hosting regions observed for this
+         * source while contributing to the run.
+         */
+        regionAttestation?: {
+          distinctRegions: readonly RegionAttestationHostingRegion[];
+          attestedCallCount: number;
+          warningCount: number;
+        };
+      }
+    >
+  >;
+  /** Aggregate counters across the `bySource` map. */
+  bySourceTotal: {
+    costMinorUnits: number;
+    callCount: number;
+  };
+  /** Timestamp used when sealing the `bySource` payload. */
+  bySourceSealedAt: string;
+  /**
+   * Issue #2177 — audit summary of the run's region attestations. Present
+   * whenever at least one LLM call or cache hit recorded region evidence.
+   */
+  regionAttestation?: {
+    distinctRegions: readonly RegionAttestationHostingRegion[];
+    attestedCallCount: number;
+    warningCount: number;
+  };
+  /**
+   * Figma REST payload audit trail (Issue #2172). Records the resolved cap
+   * applied to this run alongside the actual payload bytes ingested so ops
+   * can observe cap-vs-actual without re-running the job. Omitted when the
+   * runner did not surface payload metrics (e.g. dry-run / cache-hit
+   * short-circuit) so legacy fixtures stay byte-stable.
+   */
+  figmaPayload?: {
+    /** Resolved cap applied during this run, in bytes. */
+    resolvedCapBytes: number;
+    /** Actual REST payload size that the runner ingested, in bytes. */
+    actualBytes: number;
+    /** Soft default cap (bytes) used when no override was supplied. */
+    defaultCapBytes: number;
+    /** Hard ceiling (bytes) above which any override is rejected. */
+    ceilingBytes: number;
+    /** True when the operator passed `--max-figma-payload-bytes`. */
+    overrideApplied: boolean;
+  };
+  /** Aggregate counters across every role. */
+  totals: {
+    inputTokens: number;
+    outputTokens: number;
+    attempts: number;
+    successes: number;
+    failures: number;
+    cacheHits: number;
+    cacheMisses: number;
+    fallbackAttempts: number;
+    liveSmokeCalls: number;
+    durationMs: number;
+    imageBytes: number;
+    estimatedCost: number;
+    /** `cacheHits / (cacheHits + cacheMisses)` clamped to `[0, 1]`. NaN → 0. */
+    replayCacheHitRate: number;
+    /** `cacheMisses / (cacheHits + cacheMisses)` clamped to `[0, 1]`. NaN → 0. */
+    replayCacheMissRate: number;
+    /** Alias for replay-cache hit rate at the prompt layer. */
+    promptCacheHitRate: number;
+    /** Alias for replay-cache miss rate at the prompt layer. */
+    promptCacheMissRate: number;
+  };
+  /** Sorted by `(rule, role)`. Empty when no budget was breached. */
+  breaches: FinOpsBudgetBreach[];
+  /** Terminal job outcome the report attests. */
+  outcome: FinOpsJobOutcome;
+  /** Hard invariant — secrets are never embedded in this artifact. */
+  secretsIncluded: false;
+  /** Hard invariant — raw prompt or response text is never embedded. */
+  rawPromptsIncluded: false;
+  /** Hard invariant — image bytes are never embedded. */
+  rawScreenshotsIncluded: false;
+}
+
+/**
+ * Per-job LLM Bill of Materials (CycloneDX 1.6 ML-BOM, Issue #1378).
+ *
+ * The LBOM is emitted alongside the existing evidence manifest so an
+ * operator can inventory the model chain, the curated few-shot bundle,
+ * and the active policy profile that produced a given set of test cases.
+ * Unlike the package SBOM (CycloneDX 1.5, generated by
+ * `scripts/generate-cyclonedx.mjs`), the LBOM is per-job and lives under
+ * the run directory.
+ *
+ * Hard invariants are stamped as CycloneDX metadata properties:
+ *   - `workspace-dev:secretsIncluded = false` — no API keys, bearer
+ *     tokens, or signer material.
+ *   - `workspace-dev:rawPromptsIncluded = false` — no system or user
+ *     prompt text. Only hash digests participate.
+ *   - `workspace-dev:rawScreenshotsIncluded = false` — no decoded image
+ *     bytes. Capture identity is recorded as SHA-256 only.
+ *
+ * The artifact validates against the CycloneDX 1.6 schema family
+ * (CycloneDX 1.6 + JSF + SPDX-encoded license identifiers) in CI. Runtime
+ * persistence still uses the zero-runtime-dependency structural validator
+ * in `src/test-intelligence/lbom-emitter.ts`.
+ */
+
+/** CycloneDX spec version targeted by the per-job LBOM. */
+export const LBOM_CYCLONEDX_SPEC_VERSION = "1.6" as const;
+
+/** Schema version for the persisted per-job LBOM artifact. */
+export const LBOM_ARTIFACT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Subdirectory under a run dir where the per-job LBOM is persisted. */
+export const LBOM_ARTIFACT_DIRECTORY = "lbom" as const;
+
+/** Canonical filename for the per-job LBOM artifact. */
+export const LBOM_ARTIFACT_FILENAME = "ai-bom.cdx.json" as const;
+
+/**
+ * Allowed roles for an LBOM machine-learning-model component. Mirrors the
+ * gateway role surface so a single artifact can describe the entire model
+ * chain that produced a job's test cases.
+ */
+export const ALLOWED_LBOM_MODEL_ROLES = [
+  "test_generation",
+  "visual_primary",
+  "visual_fallback",
+] as const;
+
+/** Discriminant of an LBOM model role. */
+export type LbomModelRole = (typeof ALLOWED_LBOM_MODEL_ROLES)[number];
+
+/** Discriminant of an LBOM data-component kind. */
+export type LbomDataKind = "few_shot_bundle" | "policy_profile";
+
+/** Hash entry on a CycloneDX 1.6 component. */
+export interface LbomHash {
+  /** Hash algorithm — workspace-dev only emits `SHA-256`. */
+  alg: "SHA-256";
+  /** Lowercase hex digest. */
+  content: string;
+}
+
+/** Property entry on a CycloneDX 1.6 component (or root metadata). */
+export interface LbomProperty {
+  name: string;
+  value: string;
+}
+
+/** External reference entry on a CycloneDX 1.6 component. */
+export interface LbomExternalReference {
+  type:
+    | "documentation"
+    | "vcs"
+    | "evidence"
+    | "model-card"
+    | "configuration"
+    | "license";
+  url: string;
+}
+
+/** License entry — workspace-dev exclusively emits SPDX identifiers. */
+export interface LbomLicenseEntry {
+  license: { id: string };
+}
+
+/** CycloneDX 1.6 modelCard.modelParameters surface as emitted by workspace-dev. */
+export interface LbomModelParameters {
+  task: string;
+  architectureFamily?: string;
+  modelArchitecture?: string;
+}
+
+/** CycloneDX 1.6 modelCard.considerations surface as emitted by workspace-dev. */
+export interface LbomModelConsiderations {
+  users?: string[];
+  useCases?: string[];
+  technicalLimitations?: string[];
+  performanceTradeoffs?: string[];
+  ethicalConsiderations?: Array<{
+    name: string;
+    mitigationStrategy?: string;
+  }>;
+  fairnessAssessments?: string[];
+}
+
+/**
+ * CycloneDX 1.6 modelCard.quantitativeAnalysis.performanceMetrics entry.
+ * Values are encoded as strings per the CycloneDX 1.6 spec.
+ */
+export interface LbomPerformanceMetric {
+  type: string;
+  value: string;
+  slice?: string;
+  confidenceInterval?: { lowerBound: string; upperBound: string };
+}
+
+/** CycloneDX 1.6 modelCard surface as emitted by workspace-dev. */
+export interface LbomModelCard {
+  modelParameters?: LbomModelParameters;
+  quantitativeAnalysis?: { performanceMetrics: LbomPerformanceMetric[] };
+  considerations?: LbomModelConsiderations;
+  properties?: LbomProperty[];
+}
+
+/** CycloneDX 1.6 component entry — model variant. */
+export interface LbomModelComponent {
+  type: "machine-learning-model";
+  "bom-ref": string;
+  name: string;
+  version: string;
+  description: string;
+  publisher?: string;
+  group?: string;
+  hashes?: LbomHash[];
+  licenses?: LbomLicenseEntry[];
+  externalReferences?: LbomExternalReference[];
+  properties: LbomProperty[];
+  modelCard: LbomModelCard;
+}
+
+/** CycloneDX 1.6 component entry — data variant (bundle / policy). */
+export interface LbomDataComponent {
+  type: "data";
+  "bom-ref": string;
+  name: string;
+  version: string;
+  description: string;
+  hashes: LbomHash[];
+  properties: LbomProperty[];
+}
+
+/** CycloneDX 1.6 dependency edge. */
+export interface LbomDependency {
+  ref: string;
+  dependsOn: string[];
+}
+
+/** CycloneDX 1.6 metadata.tools entry. */
+export interface LbomToolComponent {
+  type: "application";
+  name: string;
+  version: string;
+  publisher: string;
+  description: string;
+}
+
+/** CycloneDX 1.6 metadata.component entry — the BOM subject. */
+export interface LbomSubjectComponent {
+  type: "application";
+  "bom-ref": string;
+  name: string;
+  version: string;
+  description: string;
+  properties: LbomProperty[];
+}
+
+/** CycloneDX 1.6 metadata block as emitted by workspace-dev. */
+export interface LbomMetadata {
+  timestamp: string;
+  tools: { components: LbomToolComponent[] };
+  component: LbomSubjectComponent;
+  properties: LbomProperty[];
+}
+
+/**
+ * Per-job LLM Bill of Materials document (CycloneDX 1.6 ML-BOM, Issue #1378).
+ *
+ * The shape mirrors the CycloneDX 1.6 JSON spec for fields workspace-dev
+ * actually populates. Optional CycloneDX fields workspace-dev does not use
+ * are intentionally omitted from the type to keep emission and validation
+ * aligned with what callers can audit.
+ */
+export interface Wave1ValidationLbomDocument {
+  bomFormat: "CycloneDX";
+  specVersion: typeof LBOM_CYCLONEDX_SPEC_VERSION;
+  /** CycloneDX-required document version. workspace-dev always emits `1`. */
+  version: 1;
+  /** RFC-4122 UUID URN, deterministic from job identity. */
+  serialNumber: string;
+  metadata: LbomMetadata;
+  components: Array<LbomModelComponent | LbomDataComponent>;
+  dependencies: LbomDependency[];
+}
+
+/** Validation issue surfaced by `validateLbomDocument`. */
+export interface LbomValidationIssue {
+  /** Dotted JSON path of the offending field. */
+  path: string;
+  /** Stable diagnostic code consumers can switch on. */
+  code:
+    | "missing_required_field"
+    | "invalid_value"
+    | "invalid_hash"
+    | "invalid_type"
+    | "invalid_serial_number"
+    | "invalid_timestamp"
+    | "duplicate_bom_ref"
+    | "unknown_dependency_ref"
+    | "raw_prompt_leak"
+    | "raw_screenshot_leak"
+    | "secret_leak";
+  message: string;
+}
+
+/** Result of `validateLbomDocument`. */
+export interface LbomValidationResult {
+  valid: boolean;
+  issues: LbomValidationIssue[];
+}
+
+/**
+ * Audit-timeline summary of the per-job LBOM emit. Carries the on-disk
+ * filename, byte length, the canonical SHA-256 (matches the manifest
+ * attestation), and a count of components by kind so a verifier can spot
+ * "only one model row" regression without re-parsing the artifact.
+ */
+export interface Wave1ValidationLbomSummary {
+  schemaVersion: typeof LBOM_ARTIFACT_SCHEMA_VERSION;
+  /** Relative filename inside the run directory (`lbom/ai-bom.cdx.json`). */
+  filename: string;
+  /** Byte length of the persisted canonical JSON. */
+  bytes: number;
+  /** SHA-256 of the persisted canonical JSON (hex, lowercase). */
+  sha256: string;
+  /** Component-kind counts. */
+  componentCounts: {
+    models: number;
+    data: number;
+  };
+  /** Whether the visual sidecar fallback path was taken in the run. */
+  visualFallbackUsed: boolean;
+}
+
+/**
+ * Schema version for the `EvidenceVerifyResponse` envelope returned by
+ * `GET /workspace/jobs/:jobId/evidence/verify` (Issue #1380). Bump when a
+ * backwards-incompatible field shape change ships.
+ */
+export const EVIDENCE_VERIFY_RESPONSE_SCHEMA_VERSION = "1.0.0" as const;
+
+/**
+ * Stable failure-code surface for evidence verification. Re-uses the
+ * existing `Wave1ValidationAttestationVerificationFailureCode` literals where
+ * applicable so a single auditor can route on a unified vocabulary.
+ */
+export type EvidenceVerifyFailureCode =
+  | "manifest_unparseable"
+  | "manifest_metadata_invalid"
+  | "manifest_digest_witness_invalid"
+  | "artifact_missing"
+  | "artifact_mutated"
+  | "artifact_resized"
+  | "unexpected_artifact"
+  | "visual_sidecar_evidence_missing"
+  | "envelope_unparseable"
+  | "envelope_payload_type_mismatch"
+  | "envelope_payload_decode_failed"
+  | "statement_unparseable"
+  | "statement_type_mismatch"
+  | "statement_predicate_type_mismatch"
+  | "statement_predicate_invalid"
+  | "subject_missing_artifact"
+  | "subject_digest_mismatch"
+  | "subject_unattested_artifact"
+  | "signing_mode_mismatch"
+  | "signature_required"
+  | "signature_unsigned_envelope_carries_signatures"
+  | "signature_invalid_keyid"
+  | "signature_invalid_encoding"
+  | "signature_unverified"
+  | "bundle_missing"
+  | "bundle_envelope_mismatch"
+  | "bundle_public_key_missing"
+  | "manifest_sha256_mismatch"
+  | "bySource_hash_mismatch";
+
+/** Stable check-kind labels surfaced in the `EvidenceVerifyResponse.checks` array. */
+export type EvidenceVerifyCheckKind =
+  | "artifact_sha256"
+  | "manifest_metadata"
+  | "manifest_digest_witness"
+  | "visual_sidecar_evidence"
+  | "attestation_envelope"
+  | "attestation_signatures";
+
+/**
+ * One row in the `checks` array. Carries enough context for an auditor
+ * to identify which artifact / check passed or failed and (when failed)
+ * why. Sorted deterministically so the response body is byte-stable
+ * across consecutive verifications of the same on-disk run.
+ */
+export interface EvidenceVerifyCheck {
+  kind: EvidenceVerifyCheckKind;
+  /** Safe manifest-relative artifact filename or stable check identifier. */
+  reference: string;
+  ok: boolean;
+  /** Failure code when `ok === false`. Omitted when `ok === true`. */
+  failureCode?: EvidenceVerifyFailureCode;
+  /** Optional structured detail attached to attestation checks. */
+  signingMode?: Wave1ValidationAttestationSigningMode;
+}
+
+/** One row in the `failures` array. Flat, sorted by reference + code. */
+export interface EvidenceVerifyFailure {
+  code: EvidenceVerifyFailureCode;
+  /** Safe manifest-relative artifact filename or stable check identifier. */
+  reference: string;
+  /** Operator-readable diagnostic. Never includes absolute paths or secrets. */
+  message: string;
+}
+
+/**
+ * Response body returned by `GET /workspace/jobs/:jobId/evidence/verify`
+ * with HTTP status 200. Status 200 means "verification completed",
+ * regardless of pass/fail outcome — `ok` carries the verdict. The body
+ * never contains absolute paths, bearer tokens, prompt bodies, raw
+ * test-case payloads, env values, or signer secret material; only safe
+ * manifest-relative filenames, SHA-256 digests, and identity stamps appear.
+ */
+export interface EvidenceVerifyResponse {
+  schemaVersion: typeof EVIDENCE_VERIFY_RESPONSE_SCHEMA_VERSION;
+  /** ISO-8601 timestamp the verification completed at. */
+  verifiedAt: string;
+  jobId: string;
+  /** Overall verdict: true iff `failures.length === 0`. */
+  ok: boolean;
+  /** SHA-256 of the canonical manifest bytes (computed in memory). */
+  manifestSha256: string;
+  /** Mirrors `manifest.schemaVersion` when readable. */
+  manifestSchemaVersion?: string;
+  /** Mirrors `manifest.testIntelligenceContractVersion` when readable. */
+  testIntelligenceContractVersion?: string;
+  /** Model deployment names per role from the manifest. */
+  modelDeployments?: {
+    testGeneration: string;
+    visualPrimary?: string;
+    visualFallback?: string;
+  };
+  /** Visual sidecar metadata when the manifest carries it. */
+  visualSidecar?: {
+    selectedDeployment?: string;
+    fallbackUsed: boolean;
+    resultArtifactSha256?: string;
+    captureIdentityCount?: number;
+  };
+  /** Attestation summary when an attestation envelope is on disk. */
+  attestation?: {
+    present: boolean;
+    signingMode: Wave1ValidationAttestationSigningMode;
+    signatureCount: number;
+    signaturesVerified: boolean;
+  };
+  /** Per-artifact + per-check verification results. */
+  checks: EvidenceVerifyCheck[];
+  /** Flat list of every failed check, sorted by `reference`+`code`. */
+  failures: EvidenceVerifyFailure[];
+}
+
+/* ============================================================
+ * Delta + deduplication + traceability matrix (Issue #1373).
+ *
+ * Wave 3 introduces three additive, fail-closed surfaces:
+ *
+ *   1. Intent delta — pure compare of two `BusinessTestIntentIr`
+ *      artifacts producing an `IntentDeltaReport` covering screens,
+ *      fields, actions, validations, navigation, and the visual
+ *      addendum (visual fixture hash, `VisualScreenDescription`
+ *      hash, confidence/ambiguity drift).
+ *   2. Dedupe report — the existing lexical fingerprint path
+ *      (`detectDuplicateTestCases`) extended with a pluggable
+ *      `EmbeddingProvider` (caller-supplied; default `null` =
+ *      lexical-only / air-gapped) and an OPTIONAL injected
+ *      cross-job/QC-folder probe. Both extensions are off by
+ *      default so the air-gapped flow is preserved.
+ *   3. Traceability matrix — joins Figma node → IR element →
+ *      generated test case → QC mapping preview → transferred QC
+ *      id (when transfer-report present) → visual sidecar →
+ *      reconciliation/policy/validation outcomes.
+ *
+ * Every persisted artifact stamps the type-level hard invariants
+ * `rawScreenshotsIncluded: false` and `secretsIncluded: false`
+ * so a downstream consumer can verify they were produced under
+ * the air-gapped/zero-secret-leak contract.
+ * ============================================================ */
+
+/** Schema version for the persisted intent-delta artifact (Issue #1373). */
+export const INTENT_DELTA_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Schema version for the persisted test-case delta report artifact (Issue #1373). */
+export const TEST_CASE_DELTA_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the persisted intent-delta artifact. */
+export const INTENT_DELTA_REPORT_ARTIFACT_FILENAME =
+  "intent-delta-report.json" as const;
+
+/** Canonical filename for the persisted test-case delta artifact. */
+export const TEST_CASE_DELTA_REPORT_ARTIFACT_FILENAME =
+  "test-case-delta-report.json" as const;
+
+/** Schema version for the persisted dedupe artifact (Issue #1373). */
+export const DEDUPE_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the persisted dedupe artifact. */
+export const DEDUPE_REPORT_ARTIFACT_FILENAME = "dedupe-report.json" as const;
+
+/**
+ * Schema version for the persisted parallel-pass case-merger artifact
+ * (Issue #1937). The case-merger consumes two `GeneratedTestCaseList`s
+ * emitted by parallel diversity passes (Issue #1936) and emits a single
+ * deterministic merged list plus a per-case provenance/conflict log so
+ * downstream auditors can reconstruct which pass contributed each case.
+ */
+export const CASE_MERGER_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the persisted case-merger artifact. */
+export const CASE_MERGER_REPORT_ARTIFACT_FILENAME =
+  "case-merger-report.json" as const;
+
+/** Provenance of a merged test case relative to the two input passes. */
+export const ALLOWED_CASE_MERGER_PROVENANCES = [
+  "runA",
+  "runB",
+  "both",
+] as const;
+export type CaseMergerProvenance =
+  (typeof ALLOWED_CASE_MERGER_PROVENANCES)[number];
+
+/**
+ * Reason a merged entry was selected over its conflicting counterpart.
+ *
+ * - `no_conflict` — the case existed in only one pass (no choice required).
+ * - `prefer_unrepaired` — both passes produced the case; one pass had
+ *   non-empty `repairInstructions` for it and the other did not, so the
+ *   un-repaired side won (Issue #1937 conflict-resolution rule 1).
+ * - `positive_bias_run_a` — both passes produced the case with comparable
+ *   repair-state, so pass A wins (Issue #1937 conflict-resolution rule 2).
+ */
+export const ALLOWED_CASE_MERGER_CONFLICT_RESOLUTIONS = [
+  "no_conflict",
+  "prefer_unrepaired",
+  "positive_bias_run_a",
+] as const;
+export type CaseMergerConflictResolution =
+  (typeof ALLOWED_CASE_MERGER_CONFLICT_RESOLUTIONS)[number];
+
+/**
+ * One row of the case-merger report. Each entry corresponds to a single
+ * merged test case. `signature` is the dedup key
+ * `(screenId, sorted(coveredFieldIds), sorted(coveredActionIds), technique)`
+ * canonical-JSON-serialised so two entries with identical signatures are
+ * guaranteed to have been merged (or, equivalently, the report has at most
+ * one entry per signature).
+ */
+export interface CaseMergerReportEntry {
+  readonly testCaseId: string;
+  readonly provenance: CaseMergerProvenance;
+  readonly signature: string;
+  readonly technique: TestCaseTechnique29119;
+  readonly screenId: string;
+  readonly coveredFieldIds: readonly string[];
+  readonly coveredActionIds: readonly string[];
+  readonly conflictResolution: CaseMergerConflictResolution;
+  /**
+   * The id of the test case that lost the conflict (only populated when
+   * `provenance === "both"`). The losing case's `qualitySignals` are merged
+   * into the winning entry's coverage sets — see
+   * `qualitySignalsCoverageMerged`.
+   */
+  readonly droppedTestCaseId?: string;
+  /**
+   * Whether the winning case absorbed coverage ids from the losing pass's
+   * counterpart. When `true`, the merged test case carries a strict superset
+   * of either side's `coveredFieldIds` / `coveredActionIds`.
+   */
+  readonly qualitySignalsCoverageMerged: boolean;
+}
+
+/** Persisted case-merger artifact (Issue #1937). */
+export interface CaseMergerReport {
+  readonly schemaVersion: typeof CASE_MERGER_REPORT_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly jobId: string;
+  readonly generatedAt: string;
+  readonly totals: {
+    readonly runACount: number;
+    readonly runBCount: number;
+    readonly mergedCount: number;
+    readonly onlyInRunA: number;
+    readonly onlyInRunB: number;
+    readonly inBoth: number;
+    readonly conflictsResolvedByRepair: number;
+    readonly conflictsResolvedByPositiveBias: number;
+  };
+  readonly entries: readonly CaseMergerReportEntry[];
+}
+
+/** Schema version for the persisted traceability-matrix artifact (Issue #1373). */
+export const TRACEABILITY_MATRIX_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the persisted traceability-matrix artifact. */
+export const TRACEABILITY_MATRIX_ARTIFACT_FILENAME =
+  "traceability-matrix.json" as const;
+
+/**
+ * Allowed kinds of delta entries inside the intent-delta report.
+ * Sorted, additive — additional kinds may be appended in future
+ * minors.
+ */
+export const ALLOWED_INTENT_DELTA_KINDS = [
+  "screen",
+  "field",
+  "action",
+  "validation",
+  "navigation",
+  "visual_screen",
+] as const;
+export type IntentDeltaKind = (typeof ALLOWED_INTENT_DELTA_KINDS)[number];
+
+/**
+ * Allowed change types on a single delta entry.
+ *
+ * - `added` — present in current, absent in prior.
+ * - `removed` — present in prior, absent in current.
+ * - `changed` — present in both, but the canonical-hash differs.
+ * - `confidence_dropped` — visual confidence (mean) fell more than
+ *   the configured drift threshold.
+ * - `ambiguity_increased` — visual ambiguity / open-question count
+ *   grew between revisions.
+ */
+export const ALLOWED_INTENT_DELTA_CHANGE_TYPES = [
+  "added",
+  "removed",
+  "changed",
+  "confidence_dropped",
+  "ambiguity_increased",
+] as const;
+export type IntentDeltaChangeType =
+  (typeof ALLOWED_INTENT_DELTA_CHANGE_TYPES)[number];
+
+/** Single delta entry inside `IntentDeltaReport.entries`. */
+export interface IntentDeltaEntry {
+  kind: IntentDeltaKind;
+  changeType: IntentDeltaChangeType;
+  /** Stable identifier inside the IR (e.g. `screenId`, `field.id`). */
+  elementId: string;
+  /** Owning screen id, when the entry is screen-scoped. */
+  screenId?: string;
+  /** SHA-256 hex of the prior canonical projection, when present. */
+  priorHash?: string;
+  /** SHA-256 hex of the current canonical projection, when present. */
+  currentHash?: string;
+  /** Optional sanitized human-readable detail (no PII, no tokens). */
+  detail?: string;
+}
+
+/** Hard-invariant intent-delta report artifact (Issue #1373). */
+export interface IntentDeltaReport {
+  schemaVersion: typeof INTENT_DELTA_REPORT_SCHEMA_VERSION;
+  contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  jobId: string;
+  generatedAt: string;
+  /** SHA-256 of the canonical prior IR (anchors the comparison). */
+  priorIntentHash: string;
+  /** SHA-256 of the canonical current IR (anchors the comparison). */
+  currentIntentHash: string;
+  /** Sorted-by-(kind,elementId,changeType) deterministic entries. */
+  entries: IntentDeltaEntry[];
+  /** Aggregate counts, computed deterministically from `entries`. */
+  totals: {
+    added: number;
+    removed: number;
+    changed: number;
+    confidenceDropped: number;
+    ambiguityIncreased: number;
+  };
+  /** Hard invariant: image bytes are NEVER embedded into this artifact. */
+  rawScreenshotsIncluded: false;
+  /** Hard invariant: tokens / credentials are NEVER embedded. */
+  secretsIncluded: false;
+}
+
+/**
+ * Per-test-case verdict produced by the test-case delta classifier.
+ *
+ * - `new` — case id present in current generation, absent from
+ *   prior generation.
+ * - `unchanged` — case id present in both with identical
+ *   fingerprint AND no upstream IR delta touching its trace screens.
+ * - `changed` — case id present in both, fingerprint differs OR
+ *   an IR delta touches one of the case's `figmaTraceRefs`.
+ * - `obsolete` — case id present in prior generation but EVERY
+ *   trace screen is absent from the current IR. Reported only —
+ *   never destructively removed from QC (per Issue #1373 AC3).
+ * - `requires_review` — visual confidence dropped below threshold
+ *   OR a reconciliation conflict surfaced.
+ */
+export const ALLOWED_TEST_CASE_DELTA_VERDICTS = [
+  "new",
+  "unchanged",
+  "changed",
+  "obsolete",
+  "requires_review",
+] as const;
+export type TestCaseDeltaVerdict =
+  (typeof ALLOWED_TEST_CASE_DELTA_VERDICTS)[number];
+
+/**
+ * Allowed reasons attached to a test-case delta verdict. Sorted,
+ * additive. Multiple reasons may apply to the same verdict.
+ */
+export const ALLOWED_TEST_CASE_DELTA_REASONS = [
+  "absent_in_current",
+  "absent_in_prior",
+  "fingerprint_changed",
+  "trace_screen_changed",
+  "trace_screen_removed",
+  "visual_ambiguity_increased",
+  "visual_confidence_dropped",
+  "reconciliation_conflict",
+] as const;
+export type TestCaseDeltaReason =
+  (typeof ALLOWED_TEST_CASE_DELTA_REASONS)[number];
+
+/** Single per-case classification row. */
+export interface TestCaseDeltaRow {
+  testCaseId: string;
+  verdict: TestCaseDeltaVerdict;
+  /** Sorted, deduplicated reasons that fired. */
+  reasons: TestCaseDeltaReason[];
+  /** Sorted figma screen ids implicated by this row. */
+  affectedScreenIds: string[];
+  /** SHA-256 hex of the prior fingerprint when present. */
+  priorFingerprintHash?: string;
+  /** SHA-256 hex of the current fingerprint when present. */
+  currentFingerprintHash?: string;
+}
+
+/** Aggregate test-case delta report (always paired with `IntentDeltaReport`). */
+export interface TestCaseDeltaReport {
+  schemaVersion: typeof TEST_CASE_DELTA_REPORT_SCHEMA_VERSION;
+  contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  jobId: string;
+  generatedAt: string;
+  rows: TestCaseDeltaRow[];
+  totals: {
+    new: number;
+    unchanged: number;
+    changed: number;
+    obsolete: number;
+    requiresReview: number;
+  };
+  rawScreenshotsIncluded: false;
+  secretsIncluded: false;
+}
+
+/**
+ * Allowed similarity sources for a duplicate finding inside the
+ * dedupe report.
+ *
+ * - `lexical` — Jaccard over the existing lexical fingerprint
+ *   (`buildTestCaseFingerprint`). Always available.
+ * - `embedding` — cosine similarity over a caller-supplied
+ *   embedding vector. Only fires when an `EmbeddingProvider` is
+ *   injected.
+ * - `external_lookup` — duplicate of an existing entity in an
+ *   external QC folder, surfaced via an injected probe. Only
+ *   fires when the optional probe is configured.
+ */
+export const ALLOWED_DEDUPE_SIMILARITY_SOURCES = [
+  "lexical",
+  "embedding",
+  "external_lookup",
+] as const;
+export type DedupeSimilaritySource =
+  (typeof ALLOWED_DEDUPE_SIMILARITY_SOURCES)[number];
+
+/** Single internal duplicate finding (within the current job). */
+export interface DedupeInternalFinding {
+  source: Exclude<DedupeSimilaritySource, "external_lookup">;
+  leftTestCaseId: string;
+  rightTestCaseId: string;
+  /** Similarity in [0, 1], rounded to 6 digits. */
+  similarity: number;
+}
+
+/** Single external duplicate finding (against an external QC folder). */
+export interface DedupeExternalFinding {
+  source: "external_lookup";
+  testCaseId: string;
+  externalIdCandidate: string;
+  /** Resolved folder path of the existing entity in the target system. */
+  matchedFolderPath?: string;
+  /**
+   * Stable opaque identifier of the matched entity in the target
+   * system. Treated as opaque — never logged or persisted alongside
+   * any URL or token.
+   */
+  matchedEntityId?: string;
+}
+
+/**
+ * Allowed informational outcomes of an external dedup probe.
+ *
+ * - `disabled` — caller did not configure an `externalProbe`.
+ * - `unconfigured` — probe was supplied but reported its own
+ *   `unconfigured` verdict (e.g. air-gapped client). Fail-closed.
+ * - `partial_failure` — at least one external lookup succeeded, but
+ *   one or more cases could not be checked. Fail-closed.
+ * - `executed` — probe ran and returned per-case verdicts.
+ */
+export const ALLOWED_DEDUPE_EXTERNAL_PROBE_STATES = [
+  "disabled",
+  "unconfigured",
+  "partial_failure",
+  "executed",
+] as const;
+export type DedupeExternalProbeState =
+  (typeof ALLOWED_DEDUPE_EXTERNAL_PROBE_STATES)[number];
+
+/** Per-case verdict computed from the dedupe pipeline. */
+export interface DedupeCaseVerdict {
+  testCaseId: string;
+  /**
+   * `true` when the case has at least one internal duplicate
+   * finding above the configured threshold OR an external
+   * lookup match.
+   */
+  isDuplicate: boolean;
+  /** Sorted-and-deduplicated list of similarity sources that fired. */
+  matchedSources: DedupeSimilaritySource[];
+  /** Highest similarity observed for this case across internal sources. */
+  maxInternalSimilarity: number;
+}
+
+/** Aggregate dedupe report artifact (Issue #1373). */
+export interface TestCaseDedupeReport {
+  schemaVersion: typeof DEDUPE_REPORT_SCHEMA_VERSION;
+  contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  jobId: string;
+  generatedAt: string;
+  /** Threshold above which lexical similarity is reported (0..1). */
+  lexicalThreshold: number;
+  /** Threshold above which embedding similarity is reported (0..1). */
+  embeddingThreshold?: number;
+  /** Whether the embedding path participated in the run. */
+  embeddingProvider: { configured: boolean; identifier?: string };
+  externalProbe: {
+    state: DedupeExternalProbeState;
+    /** Number of test cases probed; zero on `disabled`/`unconfigured`. */
+    cases: number;
+    /** Sanitized informational note when the probe declined to run. */
+    note?: string;
+  };
+  internalFindings: DedupeInternalFinding[];
+  externalFindings: DedupeExternalFinding[];
+  perCase: DedupeCaseVerdict[];
+  totals: {
+    duplicates: number;
+    internalLexical: number;
+    internalEmbedding: number;
+    externalMatches: number;
+  };
+  rawScreenshotsIncluded: false;
+  secretsIncluded: false;
+}
+
+/**
+ * Single row inside the traceability matrix. Joins the lifecycle
+ * of one generated test case across its Figma source, IR
+ * elements, QC mapping, transfer outcome, visual sidecar
+ * observations, and validation/policy outcomes.
+ */
+export interface TraceabilityMatrixRow {
+  testCaseId: string;
+  /** Title at the moment the matrix was built. */
+  title: string;
+  /** Sorted Figma screen ids that motivated the case. */
+  figmaScreenIds: string[];
+  /**
+   * Sorted Figma node ids that motivated the case. Empty when no
+   * trace ref carries a node id.
+   */
+  figmaNodeIds: string[];
+  /** Sorted IR field ids covered by this case. */
+  intentFieldIds: string[];
+  /** Sorted IR action ids covered by this case. */
+  intentActionIds: string[];
+  /** Sorted IR validation ids covered by this case. */
+  intentValidationIds: string[];
+  /** Sorted IR navigation ids covered by this case. */
+  intentNavigationIds: string[];
+  /** Deterministic external-id candidate for the QC mapping. */
+  externalIdCandidate?: string;
+  /** Resolved target QC folder path under the export profile. */
+  qcFolderPath?: string;
+  /** Resolved QC entity id when the case was transferred. */
+  qcEntityId?: string;
+  /** Outcome of the transfer pipeline for this case, when known. */
+  transferOutcome?: TransferEntityOutcome;
+  /** Per-screen visual sidecar observations relevant to this case. */
+  visualObservations: TraceabilityVisualObservation[];
+  /** Per-step traceability rows derived from generated and QC design steps. */
+  steps: TraceabilityStepRow[];
+  /** Reconciliation decisions: one row per IR element with explicit provenance. */
+  reconciliationDecisions: TraceabilityReconciliationDecision[];
+  /** Per-case validation outcome — `error` if any error issue was raised. */
+  validationOutcome: "ok" | "warning" | "error";
+  /** Per-case policy decision (mirrors `TestCasePolicyDecisionRecord.decision`). */
+  policyDecision?: TestCasePolicyDecision;
+  /** Per-case sorted, deduplicated policy outcome codes that fired. */
+  policyOutcomes: TestCasePolicyOutcome[];
+  /** Review-state snapshot at the moment the matrix was built. */
+  reviewState?: ReviewState;
+}
+
+/** Single ordered step row inside a traceability matrix row. */
+export interface TraceabilityStepRow {
+  stepIndex: number;
+  action: string;
+  expected?: string;
+  /** Sorted Figma screen ids inherited from the test-case trace refs. */
+  figmaScreenIds: string[];
+  /** Sorted Figma node ids inherited from the test-case trace refs. */
+  figmaNodeIds: string[];
+  /** Matching QC design-step index when the mapping preview carries one. */
+  qcDesignStepIndex?: number;
+  /** Per-screen visual sidecar observations available for the step's case. */
+  visualObservations: TraceabilityVisualObservation[];
+  /** Per-case validation outcome at the time this step row was built. */
+  validationOutcome: "ok" | "warning" | "error";
+  /** Per-case policy decision at the time this step row was built. */
+  policyDecision?: TestCasePolicyDecision;
+  /** Per-case sorted, deduplicated policy outcomes at the time this step row was built. */
+  policyOutcomes: TestCasePolicyOutcome[];
+}
+
+/** Single per-screen visual observation row inside the matrix. */
+export interface TraceabilityVisualObservation {
+  screenId: string;
+  deployment: SidecarDeployment;
+  /** Sorted, deduplicated outcome codes that fired on the screen. */
+  outcomes: VisualSidecarValidationOutcome[];
+  meanConfidence: number;
+}
+
+/** Single reconciliation decision row inside the matrix. */
+export interface TraceabilityReconciliationDecision {
+  screenId: string;
+  elementId: string;
+  /** IR provenance after reconciliation. */
+  provenance: IntentProvenance;
+  confidence: number;
+  /** Sanitized ambiguity reason, when present. */
+  ambiguity?: string;
+}
+
+/** Aggregate traceability-matrix artifact (Issue #1373). */
+export interface TraceabilityMatrix {
+  schemaVersion: typeof TRACEABILITY_MATRIX_SCHEMA_VERSION;
+  contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  jobId: string;
+  generatedAt: string;
+  /** Identity of the export profile in play, when one is supplied. */
+  exportProfile?: { id: string; version: string };
+  /** Identity of the policy profile in play, when one is supplied. */
+  policyProfile?: { id: string; version: string };
+  rows: TraceabilityMatrixRow[];
+  totals: {
+    rows: number;
+    transferred: number;
+    failed: number;
+    skippedDuplicate: number;
+    refused: number;
+  };
+  rawScreenshotsIncluded: false;
+  secretsIncluded: false;
+}
+
+/**
+ * Jira capability probe result.
+ */
+export interface JiraCapabilityProbe {
+  version: string;
+  deploymentType: "Cloud" | "Server" | "DataCenter" | "unknown";
+  adfSupported: boolean;
+}
+
+/**
+ * Client configuration for the Jira REST gateway (Wave 4.C).
+ */
+export interface JiraGatewayConfig {
+  baseUrl: string;
+  auth:
+    | { kind: "bearer"; token: string }
+    | { kind: "basic"; email: string; apiToken: string }
+    | { kind: "oauth2_3lo"; accessToken: string };
+  userAgent: string;
+  maxWallClockMs?: number;
+  maxRetries?: number;
+  maxResponseBytes?: number;
+  /**
+   * Exact hostnames or `*.example.com` suffix patterns allowed for Bearer
+   * token/Data Center calls. Cloud Basic and OAuth gateway hosts are validated
+   * by auth-mode-specific rules; Data Center endpoints must be allow-listed.
+   */
+  allowedHostPatterns?: readonly string[];
+}
+
+/**
+ * Outbound fetch request shape for the Jira gateway.
+ */
+export interface JiraFetchRequest {
+  query:
+    | { kind: "jql"; jql: string; maxResults: number }
+    | { kind: "issueKeys"; issueKeys: string[] };
+  expand?: ReadonlyArray<"renderedFields" | "names" | "schema">;
+  linkExpansionDepth?: 0 | 1 | 2;
+  fieldSelection?: Partial<JiraFieldSelectionProfile>;
+  maxWallClockMs?: number;
+  maxRetries?: number;
+  /** Enables deterministic on-disk gateway artifacts under `<runDir>/sources/<sourceId>/`. */
+  runDir?: string;
+  /** Source namespace used for replay/cache artifacts when `runDir` is set. */
+  sourceId?: string;
+  /** When true, load the persisted redacted Jira IR list and issue zero outbound fetches. */
+  replayMode?: boolean;
+  /** Deterministic capture timestamp for generated IR; defaults to Unix epoch. */
+  capturedAt?: string;
+}
+
+/** Structured diagnostic emitted by the Jira gateway failure path. */
+export interface JiraGatewayDiagnostic {
+  code: string;
+  message: string;
+  retryable: boolean;
+  status?: number;
+  rateLimitReason?: string;
+}
+
+/**
+ * Result returned by the Jira gateway.
+ */
+export interface JiraFetchResult {
+  issues: JiraIssueIr[];
+  capability: JiraCapabilityProbe;
+  responseHash: string;
+  retryable: boolean;
+  attempts: number;
+  diagnostic?: JiraGatewayDiagnostic;
+  cacheHit?: boolean;
+}
+
+// ── Wave 4.I Production-Readiness Constants ──────────────────────────────────
+
+/**
+ * Maximum Jira REST API calls allowed per production-readiness job.
+ * Enforced before any outbound fetch; breach emits `jira_api_quota_exceeded`.
+ *
+ * Operator stance (CTO directive 2026-05-10): defaults raised to maximum
+ * for stability + quality. Cost-aware profiles can override per customer.
+ */
+export const MAX_JIRA_API_REQUESTS_PER_JOB = 200 as const;
+
+/**
+ * Maximum raw paste bytes allowed per production-readiness job.
+ * Enforced before Jira paste ingest begins; breach emits `jira_paste_quota_exceeded`.
+ *
+ * Operator stance (CTO directive 2026-05-10): raised from 512 KiB to 8 MiB
+ * to accommodate tier-1 banking Jira stories with embedded specifications.
+ */
+export const MAX_JIRA_PASTE_BYTES_PER_JOB = 8_388_608 as const;
+
+/**
+ * Maximum custom-context input bytes allowed per production-readiness job.
+ * Enforced before custom-context ingest begins; breach emits
+ * `custom_context_quota_exceeded`.
+ *
+ * Operator stance (CTO directive 2026-05-10): raised from 256 KiB to 4 MiB
+ * to accommodate multi-section custom-context Markdown files.
+ */
+export const MAX_CUSTOM_CONTEXT_BYTES_PER_JOB = 4_194_304 as const;
+
+/** Schema version for `Wave4ProductionReadinessEvalReport`. */
+export const WAVE4_PRODUCTION_READINESS_EVAL_REPORT_SCHEMA_VERSION =
+  "1.0.0" as const;
+
+/** On-disk filename for `Wave4ProductionReadinessEvalReport`. */
+export const WAVE4_PRODUCTION_READINESS_EVAL_REPORT_ARTIFACT_FILENAME =
+  "wave4-production-readiness-eval-report.json" as const;
+
+/** Source-mix identifier. Each distinct combination of source kinds is one mix. */
+export type Wave4SourceMixId =
+  | "figma_only"
+  | "jira_rest_only"
+  | "jira_paste_only"
+  | "figma_plus_jira_rest"
+  | "figma_plus_jira_paste"
+  | "jira_rest_plus_custom"
+  | "figma_plus_jira_plus_custom"
+  | "all_sources_with_conflict"
+  | "custom_markdown_only"
+  | "figma_plus_jira_plus_custom_markdown"
+  | "custom_markdown_adversarial";
+
+/** Pass/fail thresholds for the Wave 4 production-readiness eval gate. */
+export interface Wave4ProductionReadinessEvalThresholds {
+  /** Required provenance-field coverage across all sources (0–1). Default 1.0. */
+  minSourceProvenance: number;
+  /** Required source-attribution coverage on every test case (0–1). Default 1.0. */
+  minTestCaseSourceAttribution: number;
+  /** Minimum conflict-detection recall on the payment-with-conflict fixture (0–1). Default 0.95. */
+  minConflictDetectionRecall: number;
+  /** Maximum allowed outbound fetch calls in the air-gap fixture. Default 0. */
+  maxAirgapFetchCalls: number;
+}
+
+/** Per-source-mix coverage entry emitted by the eval gate. */
+export interface Wave4SourceMixCoverageEntry {
+  mixId: Wave4SourceMixId;
+  fixtureId: string;
+  pass: boolean;
+  /** Provenance coverage ratio (0–1). */
+  sourceProvenanceCoverage: number;
+  /** Source-attribution coverage ratio across test cases (0–1). */
+  testCaseAttributionCoverage: number;
+  conflictDetectionRecall?: number;
+  airgapFetchCalls?: number;
+  failureReasons: string[];
+}
+
+/**
+ * Per-source provenance record in the evidence manifest.
+ * One entry per source-IR artifact emitted under `<runDir>/sources/<sourceId>/`.
+ */
+export interface MultiSourceSourceProvenanceRecord {
+  sourceId: string;
+  kind: TestIntentSourceKind;
+  contentHash: string;
+  bytes: number;
+  /** Author handle (reviewer-supplied for paste/custom sources). */
+  authorHandle?: string;
+  /** ISO-8601 capture timestamp. */
+  capturedAt?: string;
+}
+
+/**
+ * Evaluation report produced by the Wave 4 production-readiness gate.
+ * Written to `<runDir>/wave4-production-readiness-eval-report.json`.
+ */
+export interface Wave4ProductionReadinessEvalReport {
+  version: typeof WAVE4_PRODUCTION_READINESS_EVAL_REPORT_SCHEMA_VERSION;
+  generatedAt: string;
+  thresholds: Wave4ProductionReadinessEvalThresholds;
+  passed: boolean;
+  overallSourceProvenanceCoverage: number;
+  overallTestCaseAttributionCoverage: number;
+  sourceMixCoverage: Wave4SourceMixCoverageEntry[];
+  markdownCustomContextCoverage: {
+    totalMarkdownSources: number;
+    sourcesWithProvenance: number;
+    coverageRatio: number;
+  };
+  failureReasons: string[];
+  rawScreenshotsIncluded: false;
+  secretsIncluded: false;
+  rawJiraResponsePersisted: false;
+  rawPasteBytesPersisted: false;
+}
+
+// ---------------------------------------------------------------------------
+// Source-mix planner contracts (Issue #1441, Wave 4.K)
+// ---------------------------------------------------------------------------
+
+/** Schema version for persisted `source-mix-plan.json` artifacts. */
+export const SOURCE_MIX_PLAN_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the deterministic source-mix plan artifact. */
+export const SOURCE_MIX_PLAN_ARTIFACT_FILENAME =
+  "source-mix-plan.json" as const;
+
+/**
+ * All supported source-mix identifiers. Each value represents a distinct
+ * combination of primary and supporting source kinds that the planner accepts.
+ * The planner rejects any combination not listed here with
+ * `unsupported_source_mix`.
+ */
+export const ALLOWED_TEST_INTENT_SOURCE_MIX_KINDS = [
+  "figma_only",
+  "jira_rest_only",
+  "jira_paste_only",
+  "figma_jira_rest",
+  "figma_jira_paste",
+  "figma_jira_mixed",
+  "jira_mixed",
+] as const;
+
+/** Discriminated union of all supported source-mix kinds (Issue #1441). */
+export type TestIntentSourceMixKind =
+  (typeof ALLOWED_TEST_INTENT_SOURCE_MIX_KINDS)[number];
+
+/**
+ * Prompt section tag identifying the role of a compiled source segment in the
+ * LLM user prompt. The planner populates {@link SourceMixPlan.promptSections}
+ * with the ordered list of sections that the prompt compiler must emit.
+ *
+ * - `figma_intent` — redacted Figma Business Test Intent IR.
+ * - `jira_requirements` — one or more normalized Jira Issue IRs.
+ * - `custom_context` — structured-attribute and/or plain-text custom context.
+ * - `custom_context_markdown` — Markdown custom context (dedicated kind).
+ * - `reconciliation_report` — cross-source conflict and field-provenance summary.
+ */
+export type SourceMixPlanPromptSection =
+  | "figma_intent"
+  | "jira_requirements"
+  | "custom_context"
+  | "custom_context_markdown"
+  | "reconciliation_report";
+
+/**
+ * Redacted source fingerprint material sealed into a source-mix plan.
+ *
+ * The planner records hashes only, never raw Jira responses, paste bytes, or
+ * Markdown editor input. For Markdown context, the redacted Markdown and
+ * plain-text derivative hashes are included so `sourceMixPlanHash` changes
+ * when sanitized supporting evidence changes.
+ */
+export interface SourceMixPlanSourceDigest {
+  /** Source ID from the multi-source envelope. */
+  sourceId: string;
+  /** Source kind from the multi-source envelope. */
+  kind: TestIntentSourceKind;
+  /** Canonical source content hash from the multi-source envelope. */
+  contentHash: string;
+  /** Canonical Jira issue key, when the source is Jira-backed. */
+  canonicalIssueKey?: string;
+  /** Redacted Markdown hash for Markdown supporting context. */
+  redactedMarkdownHash?: string;
+  /** Plain-text derivative hash for Markdown supporting context. */
+  plainTextDerivativeHash?: string;
+}
+
+/**
+ * Deterministic plan produced by the source-mix planner (Issue #1441).
+ *
+ * The plan captures which source combinations were selected for a job, what
+ * visual-sidecar requirement applies, and in what order the prompt compiler
+ * must emit role-tagged source sections. It also carries hash-only source
+ * fingerprints so the `sourceMixPlanHash` changes when source content changes,
+ * including redacted Markdown supporting context. The `sourceMixPlanHash`
+ * participates in the replay-cache key so a different source mix always forces
+ * a cache miss.
+ *
+ * Negative invariants (TYPE-LEVEL `false`):
+ * - `figmaSourceRequired` is `false` on Jira-only and custom-enriched-Jira plans.
+ * - `visualSidecarRequired` is `false` whenever `visualSidecarRequirement` is
+ *   `"not_applicable"`.
+ * - `rawJiraResponsePersisted` is always `false` — only normalized IRs are stored.
+ * - `rawPasteBytesPersisted` is always `false` — only normalized hashes are stored.
+ */
+export interface SourceMixPlan {
+  /** Schema version stamp. */
+  version: typeof SOURCE_MIX_PLAN_SCHEMA_VERSION;
+  /** Discriminated mix kind derived from the source envelope. */
+  kind: TestIntentSourceMixKind;
+  /** Ordered source IDs classified as primary sources. */
+  primarySourceIds: string[];
+  /** Ordered source IDs classified as supporting sources. */
+  supportingSourceIds: string[];
+  /**
+   * Whether the job requires a visual sidecar pass.
+   * - `required` — at least one Figma source is present and visual captures are expected.
+   * - `optional` — Figma is present but no capture set was supplied.
+   * - `not_applicable` — Jira-only or custom-only; must be `false` at runtime.
+   */
+  visualSidecarRequirement: "required" | "optional" | "not_applicable";
+  /**
+   * Ordered list of prompt sections the compiler must emit for this plan.
+   * The compiler must emit each listed section and MUST NOT emit unlisted sections.
+   */
+  promptSections: SourceMixPlanPromptSection[];
+  /** Hash-only source fingerprints included in `sourceMixPlanHash` when emitted by the planner. */
+  sourceDigests?: SourceMixPlanSourceDigest[];
+  /**
+   * SHA-256 of the canonical plan payload (computed before this field is set,
+   * so the hash covers `kind`, `primarySourceIds`, `supportingSourceIds`,
+   * `visualSidecarRequirement`, `promptSections`, and `sourceDigests`).
+   */
+  sourceMixPlanHash: string;
+  /** Hard invariant: only normalized IRs are stored, never raw Jira API responses. */
+  rawJiraResponsePersisted: false;
+  /** Hard invariant: only redacted hashes are stored, never raw paste bytes. */
+  rawPasteBytesPersisted: false;
+}
+
+/**
+ * Refusal codes emitted by the source-mix planner when it rejects an envelope.
+ * All refusals are fail-closed; no partial artifact is written.
+ */
+export const ALLOWED_SOURCE_MIX_PLANNER_REFUSAL_CODES = [
+  "primary_source_required",
+  "unsupported_source_mix",
+  "duplicate_source_id",
+  "duplicate_jira_issue_key",
+  "custom_markdown_hash_required",
+  "custom_markdown_input_format_invalid",
+  "source_mix_plan_hash_mismatch",
+  "mode_gate_not_satisfied",
+] as const;
+
+/** Refusal code alias for the source-mix planner. */
+export type SourceMixPlannerRefusalCode =
+  (typeof ALLOWED_SOURCE_MIX_PLANNER_REFUSAL_CODES)[number];
+
+/** A single validation issue surfaced by the source-mix planner. */
+export interface SourceMixPlannerIssue {
+  code: SourceMixPlannerRefusalCode;
+  path?: string;
+  detail?: string;
+}
+
+/** Result of source-mix planning (Issue #1441). */
+export type SourceMixPlannerResult =
+  | { ok: true; plan: SourceMixPlan }
+  | { ok: false; issues: SourceMixPlannerIssue[] };
+
+/** Schema version for persisted `coverage-plan.json` artifacts. */
+export const COVERAGE_PLAN_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the deterministic coverage-plan artifact. */
+export const COVERAGE_PLAN_ARTIFACT_FILENAME = "coverage-plan.json" as const;
+
+/** Default mutation kill-rate target for deterministic coverage planning. */
+export const DEFAULT_MUTATION_KILL_RATE_TARGET = 0.85 as const;
+
+/**
+ * Technique identifiers selected by the deterministic coverage planner.
+ *
+ * These are plan-level test-design techniques, not the same enum as
+ * `GeneratedTestCase.technique`.
+ */
+export const ALLOWED_COVERAGE_PLAN_TECHNIQUES = [
+  "initial_state",
+  "equivalence_partitioning",
+  "boundary_value",
+  "decision_table",
+  "state_transition",
+  "pairwise",
+  "error_guessing",
+] as const;
+
+/** Discriminated union of deterministic coverage-planning techniques. */
+export type CoveragePlanTechnique =
+  (typeof ALLOWED_COVERAGE_PLAN_TECHNIQUES)[number];
+
+/**
+ * Stable reason codes explaining why a coverage requirement exists.
+ * These allow downstream generation and auditing to distinguish requirements
+ * without parsing human-readable labels.
+ */
+export const ALLOWED_COVERAGE_REQUIREMENT_REASON_CODES = [
+  "screen_baseline",
+  "element_partition",
+  "rule_partition",
+  "rule_boundary",
+  "rule_decision",
+  "action_transition",
+  "field_lifecycle_transition",
+  "field_lifecycle_error_transition",
+  "calculation_rule",
+  "screen_pairwise",
+  "risk_regression",
+  "open_question_probe",
+  "source_reconciliation_probe",
+  "supporting_context_probe",
+] as const;
+
+/** Stable reason-code union for deterministic coverage requirements. */
+export type CoverageRequirementReasonCode =
+  (typeof ALLOWED_COVERAGE_REQUIREMENT_REASON_CODES)[number];
+
+/**
+ * A single deterministic coverage requirement emitted by `coverage-planner.ts`.
+ *
+ * Each requirement is machine-readable and points at the model entities and
+ * source refs that justified it. Human-readable wording is intentionally kept
+ * out of the contract so equivalent inputs remain byte-stable.
+ */
+export interface CoverageRequirement {
+  readonly requirementId: string;
+  readonly technique: CoveragePlanTechnique;
+  readonly reasonCode: CoverageRequirementReasonCode;
+  readonly screenId?: string;
+  readonly targetIds: readonly string[];
+  readonly sourceRefs: readonly string[];
+  readonly visualRefs: readonly string[];
+}
+
+/** Per-element risk classes reuse the generator's risk-category taxonomy. */
+export type CoveragePlanElementRiskClass = TestCaseRiskCategory;
+
+/** Per-screen minimum quota for one planning technique. */
+export interface CoveragePlanTechniqueQuota {
+  readonly technique: TestCaseTechnique29119;
+  readonly minCount: number;
+}
+
+/**
+ * Screen-scoped quota bundle emitted by the coverage planner. Each screen lists
+ * only the techniques that must appear at least `minCount` times.
+ */
+export interface CoveragePlanPerScreen {
+  readonly screenId: string;
+  readonly techniqueQuotas: readonly CoveragePlanTechniqueQuota[];
+}
+
+/** Per-element coverage target emitted by the coverage planner. */
+export interface CoveragePlanPerElement {
+  readonly screenId: string;
+  readonly elementId: string;
+  readonly mustHaveCase: boolean;
+  readonly riskClass: CoveragePlanElementRiskClass;
+}
+
+/**
+ * Deterministic pre-generation coverage plan derived from `TestDesignModel`
+ * plus optional source-mix context.
+ *
+ * `mutationKillRateTarget` defaults to `0.85` when the caller does not supply
+ * an override; callers may only provide values in the closed interval `[0, 1]`.
+ */
+export interface CoveragePlan {
+  readonly schemaVersion: typeof COVERAGE_PLAN_SCHEMA_VERSION;
+  readonly jobId: string;
+  readonly perScreen: readonly CoveragePlanPerScreen[];
+  readonly perElement: readonly CoveragePlanPerElement[];
+  readonly minimumCases: readonly CoverageRequirement[];
+  readonly recommendedCases: readonly CoverageRequirement[];
+  readonly techniques: readonly CoveragePlanTechnique[];
+  readonly mutationKillRateTarget: number;
+}
+
+/**
+ * Issue #2068 — closed runtime list of `policy:technique-coverage-minimum`
+ * resolution modes.
+ *
+ *   - `tier-elastic` (default) — equivalence-partitioning quotas scale with
+ *     the screen's coverage-relevant field count using the formula
+ *     {@link TIER_ELASTIC_EP_TIERS}. Non-EP techniques keep their planner
+ *     quotas unchanged.
+ *   - `fixed`        — the planner quotas published in
+ *     `CoveragePlan.perScreen[].techniqueQuotas` are enforced verbatim.
+ *     Customers that contractually require a fixed minimum (e.g. a 12-EP
+ *     floor regardless of screen size) opt into this mode.
+ */
+export const TECHNIQUE_COVERAGE_MINIMUM_MODES = [
+  "tier-elastic",
+  "fixed",
+] as const;
+
+/** Discriminant of an allowed `policy:technique-coverage-minimum` mode. */
+export type TechniqueCoverageMinimumMode =
+  (typeof TECHNIQUE_COVERAGE_MINIMUM_MODES)[number];
+
+/**
+ * Tier-elastic equivalence-partitioning quota tiers (Issue #2068).
+ *
+ * Every screen resolves to the LAST tier whose `minFieldCount <= fieldCount`
+ * (sorted ascending). That tier then resolves to
+ * `max(floor, ceil(multiplier * fieldCount))`. The tiers are intentionally a
+ * frozen, deterministic constant so that
+ * `policy-report.json` and `technique-quota-report.json` remain
+ * byte-stable across runs.
+ */
+export interface TechniqueCoverageMinimumTier {
+  readonly minFieldCount: number;
+  readonly multiplier: number;
+  readonly floor: number;
+  readonly label: string;
+}
+
+export const TIER_ELASTIC_EP_TIERS: ReadonlyArray<TechniqueCoverageMinimumTier> =
+  Object.freeze([
+    Object.freeze({
+      minFieldCount: 0,
+      multiplier: 2,
+      floor: 4,
+      label: "fields<=4: max(4, 2*fields)",
+    }),
+    Object.freeze({
+      minFieldCount: 5,
+      multiplier: 1.25,
+      floor: 0,
+      label: "fields=5-8: ceil(1.25*fields)",
+    }),
+    Object.freeze({
+      minFieldCount: 9,
+      multiplier: 0.9,
+      floor: 0,
+      label: "fields=9-19: ceil(0.9*fields)",
+    }),
+    Object.freeze({
+      minFieldCount: 20,
+      multiplier: 0.85,
+      floor: 0,
+      label: "fields=20-29: ceil(0.85*fields)",
+    }),
+    // Wave-5 W5-4 follow-up (2026-05-11): xr6Nf / Test-View-05 has 32
+    // fields and the 0.85× tier required 28 EP cases while the generator
+    // achieved 24 (75 %). Achieving 85 % EP coverage at this scale is
+    // empirically hard; the floor relaxes for very large screens
+    // (`fields >= 30`) so multi-section banking masks are not blocked at
+    // the technique-coverage gate while still requiring meaningful
+    // coverage (75 %).
+    Object.freeze({
+      minFieldCount: 30,
+      multiplier: 0.75,
+      floor: 0,
+      label: "fields>=30: ceil(0.75*fields)",
+    }),
+  ]);
+
+/**
+ * Issue #2068 / #2171 — policy-profile knob that drives the tier-elastic
+ * resolution of `policy:technique-coverage-minimum`. Optional for backwards
+ * compatibility; `undefined` is treated as `{ mode: "tier-elastic" }`. Issue
+ * #2171 extends the tier-elastic branch with optional caller-supplied tiers
+ * so the coefficients live in the policy profile instead of a hidden runtime
+ * constant.
+ */
+export interface FixedTechniqueCoverageMinimumPolicy {
+  readonly mode: "fixed";
+}
+
+export interface TierElasticTechniqueCoverageMinimumPolicy {
+  readonly mode: "tier-elastic";
+  readonly tiers?: readonly TechniqueCoverageMinimumTier[];
+}
+
+export type TechniqueCoverageMinimumPolicy =
+  | FixedTechniqueCoverageMinimumPolicy
+  | TierElasticTechniqueCoverageMinimumPolicy;
+
+/** Schema version for persisted `technique-quota-report.json` artifacts. */
+export const TECHNIQUE_QUOTA_REPORT_SCHEMA_VERSION = "1.1.0" as const;
+
+/** Canonical filename for the per-run technique-quota-report artifact
+ * (Issue #2068). */
+export const TECHNIQUE_QUOTA_REPORT_ARTIFACT_FILENAME =
+  "technique-quota-report.json" as const;
+
+/** Per-run resolution status for one (screen, technique) quota row. */
+export const TECHNIQUE_QUOTA_REPORT_STATUSES = ["pass", "deficit"] as const;
+
+export type TechniqueQuotaReportStatus =
+  (typeof TECHNIQUE_QUOTA_REPORT_STATUSES)[number];
+
+/** One per-screen per-technique entry of `technique-quota-report.json`. */
+export interface TechniqueQuotaReportEntry {
+  readonly screenId: string;
+  readonly technique: TestCaseTechnique29119;
+  /** Coverage-relevant field count for the screen, derived from
+   * `CoveragePlan.perElement`. */
+  readonly fieldCount: number;
+  /** Effective minimum the policy gate enforces this run. */
+  readonly requiredCount: number;
+  /** Cases anchored to the screen with this technique. */
+  readonly actualCount: number;
+  /** Stable, machine-readable formula label that produced
+   * `requiredCount`. `tier-elastic:fields=9-19:ceil(0.9*fields)` etc. */
+  readonly formula: string;
+  /** Stable tier label consulted while resolving the quota. */
+  readonly formulaTier: string;
+  /** Multiplier applied by the consulted tier. `null` when the planner quota
+   * was enforced verbatim and no elastic multiplier applied. */
+  readonly formulaMultiplier: number | null;
+  /** Mode that was active when the report was built. */
+  readonly mode: TechniqueCoverageMinimumMode;
+  readonly status: TechniqueQuotaReportStatus;
+}
+
+/**
+ * Persistable per-run report capturing the
+ * `policy:technique-coverage-minimum` resolution path (Issue #2068).
+ *
+ * The report is emitted on every run that has a `CoveragePlan`,
+ * regardless of whether the gate passes — operators rely on it to audit
+ * why a small-screen mask did NOT trigger a quota deficit even though
+ * the planner published a fixed `12` minCount. Entries are sorted by
+ * `(screenId, technique)`. */
+export interface TechniqueQuotaReport {
+  readonly schemaVersion: typeof TECHNIQUE_QUOTA_REPORT_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly generatedAt: string;
+  readonly jobId: string;
+  readonly policyProfileId: string;
+  readonly mode: TechniqueCoverageMinimumMode;
+  readonly screenCount: number;
+  readonly entryCount: number;
+  readonly passCount: number;
+  readonly deficitCount: number;
+  readonly entries: readonly TechniqueQuotaReportEntry[];
+}
+
+/** Schema version for persisted `risk-ranking.json` artifacts (Issue #1935). */
+export const RISK_RANKING_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the deterministic risk-ranking artifact. */
+export const RISK_RANKING_ARTIFACT_FILENAME = "risk-ranking.json" as const;
+
+/**
+ * Stable rationale tokens for a `RiskRankingElement` (Issue #1935).
+ *
+ * The deterministic baseline emits one of these tokens; LLM augmentation may
+ * only re-order or raise scores within the same closed taxonomy. Tokens are
+ * machine-readable so downstream consumers (generator prompt, judges) can
+ * reason about rank reasons without parsing prose.
+ */
+export const ALLOWED_RISK_RANKING_RATIONALES = [
+  "policy_strict",
+  "regulated_data",
+  "financial_transaction",
+  "high_risk_signal",
+  "must_have_case",
+  "medium_risk_signal",
+  "baseline",
+] as const;
+
+/** Discriminated union of allowed rationale tokens. */
+export type RiskRankingRationale =
+  (typeof ALLOWED_RISK_RANKING_RATIONALES)[number];
+
+/**
+ * One ranked IR element. Each entry refers back to the same
+ * `(screenId, elementId)` pair surfaced by `CoveragePlanPerElement` so the
+ * ranking can be cross-referenced against the deterministic coverage plan.
+ *
+ * `riskScore` lies in the closed interval `[0, 1]`. Higher scores mean the
+ * element should attract more cases in the generator output.
+ */
+export interface RiskRankingElement {
+  readonly screenId: string;
+  readonly elementId: string;
+  readonly riskScore: number;
+  readonly rationale: RiskRankingRationale;
+}
+
+/**
+ * Deterministic risk ranking emitted by `risk-ranker.ts` (Issue #1935).
+ *
+ * The ranking augments `CoveragePlan` with a sorted priority list so the
+ * generator prompt can require explicit coverage of the top-K elements. The
+ * artifact is persisted as `risk-ranking.json` for downstream auditing.
+ *
+ * `topKElementIds` is the prefix of `rankedElements` whose `(screenId,
+ * elementId)` pairs the generator MUST cover with at least one case each.
+ */
+export interface RiskRanking {
+  readonly schemaVersion: typeof RISK_RANKING_SCHEMA_VERSION;
+  readonly jobId: string;
+  readonly rankedElements: readonly RiskRankingElement[];
+  readonly topKElementIds: readonly string[];
+}
+
+/**
+ * Deterministic mutation-coverage-strength report emitted by the
+ * IR mutation oracle companion (Issue #1783).
+ *
+ * The report is intentionally minimal and machine-readable so the repair
+ * planner can consume surviving mutations without reparsing prose. Arrays are
+ * sorted deterministically by the runtime module.
+ */
+export interface IrMutationCoverageStrengthReport {
+  readonly schemaVersion: "1.0.0";
+  readonly jobId: string;
+  readonly mutationCount: number;
+  readonly killedMutations: number;
+  readonly mutationKillRate: number;
+  readonly perMutation: readonly {
+    readonly mutationId: string;
+    readonly mutationKind:
+      | "flip_required"
+      | "shrink_boundary"
+      | "drop_state_transition"
+      | "swap_equivalence_class"
+      | "invert_decision_rule";
+    readonly affectedSourceRefs: readonly string[];
+    readonly killedByTestCaseIds: readonly string[];
+  }[];
+  readonly survivingMutationsForRepair: readonly string[];
+}
+
+// ---------------------------------------------------------------------------
+// Issue #1801 — release:quality-gates hard CI gates.
+// ---------------------------------------------------------------------------
+
+/**
+ * Filename of the canonical-JSON release-quality-gates report emitted by
+ * the release pipeline at `<runDir>/release-quality-gates.json`.
+ */
+export const RELEASE_QUALITY_GATES_REPORT_ARTIFACT_FILENAME =
+  "release-quality-gates.json" as const;
+
+/** Schema version for the release-quality-gates report. */
+export const RELEASE_QUALITY_GATES_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/**
+ * Hard release thresholds for Issue #1801 and Issue #1802. Each gate either
+ * fails the release on breach or attributes the breach to a specific fixture,
+ * role, or query source for diff-artifact review.
+ */
+export const RELEASE_QUALITY_GATES_THRESHOLDS: {
+  readonly minMutationKillRate: 0.85;
+  readonly minPromptCacheHitRate: 0.7;
+  readonly maxCacheBreakRate: 0.05;
+  readonly perSourceCostPlausibility: { readonly allowedFailures: 0 };
+  readonly MEMDIR_MAX_AGE_MS: 7776000000;
+  readonly contextBudget: {
+    readonly defaultMaxBloatRatio: 1.2;
+    readonly minSampleCount: 5;
+  };
+} = {
+  /** `mutationKillRate >= 0.85` against curated mutation fixtures. */
+  minMutationKillRate: 0.85,
+  /** `promptCacheHitRate >= 0.7` across repair iterations 2..N. */
+  minPromptCacheHitRate: 0.7,
+  /** `cacheBreakRate <= 5%` over the release sample. */
+  maxCacheBreakRate: 0.05,
+  /**
+   * Gate 5 (Issue #1802): `allowedFailures: 0` means a single hash mismatch
+   * or unsealed sample fails the entire gate.
+   */
+  perSourceCostPlausibility: { allowedFailures: 0 },
+  /**
+   * Gate 6 (Issue #1802): Maximum age for banking-profile lessons.
+   * 90 days in milliseconds = 7_776_000_000.
+   */
+  MEMDIR_MAX_AGE_MS: 7776000000,
+  /**
+   * Gate 9 (Issue #1802): Context budget regression thresholds.
+   * `defaultMaxBloatRatio` of 1.20 allows up to 20% token bloat before
+   * failing — unless the quality delta score is >= 0.05 (material win).
+   */
+  contextBudget: { defaultMaxBloatRatio: 1.2, minSampleCount: 5 },
+} as const;
+
+/**
+ * Closed list of allowed statuses for the library-coverage-status-completeness
+ * release gate (Issue #1802, Gate 7). Distinct from
+ * `ALLOWED_LIBRARY_PRIMITIVE_STATUSES` which tracks per-release implementation
+ * snapshots; this constant tracks release-report coverage decisions.
+ */
+export const ALLOWED_LIBRARY_COVERAGE_RELEASE_STATUSES = [
+  "COVERED",
+  "PARITY-PATH",
+  "NICHT-UEBERNOMMEN",
+] as const;
+
+/** Discriminated alias for {@link ALLOWED_LIBRARY_COVERAGE_RELEASE_STATUSES}. */
+export type LibraryCoverageReleaseStatus =
+  (typeof ALLOWED_LIBRARY_COVERAGE_RELEASE_STATUSES)[number];
+
+/** Identifiers for all nine hard gates wired into release:quality-gates. */
+export const ALLOWED_RELEASE_QUALITY_GATE_IDS = [
+  "mutation_kill_rate",
+  "prompt_cache_hit_rate",
+  "tamper_detection_round_trip",
+  "cache_break_rate",
+  "per_source_cost_plausibility",
+  "memdir_manifest_consistency",
+  "library_coverage_status_completeness",
+  "architecture_fit_self_test",
+  "context_budget_regression",
+] as const;
+
+/** Discriminated alias for {@link ALLOWED_RELEASE_QUALITY_GATE_IDS}. */
+export type ReleaseQualityGateId =
+  (typeof ALLOWED_RELEASE_QUALITY_GATE_IDS)[number];
+
+/**
+ * Per-fixture mutation-kill input. Mirrors the relevant subset of
+ * {@link IrMutationCoverageStrengthReport} but pinned to the curated
+ * release fixture set so the gate is reproducible offline.
+ */
+export interface ReleaseQualityGateMutationFixture {
+  readonly fixtureId: string;
+  readonly mutationCount: number;
+  readonly killedMutations: number;
+  readonly mutationKillRate: number;
+  readonly survivingMutationsForRepair: readonly string[];
+}
+
+/**
+ * Per-role prompt-cache statistics across repair iterations 2..N
+ * (iteration 1 is excluded — the first attempt cannot benefit from
+ * cache reads of its own prompt prefix).
+ */
+export interface ReleaseQualityGatePromptCacheRole {
+  readonly roleId: string;
+  readonly iterationsCounted: number;
+  readonly cacheHits: number;
+  readonly cacheMisses: number;
+  readonly promptCacheHitRate: number;
+}
+
+/**
+ * Tamper-detection round-trip outcome per release job. The harness
+ * Merkle chain + `headOfChainHash` + ML-BOM hash are verified offline
+ * against the evidence manifest. A single failure across `samples`
+ * fails the gate.
+ */
+export interface ReleaseQualityGateTamperSample {
+  readonly sampleId: string;
+  readonly merkleChainVerified: boolean;
+  readonly headOfChainHashVerified: boolean;
+  readonly mlBomHashVerified: boolean;
+}
+
+/**
+ * Per-source cache-break observation. Used both to compute the global
+ * `cacheBreakRate` and to attribute a spike to the offending source for
+ * diff-artifact review.
+ */
+export interface ReleaseQualityGateCacheBreakSample {
+  readonly querySource: string;
+  readonly responseCount: number;
+  readonly breakCount: number;
+  readonly diffArtifactBasenames: readonly string[];
+}
+
+/**
+ * Per-sample input for Gate 5 — per-source cost plausibility (Issue #1802).
+ * Both hash fields must be lowercase hex64; `sealed` must be true for the
+ * gate to pass.
+ */
+export interface ReleaseQualityGatePerSourceCostSample {
+  readonly sampleId: string;
+  readonly attestedBySourceHash: string;
+  readonly observedBySourceHash: string;
+  readonly sealed: boolean;
+}
+
+/**
+ * Per-lesson input for Gate 6 — memdir manifest consistency (Issue #1802).
+ * Banking-profile lessons are age-checked against `MEMDIR_MAX_AGE_MS`.
+ * Non-banking lessons are included in the report for visibility but do not
+ * cause the gate to fail.
+ */
+export interface ReleaseQualityGateMemdirLesson {
+  readonly lessonId: string;
+  readonly profile: "banking" | "default" | "cross-tenant";
+  readonly mtimeMs: number;
+  readonly lastRefreshAtMs?: number;
+  readonly nowMs: number;
+}
+
+/**
+ * Per-primitive input for Gate 7 — library coverage status completeness
+ * (Issue #1802). Every primitive must have a non-empty justification and a
+ * valid `LibraryCoverageReleaseStatus`. A `COVERED` entry with
+ * `moduleImplemented === false` fails the gate.
+ */
+export interface ReleaseQualityGateLibraryCoveragePrimitive {
+  readonly primitiveId: string;
+  readonly status: LibraryCoverageReleaseStatus;
+  readonly justification: string;
+  readonly referencedModulePath?: string;
+  readonly moduleImplemented: boolean;
+}
+
+/**
+ * Per-violation record produced by `analyzeAgentBoundaries` for Gate 8 —
+ * architecture fit self-test (Issue #1802).
+ */
+export interface ReleaseQualityGateArchitectureViolation {
+  readonly file: string;
+  readonly type: string;
+  readonly line: number;
+}
+
+/**
+ * Complete input envelope consumed by `evaluateReleaseQualityGates` and
+ * by the release-quality-gates CLI runner. The first four sections (mutation,
+ * promptCache, tamper, cacheBreak) were introduced in Issue #1801 and remain
+ * required. The five new sections introduced in Issue #1802 are also required;
+ * they are validated structurally but carry sensible defaults in the baseline
+ * fixture so existing callers can migrate incrementally.
+ */
+export interface ReleaseQualityGatesInput {
+  readonly schemaVersion: typeof RELEASE_QUALITY_GATES_REPORT_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly releaseId: string;
+  readonly mutation: {
+    readonly fixtures: readonly ReleaseQualityGateMutationFixture[];
+  };
+  readonly promptCache: {
+    readonly roles: readonly ReleaseQualityGatePromptCacheRole[];
+  };
+  readonly tamper: {
+    readonly samples: readonly ReleaseQualityGateTamperSample[];
+  };
+  readonly cacheBreak: {
+    readonly samples: readonly ReleaseQualityGateCacheBreakSample[];
+  };
+  /** Gate 5 — per-source cost plausibility (Issue #1802). */
+  readonly perSourceCostPlausibility: {
+    readonly samples: readonly ReleaseQualityGatePerSourceCostSample[];
+  };
+  /** Gate 6 — memdir manifest consistency (Issue #1802). */
+  readonly memdirManifestConsistency: {
+    readonly pathValidator: {
+      readonly coveredCases: number;
+      readonly totalCases: number;
+    };
+    readonly lessons: readonly ReleaseQualityGateMemdirLesson[];
+  };
+  /** Gate 7 — library coverage status completeness (Issue #1802). */
+  readonly libraryCoverageStatusCompleteness: {
+    readonly primitives: readonly ReleaseQualityGateLibraryCoveragePrimitive[];
+  };
+  /**
+   * Gate 8 — architecture fit self-test (Issue #1802).
+   * The runner populates this automatically from `analyzeAgentBoundaries`;
+   * the pure evaluator accepts it as-is so tests can inject values directly.
+   */
+  readonly architectureFitSelfTest: {
+    readonly scannedFileCount: number;
+    readonly violations: readonly ReleaseQualityGateArchitectureViolation[];
+  };
+  /** Gate 9 — context budget regression (Issue #1802). */
+  readonly contextBudgetRegression: {
+    readonly baseline: {
+      readonly meanInputTokens: number;
+      readonly sampleCount: number;
+    };
+    readonly harness: {
+      readonly meanInputTokens: number;
+      readonly sampleCount: number;
+    };
+    readonly qualityDeltaScore: number;
+    readonly maxBloatRatio?: number;
+  };
+}
+
+/**
+ * Per-gate verdict. `attribution[]` carries fixture/role/source
+ * identifiers when the threshold was breached so a reviewer can jump to
+ * the offending evidence without rerunning the pipeline.
+ */
+export interface ReleaseQualityGateVerdict {
+  readonly gateId: ReleaseQualityGateId;
+  readonly observed: number;
+  readonly threshold: number;
+  readonly comparator: "gte" | "lte" | "eq";
+  readonly passed: boolean;
+  readonly attribution: readonly string[];
+}
+
+/**
+ * Canonical-JSON report emitted by the release-quality-gates runner.
+ * The release pipeline fails when any verdict has `passed === false`.
+ */
+export interface ReleaseQualityGatesReport {
+  readonly schemaVersion: typeof RELEASE_QUALITY_GATES_REPORT_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly releaseId: string;
+  readonly mutationKillRate: number;
+  readonly promptCacheHitRate: number;
+  readonly tamperDetectionPassed: boolean;
+  readonly cacheBreakRate: number;
+  readonly verdicts: readonly ReleaseQualityGateVerdict[];
+  readonly passed: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Audit dossier bundle surface (Issue #2175).
+// ---------------------------------------------------------------------------
+
+/** Canonical basename shared by audit-dossier bundle files. */
+export const AUDIT_DOSSIER_ARTIFACT_BASENAME = "audit-dossier" as const;
+
+/** Schema version for the canonical machine-readable dossier manifest. */
+export const AUDIT_DOSSIER_MANIFEST_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Schema version for the detached audit-dossier signature envelope. */
+export const AUDIT_DOSSIER_SIGNATURE_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Closed list of source-artifact roles tracked by the dossier manifest. */
+export const ALLOWED_AUDIT_DOSSIER_ARTIFACT_KINDS = [
+  "model_card",
+  "provenance",
+  "compliance_coverage",
+  "compliance_annotations",
+  "judge_calibration",
+  "locale_calibration",
+  "inter_rater_agreement",
+  "drift_baseline",
+  "incident_log",
+  "subprocessor_register",
+  "region_attestations",
+  "finops_budget",
+  "faithfulness_tier",
+  "self_consistency",
+  "evidence_seal",
+  "policy_report",
+  "human_review_log",
+  "formal_verification_report",
+  "tenant_bundle_resolved",
+] as const;
+
+export type AuditDossierManifestArtifactKind =
+  (typeof ALLOWED_AUDIT_DOSSIER_ARTIFACT_KINDS)[number];
+
+/**
+ * One attested input artifact consumed while assembling the dossier
+ * bundle. The manifest carries only filenames, sizes, and digests —
+ * never raw prompts, screenshots, secrets, or PII-bearing payloads.
+ */
+export interface AuditDossierManifestArtifactRef {
+  readonly kind: AuditDossierManifestArtifactKind;
+  readonly filename: string;
+  readonly sha256: string;
+  readonly bytes: number;
+}
+
+/** One provenance-leaf witness carried so the bundle can self-verify. */
+export interface AuditDossierProvenanceLeafHash {
+  readonly reference: string;
+  readonly hash: string;
+}
+
+/** One regulator/article row in the human-readable evidence table. */
+export interface AuditDossierRegulationCoverageEntry {
+  readonly regulation: string;
+  readonly requirement: string;
+  readonly artifactKinds: readonly AuditDossierManifestArtifactKind[];
+  readonly notes: readonly string[];
+}
+
+/**
+ * Deterministic machine-readable dossier manifest. It is the canonical
+ * signed payload; the PDF is a human-readable rendering of this surface.
+ */
+export interface AuditDossierManifest {
+  readonly schemaVersion: typeof AUDIT_DOSSIER_MANIFEST_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly generatedAt: string;
+  readonly runId: string;
+  readonly bundle: {
+    readonly jsonFilename: string;
+    readonly signatureFilename: string;
+    readonly pdfFilename: string;
+    readonly merkleProofFilename: string;
+    readonly pdfSha256: string;
+  };
+  readonly signing: {
+    readonly algorithm: "ed25519";
+    readonly keyFingerprintSha256: string;
+    readonly publicKeyPem: string;
+    readonly manifestSha256: string;
+  };
+  readonly provenance: {
+    readonly algorithm: string;
+    readonly merkleRoot: string;
+    readonly leafCount: number;
+    readonly leafHashes: readonly AuditDossierProvenanceLeafHash[];
+    readonly merkleProofSha256: string;
+  };
+  readonly sourceArtifacts: readonly AuditDossierManifestArtifactRef[];
+  readonly regionAttestations?: readonly {
+    readonly filename: string;
+    readonly distinctRegions: readonly RegionAttestationHostingRegion[];
+    readonly attestationCount: number;
+  }[];
+  readonly formalVerification?: {
+    readonly filename: string;
+    readonly verdict: "pass" | "fail";
+    readonly specCount: number;
+    readonly formulaCount: number;
+    readonly passCount: number;
+    readonly failCount: number;
+    readonly specs: readonly {
+      readonly specPath: string;
+      readonly module: string;
+      readonly verdict: "pass" | "fail";
+      readonly reachableStateCount: number;
+      readonly formulaCount: number;
+      readonly passCount: number;
+      readonly failCount: number;
+    }[];
+  };
+  /**
+   * Self-improving judge-calibration refit history (Issue #2182).
+   *
+   * Optional and additive. Populated only when the audit-dossier
+   * generator finds at least one production curve OR proposal in
+   * `fixtures/test-intelligence/calibration-curves/`. Legacy runs that
+   * do not consume the calibration-curves fixtures keep the dossier
+   * shape stable.
+   */
+  readonly selfImprovingCalibrationRefitHistory?: {
+    readonly productionCurveCount: number;
+    readonly proposalCount: number;
+    readonly ratifiedCount: number;
+    readonly rolledBackCount: number;
+    readonly rows: readonly {
+      readonly locale: string;
+      readonly riskClass: string;
+      readonly proposalId: string;
+      readonly status: "ratified" | "open" | "rolled_back";
+      readonly proposedAt: string;
+      readonly ratifiedAt?: string;
+      readonly heldOutEce: number;
+      readonly heldOutKappa: number;
+    }[];
+  };
+  /**
+   * Customer-specific configuration (Issue #2184). Populated only when
+   * the audit-dossier generator finds `tenant-bundle-resolved.json`
+   * under the run directory. Legacy runs that do not load a tenant
+   * bundle keep the dossier shape stable.
+   */
+  readonly customerBundle?: {
+    readonly filename: string;
+    readonly tenantId: string;
+    readonly bundleVersion: string;
+    readonly inheritsFromPolicyProfile: string;
+    readonly contentHash: string;
+    readonly riskClassOverrideCount: number;
+    readonly complianceHouseStandardCount: number;
+    readonly designSystemTokenCount: number;
+    readonly terminologyGlossaryCount: number;
+    readonly hasNamingConvention: boolean;
+    readonly hasCustomerEvalRubricRef: boolean;
+    readonly appliedOverrides: readonly string[];
+  };
+  /**
+   * Test-execution evidence loop summary (Issue #2186, W8-4). Optional
+   * and additive: populated only when the dossier generator finds at
+   * least one persisted execution-evidence record under the per-tenant
+   * calibration corpus directory passed via
+   * `executionEvidenceCorpusDir`. Tenants that have not yet ingested
+   * TMS execution evidence keep the dossier shape stable.
+   */
+  readonly executionEvidenceLoop?: {
+    readonly totalEvidence: number;
+    readonly verdictCounts: {
+      readonly pass: number;
+      readonly fail: number;
+      readonly blocked: number;
+      readonly skipped: number;
+    };
+    readonly reviewerConflictCounts: {
+      readonly execution_fail_reviewer_approved: number;
+      readonly execution_pass_reviewer_rejected: number;
+    };
+    readonly tmsAdapterCounts: Readonly<Partial<Record<string, number>>>;
+    readonly distinctSigningKeyFingerprints: readonly string[];
+    readonly earliestExecutedAt: string;
+    readonly latestExecutedAt: string;
+  };
+  /**
+   * Per-locale calibration health table (Issue #2188, W8-6).
+   *
+   * Optional and additive. Populated only when the dossier generator
+   * finds at least one per-locale Platt-curve fixture under
+   * `fixtures/test-intelligence/locale-calibration/<locale>/`.
+   * Reflects the `G13_LOCALE_CALIBRATION_HEALTHY` gate per locale so
+   * the audit-dossier renders a one-row-per-locale health summary
+   * alongside the existing self-improving-calibration refit history.
+   *
+   * Legacy runs that do not ship per-locale fixtures keep the dossier
+   * shape stable.
+   */
+  readonly localeCalibrationHealth?: {
+    readonly gateCode: "G13_LOCALE_CALIBRATION_HEALTHY";
+    readonly thresholds: {
+      readonly kappaFloor: number;
+      readonly eceCeiling: number;
+      readonly minimumSampleCount: number;
+    };
+    readonly localeCount: number;
+    readonly passedCount: number;
+    readonly failedLocales: readonly string[];
+    readonly rows: readonly {
+      readonly locale: string;
+      readonly heldOutKappa: number;
+      readonly heldOutEce: number;
+      readonly sampleCount: number;
+      readonly fallbackToDefault: boolean;
+      readonly passed: boolean;
+    }[];
+  };
+  readonly regulatorCoverage: readonly AuditDossierRegulationCoverageEntry[];
+  readonly summary: {
+    readonly harnessVersion: string;
+    readonly gitSha: string;
+    readonly benchmarkProtocolVersion: string;
+    readonly ictRegisterRefs: readonly string[];
+    readonly policyProfileId: string;
+    readonly modelCardId: string;
+    readonly complianceFrameworkCount: number;
+    readonly complianceAnnotationCount: number;
+    readonly calibrationSampleCount: number;
+    readonly localeCurveCount: number;
+    readonly interRaterFailureCount: number;
+    readonly driftFindingCount: number;
+    readonly incidentCount: number;
+    readonly subprocessorCount: number;
+    readonly faithfulnessMismatchCount: number;
+    readonly selfConsistencyTargetCount: number;
+    readonly provenanceRoot: string;
+    readonly provenanceLeafCount: number;
+    readonly merkleProofSha256: string;
+    readonly runId: string;
+  };
+}
+
+/** Detached Ed25519 signature metadata stored alongside the manifest. */
+export interface AuditDossierSignature {
+  readonly schemaVersion: typeof AUDIT_DOSSIER_SIGNATURE_SCHEMA_VERSION;
+  readonly algorithm: "ed25519";
+  readonly keyFingerprintSha256: string;
+  readonly publicKeyPem: string;
+  readonly manifestSha256: string;
+  readonly signatureBase64: string;
+}
+
 /**
  * Current contract version constant.
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
+ * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "2.1.0" as const;
+export const CONTRACT_VERSION = "4.66.0" as const;
+
+// ---------------------------------------------------------------------------
+// Issue #1774 — UntrustedContentNormalizer (2025-vintage injection carriers).
+// ---------------------------------------------------------------------------
+
+/**
+ * Filename of the canonical-JSON drop-count report emitted by the
+ * untrusted-content normalizer at `<runDir>/`. The report carries
+ * **drop counts only** — no raw stripped content is ever persisted.
+ */
+export const UNTRUSTED_CONTENT_NORMALIZATION_REPORT_ARTIFACT_FILENAME =
+  "untrusted-content-normalization-report.json" as const;
+
+/** Schema version for the untrusted-content-normalization report. */
+export const UNTRUSTED_CONTENT_NORMALIZATION_REPORT_SCHEMA_VERSION =
+  "1.0.0" as const;
+
+/**
+ * Per-element hard byte cap applied to individual untrusted text spans
+ * (Figma TEXT layer characters, individual ADF inline runs). Reuses the
+ * Jira comment-body cap as the baseline so the normalizer never persists
+ * a single element larger than the smallest existing Jira ceiling.
+ */
+export const MAX_UNTRUSTED_CONTENT_ELEMENT_BYTES = 4_096 as const;
+
+/**
+ * Hard cap on the UTF-8 byte length of any single Markdown body fed to
+ * the normalizer. Matches `MAX_CUSTOM_CONTEXT_RAW_MARKDOWN_BYTES` so a
+ * caller that bypassed the upstream custom-context cap cannot turn the
+ * normalizer into a CPU-exhaustion vector.
+ */
+export const MAX_UNTRUSTED_CONTENT_MARKDOWN_BYTES = 32_768 as const;
+
+/**
+ * Carrier kinds tracked by the untrusted-content normalizer. Each entry
+ * corresponds to one drop-count counter in the report. Stable,
+ * locale-independent strings safe to ship to automation.
+ */
+export const ALLOWED_UNTRUSTED_CONTENT_CARRIER_KINDS = [
+  "figma_hidden_layer",
+  "figma_zero_opacity_layer",
+  "figma_off_canvas_layer",
+  "figma_zero_font_size_layer",
+  "sentinel_layer_name",
+  "zero_width_character",
+  "adf_collapsed_node",
+  "element_truncated",
+  "pii_match",
+  "secret_match",
+  "markdown_injection_pattern",
+] as const;
+
+/** Discriminated alias for {@link ALLOWED_UNTRUSTED_CONTENT_CARRIER_KINDS}. */
+export type UntrustedContentCarrierKind =
+  (typeof ALLOWED_UNTRUSTED_CONTENT_CARRIER_KINDS)[number];
+
+/** Severity levels emitted alongside untrusted-content carrier counts. */
+export const ALLOWED_UNTRUSTED_CONTENT_SEVERITIES = [
+  "info",
+  "warning",
+  "critical",
+] as const;
+
+/** Discriminated alias for {@link ALLOWED_UNTRUSTED_CONTENT_SEVERITIES}. */
+export type UntrustedContentSeverity =
+  (typeof ALLOWED_UNTRUSTED_CONTENT_SEVERITIES)[number];
+
+/** Outcome routing emitted by the normalizer. */
+export const ALLOWED_UNTRUSTED_CONTENT_OUTCOMES = [
+  "ok",
+  "needs_review",
+] as const;
+
+/** Discriminated alias for {@link ALLOWED_UNTRUSTED_CONTENT_OUTCOMES}. */
+export type UntrustedContentNormalizationOutcome =
+  (typeof ALLOWED_UNTRUSTED_CONTENT_OUTCOMES)[number];
+
+// ---------------------------------------------------------------------------
+// Issue #1778 — Cache-break detector (intent-suppressed, redacted diffs).
+// ---------------------------------------------------------------------------
+
+/**
+ * Subdirectory under `<runDir>/` where the cache-break detector writes
+ * canonical-JSON diff artifacts (one file per detected break). Diffs are
+ * redacted via `UntrustedContentNormalizer` + `redactHighRiskSecrets`
+ * before persistence — a poisoned tool result that broke the cache must
+ * never be persisted raw.
+ */
+export const CACHE_BREAK_ARTIFACT_DIRECTORY =
+  "observability/cache-breaks" as const;
+
+/** Schema version for the per-break diff artifact. */
+export const CACHE_BREAK_DIFF_SCHEMA_VERSION = "1.0.0" as const;
+
+/**
+ * Heuristic threshold: when the observed `cacheReadTokens` is below this
+ * fraction of the expected baseline AND the new `cacheCreationTokens`
+ * exceeds {@link CACHE_BREAK_MIN_CREATION_TOKENS}, the detector flags
+ * the call as a cache break.
+ */
+export const CACHE_BREAK_READ_RATIO_THRESHOLD = 0.05 as const;
+
+/**
+ * Heuristic threshold: minimum `cacheCreationTokens` for the heuristic to
+ * fire. Pairs with {@link CACHE_BREAK_READ_RATIO_THRESHOLD}; ensures a
+ * cold-start small re-prompt does not register as a break.
+ */
+export const CACHE_BREAK_MIN_CREATION_TOKENS = 2_000 as const;
+
+/**
+ * Maximum number of per-`querySource` snapshots retained by the LRU
+ * inside the detector. Keeps the working set bounded under bursty
+ * multi-source jobs.
+ */
+export const CACHE_BREAK_DETECTOR_MAX_SNAPSHOTS = 10 as const;
+
+/**
+ * Closed set of suppression reasons recognised by
+ * `notifyCompaction` / `notifyCacheDeletion`. Stable, locale-independent
+ * strings safe to ship to automation.
+ */
+export const ALLOWED_CACHE_BREAK_SUPPRESSION_REASONS = [
+  "compaction",
+  "cache_deletion",
+] as const;
+
+/** Discriminated alias for {@link ALLOWED_CACHE_BREAK_SUPPRESSION_REASONS}. */
+export type CacheBreakSuppressionReason =
+  (typeof ALLOWED_CACHE_BREAK_SUPPRESSION_REASONS)[number];
+
+// ---------------------------------------------------------------------------
+// Issue #1803 — release-pipeline integration with consolidated readiness report.
+// ---------------------------------------------------------------------------
+
+/**
+ * Filename of the canonical-JSON release-readiness report committed to
+ * evidence at `<RELEASE_READINESS_ARTIFACT_DIRECTORY>/release-readiness-report.json`.
+ *
+ * Issue #1803: the consolidated single-command output of the release pipeline
+ * (`release:quality-gates`). The orchestrator runs the twelve canonical
+ * release-pipeline gates as subprocesses, captures per-gate logs to disk,
+ * and writes this report referencing each log so a CI failure attributes
+ * directly to the offending gate.
+ */
+export const RELEASE_READINESS_REPORT_ARTIFACT_FILENAME =
+  "release-readiness-report.json" as const;
+
+/** Directory where the consolidated readiness report is committed to evidence. */
+export const RELEASE_READINESS_ARTIFACT_DIRECTORY =
+  "evidence/release-readiness" as const;
+
+/** Schema version for the canonical-JSON release-readiness report. */
+export const RELEASE_READINESS_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/**
+ * Closed list of release-readiness gate identifiers, in the canonical
+ * pipeline order from Issue #1803. The orchestrator MUST run gates in this
+ * exact order; the report MUST list verdicts in this exact order.
+ *
+ * The list is closed: the parser refuses any payload with unknown gate ids,
+ * duplicates, or missing entries — the consolidated report cannot silently
+ * skip a gate.
+ */
+export const ALLOWED_RELEASE_READINESS_GATE_IDS = [
+  "typecheck",
+  "test",
+  "test_ti_eval",
+  "test_ti_live_e2e",
+  "lint_no_telemetry",
+  "lint_secrets_all",
+  "lint_agent_boundaries",
+  "lint_ts_style",
+  "build",
+  "release_ml_bom_emit",
+  "release_merkle_roundtrip",
+  "release_library_coverage_report",
+] as const;
+
+/** Discriminated alias for {@link ALLOWED_RELEASE_READINESS_GATE_IDS}. */
+export type ReleaseReadinessGateId =
+  (typeof ALLOWED_RELEASE_READINESS_GATE_IDS)[number];
+
+/**
+ * Closed list of per-gate statuses recognised by the consolidated
+ * release-readiness report. `skipped` records intentional opt-outs (e.g.
+ * `test_ti_live_e2e` when live-credentials are absent and the gate is
+ * declared opt-in) without polluting `failed` attribution.
+ */
+export const ALLOWED_RELEASE_READINESS_GATE_STATUSES = [
+  "passed",
+  "failed",
+  "skipped",
+] as const;
+
+/** Discriminated alias for {@link ALLOWED_RELEASE_READINESS_GATE_STATUSES}. */
+export type ReleaseReadinessGateStatus =
+  (typeof ALLOWED_RELEASE_READINESS_GATE_STATUSES)[number];
+
+/**
+ * Per-gate result row in the consolidated release-readiness report.
+ *
+ * - `command` records the exact pnpm script invocation (e.g.
+ *   `"pnpm run lint:ts-style"`) so the report is reproducible offline.
+ * - `exitCode` is `0` for `passed`, non-zero for `failed`, and `null` for
+ *   `skipped` (no subprocess ran).
+ * - `durationMs` is wall-clock duration in milliseconds; `0` for skipped
+ *   gates.
+ * - `logPath` is repo-relative path to the captured stdout+stderr log,
+ *   so the consolidated report links each failure to its evidence.
+ *   `null` for skipped gates.
+ * - `attribution` carries short, locale-independent labels surfaced from
+ *   the gate (e.g. `"merkle_chain_break"`, `"ml_bom_hash_mismatch"`); the
+ *   release-pipeline runner forwards them verbatim.
+ */
+export interface ReleaseReadinessGateResult {
+  readonly gateId: ReleaseReadinessGateId;
+  readonly command: string;
+  readonly status: ReleaseReadinessGateStatus;
+  readonly exitCode: number | null;
+  readonly durationMs: number;
+  readonly logPath: string | null;
+  readonly attribution: readonly string[];
+}
+
+/**
+ * Consolidated release-readiness report (Issue #1803).
+ *
+ * `gates[]` MUST list one entry per `ALLOWED_RELEASE_READINESS_GATE_IDS`
+ * member, in canonical order. `passed` is `true` iff every non-skipped
+ * gate passed.
+ */
+export interface ReleaseReadinessReport {
+  readonly schemaVersion: typeof RELEASE_READINESS_REPORT_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly releaseId: string;
+  readonly generatedAt: string;
+  readonly passed: boolean;
+  readonly gates: readonly ReleaseReadinessGateResult[];
+}
+
+// ---------------------------------------------------------------------------
+// Incident-handling surface (Issue #2114, DORA Art. 10).
+// ---------------------------------------------------------------------------
+
+/** Schema version stamped on every persisted `incidents.json`. */
+export const INCIDENT_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the per-job incident-handling artifact. */
+export const INCIDENT_REPORT_ARTIFACT_FILENAME = "incidents.json" as const;
+
+/** Severity bands recognized by the incident classifier. */
+export const ALLOWED_INCIDENT_SEVERITIES = [
+  "low",
+  "medium",
+  "high",
+  "critical",
+] as const;
+export type IncidentSeverity = (typeof ALLOWED_INCIDENT_SEVERITIES)[number];
+
+/**
+ * Closed enumeration of incident categories as defined by Issue #2114.
+ * Listed in canonical sort order; new categories require a contract bump.
+ */
+export const ALLOWED_INCIDENT_CATEGORIES = [
+  "compliance_rule_pack_violation",
+  "drift_alert",
+  "judge_disagreement_persistent",
+  "pii_leakage",
+  "policy_gate_bypass",
+  "replay_cache_miss_unexpected",
+  "subprocessor_outage",
+] as const;
+export type IncidentCategory = (typeof ALLOWED_INCIDENT_CATEGORIES)[number];
+
+/**
+ * Pipeline-level incident review state. When the classifier emits any
+ * `critical` event, the report stamps `incident_ack_required` and the
+ * pipeline pauses until an operator records a manual acknowledgement.
+ */
+export const ALLOWED_INCIDENT_REVIEW_STATES = [
+  "ok",
+  "incident_ack_required",
+] as const;
+export type IncidentReviewState =
+  (typeof ALLOWED_INCIDENT_REVIEW_STATES)[number];
+
+/**
+ * Reference to a persisted artifact backing an incident's evidence
+ * trail. Lets a sink cite an artifact without depending on the full
+ * Wave 1 evidence-manifest type.
+ */
+export interface ManifestRef {
+  readonly filename: string;
+  readonly sha256: string;
+}
+
+/** Single classified incident emitted to the operator's `IncidentSink`. */
+export interface IncidentEvent {
+  readonly id: string;
+  readonly severity: IncidentSeverity;
+  readonly category: IncidentCategory;
+  readonly observedAt: string;
+  readonly jobId: string;
+  readonly evidence: readonly ManifestRef[];
+  readonly rootCauseHypothesis: string;
+}
+
+/**
+ * Persisted incident-handling envelope written per job. The order of
+ * `events` is canonical: severity-rank descending, then category, then
+ * `id`, so byte-identical inputs always produce identical files.
+ */
+export interface IncidentReport {
+  readonly schemaVersion: typeof INCIDENT_REPORT_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly jobId: string;
+  readonly generatedAt: string;
+  readonly reviewState: IncidentReviewState;
+  readonly events: readonly IncidentEvent[];
+}
+
+// ---------------------------------------------------------------------------
+// Production-grade TMS adapter surface (Issue #2183, Wave 8).
+// ---------------------------------------------------------------------------
+
+/**
+ * TMS adapter discriminator for the four enterprise TMS systems shipped
+ * in Wave 8 (Issue #2183). The order is canonical for sort-based
+ * registry rendering; new adapters extend the array.
+ */
+export const ALLOWED_TMS_ADAPTER_IDS = [
+  "alm",
+  "polarion",
+  "qtest",
+  "xray",
+] as const;
+export type TmsAdapterId = (typeof ALLOWED_TMS_ADAPTER_IDS)[number];
+
+/**
+ * Per-case push verdict surfaced on the persisted `tms-push-report.json`.
+ *
+ *   - `pushed` — the adapter created a fresh test case in the TMS.
+ *   - `skipped-dup` — idempotency lookup found a prior write under the
+ *     same `(tenantId, runId, testCaseId)` key. No write performed.
+ *   - `failed` — adapter or transport error after all retry attempts.
+ */
+export const ALLOWED_TMS_PUSH_VERDICTS = [
+  "pushed",
+  "skipped-dup",
+  "failed",
+] as const;
+export type TmsPushVerdict = (typeof ALLOWED_TMS_PUSH_VERDICTS)[number];
+
+/**
+ * Authentication kinds accepted by the TMS adapter contract. Issue #2183
+ * requires PAT (Personal Access Token), OAuth 2.0 bearer, and generic
+ * Bearer token. Each adapter advertises which kind(s) it supports.
+ */
+export const ALLOWED_TMS_AUTH_KINDS = ["pat", "oauth2", "bearer"] as const;
+export type TmsAuthKind = (typeof ALLOWED_TMS_AUTH_KINDS)[number];
+
+/** Schema version stamped on every persisted `tms-push-report.json`. */
+export const TMS_PUSH_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the per-push artifact. */
+export const TMS_PUSH_REPORT_ARTIFACT_FILENAME =
+  "tms-push-report.json" as const;
+
+/**
+ * Allowed reasons the push pipeline may refuse to perform any write.
+ * Evaluated in fail-closed order; every fired refusal is recorded so
+ * operators can address them all in one cycle.
+ */
+export const ALLOWED_TMS_PUSH_REFUSAL_CODES = [
+  "credentials_missing",
+  "credentials_invalid",
+  "project_validation_failed",
+  "mapping_preview_missing",
+  "mapping_preview_unreadable",
+  "no_mapped_test_cases",
+  "adapter_unsupported",
+  "connect_failed",
+] as const;
+export type TmsPushRefusalCode =
+  (typeof ALLOWED_TMS_PUSH_REFUSAL_CODES)[number];
+
+/** Single per-case row in `tms-push-report.json`. */
+export interface TmsPushReportEntry {
+  /** Stable provider-neutral id from `qc-mapping-preview.json`. */
+  testCaseId: string;
+  /** Idempotency key derived from `(tenantId, runId, testCaseId)`. */
+  idempotencyKey: string;
+  /** Push verdict; one of `ALLOWED_TMS_PUSH_VERDICTS`. */
+  verdict: TmsPushVerdict;
+  /**
+   * Round-trip evidence: the TMS-assigned id when the verdict is
+   * `pushed` or `skipped-dup`. Empty string for `failed`.
+   */
+  tmsTestCaseId: string;
+  /**
+   * Sanitised TMS error code preserved on `failed` (e.g. ALM
+   * `qccore.entity.not-found`, Xray `JIRA-401`). Empty for non-failures.
+   */
+  tmsErrorCode: string;
+  /**
+   * Length-bounded, redacted TMS error message preserved on `failed`.
+   * Never carries URLs, tokens, or raw response bodies. Empty for
+   * non-failures.
+   */
+  tmsErrorMessage: string;
+  /** Number of HTTP attempts performed for this case (1 + retries). */
+  attemptCount: number;
+  /** ISO-8601 UTC timestamp at which the verdict was recorded. */
+  recordedAt: string;
+}
+
+/**
+ * Aggregate `tms-push-report.json` artifact (Issue #2183).
+ *
+ * One file per push operation written under the run dir. The artifact is
+ * the round-trip evidence that an operator hands an auditor: every
+ * approved+mapped case appears exactly once with a verdict and (for
+ * pushed cases) the TMS-assigned id.
+ */
+export interface TmsPushReportArtifact {
+  readonly schemaVersion: typeof TMS_PUSH_REPORT_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  /** Adapter discriminator used by the run. */
+  readonly adapterId: TmsAdapterId;
+  /** Adapter implementation version stamped at compile time. */
+  readonly adapterVersion: string;
+  /**
+   * Symbolic alias for the TMS endpoint (never the resolved URL).
+   * Mirrors `QcMappingProfile.baseUrlAlias`.
+   */
+  readonly tmsEndpointAlias: string;
+  /** Project id inside the TMS (e.g. Jira project key, ALM project name). */
+  readonly tmsProjectId: string;
+  /** Run identifier from the source `run-dir`; empty when not derivable. */
+  readonly runId: string;
+  /** Stable tenant id used in idempotency keys. */
+  readonly tenantId: string;
+  /** ISO-8601 UTC timestamp at which the push run completed. */
+  readonly generatedAt: string;
+  /** Whether the pipeline refused to perform any write. */
+  readonly refused: boolean;
+  /** Sorted, deduplicated refusal codes that fired. */
+  readonly refusalCodes: readonly TmsPushRefusalCode[];
+  /** Whether the push was a `--dry-run` (no actual TMS writes performed). */
+  readonly dryRun: boolean;
+  /** Per-case results, sorted by `testCaseId`. */
+  readonly entries: readonly TmsPushReportEntry[];
+  /** Number of entries with verdict `pushed`. */
+  readonly pushedCount: number;
+  /** Number of entries with verdict `skipped-dup`. */
+  readonly skippedDuplicateCount: number;
+  /** Number of entries with verdict `failed`. */
+  readonly failedCount: number;
+  /** Hard invariant: the adapter never embeds raw screenshots. */
+  readonly rawScreenshotsIncluded: false;
+  /** Hard invariant: the adapter never embeds credentials. */
+  readonly credentialsIncluded: false;
+  /** Hard invariant: the adapter never echoes resolved URLs. */
+  readonly transferUrlIncluded: false;
+}

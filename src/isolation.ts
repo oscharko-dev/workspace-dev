@@ -5,8 +5,8 @@
  * This ensures true runtime isolation: no shared state, ports, or artefacts
  * between concurrent projects.
  *
- * Cleanup is deterministic: instances are killed and temp directories removed
- * even when the parent process crashes or receives SIGTERM.
+ * Cleanup is deterministic through explicit lifecycle APIs, with optional
+ * process-level cleanup registration for host applications that want it.
  */
 
 import { fork, type ChildProcess } from "node:child_process";
@@ -15,6 +15,12 @@ import { mkdir, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import type { WorkspaceStartOptions } from "./contracts/index.js";
+import {
+  isIsolatedChildAwaitingConfigMessage,
+  isIsolatedChildErrorMessage,
+  isIsolatedChildReadyMessage,
+  type IsolatedChildStartConfig
+} from "./isolation-startup-contract.js";
 
 const PACKAGE_NAME = "workspace-dev";
 
@@ -56,6 +62,22 @@ interface ManagedInstance extends ProjectInstance {
   process: ChildProcess;
 }
 
+/**
+ * Parent-process registry of active child instances.
+ *
+ * Architectural invariant: this mutable module-global Map is only safe because
+ * workspace-dev assumes single-threaded access within one Node.js event loop.
+ * It is not safe to share across worker_threads or any other concurrent
+ * mutation model without explicit synchronization or a different ownership
+ * design.
+ *
+ * The registry owns child-process lifecycle state for both targeted removal
+ * and best-effort host cleanup:
+ * - removeProjectInstance() sends IPC shutdown, waits up to 3 seconds, then
+ *   falls back to SIGKILL.
+ * - registerIsolationProcessCleanup() uses best-effort SIGTERM during host
+ *   process shutdown hooks.
+ */
 const activeInstances = new Map<string, ManagedInstance>();
 
 const toPublicInstance = (instance: ManagedInstance): ProjectInstance => ({
@@ -67,30 +89,72 @@ const toPublicInstance = (instance: ManagedInstance): ProjectInstance => ({
   createdAt: instance.createdAt
 });
 
-// ── Deterministic cleanup on parent exit ────────────────────────────────────
+// ── Optional host-process cleanup registration ──────────────────────────────
 let cleanupRegistered = false;
 
-const registerParentCleanup = (): void => {
-  if (cleanupRegistered) return;
+const killAllActiveInstances = (): void => {
+  for (const [key, inst] of activeInstances) {
+    try {
+      inst.process.send({ type: "shutdown" });
+      setTimeout(() => {
+        try {
+          inst.process.kill("SIGTERM");
+        } catch {
+          // Ignore already-dead processes during best-effort cleanup.
+        }
+      }, 3_000).unref();
+    } catch {
+      // Ignore already-dead processes during best-effort cleanup.
+    }
+    activeInstances.delete(key);
+  }
+};
+
+const processCleanupListeners: Partial<Record<"exit" | "SIGINT" | "SIGTERM", () => void>> = {};
+
+export const registerIsolationProcessCleanup = (): void => {
+  if (cleanupRegistered) {
+    return;
+  }
   cleanupRegistered = true;
 
-  const killAll = (): void => {
-    for (const [key, inst] of activeInstances) {
-      try {
-        inst.process.kill("SIGTERM");
-      } catch { /* already dead */ }
-      activeInstances.delete(key);
-    }
+  const handleExit = () => {
+    killAllActiveInstances();
+  };
+  const handleSigint = () => {
+    killAllActiveInstances();
+  };
+  const handleSigterm = () => {
+    killAllActiveInstances();
   };
 
-  process.on("exit", killAll);
-  process.on("SIGINT", () => { killAll(); process.exit(128 + 2); });
-  process.on("SIGTERM", () => { killAll(); process.exit(128 + 15); });
-  process.on("uncaughtException", (err) => {
-    console.error("[isolation] uncaughtException — cleaning up instances", err);
-    killAll();
-    process.exit(1);
-  });
+  processCleanupListeners.exit = handleExit;
+  processCleanupListeners.SIGINT = handleSigint;
+  processCleanupListeners.SIGTERM = handleSigterm;
+
+  process.on("exit", handleExit);
+  process.on("SIGINT", handleSigint);
+  process.on("SIGTERM", handleSigterm);
+};
+
+export const unregisterIsolationProcessCleanup = (): void => {
+  if (!cleanupRegistered) {
+    return;
+  }
+  cleanupRegistered = false;
+
+  if (processCleanupListeners.exit) {
+    process.off("exit", processCleanupListeners.exit);
+    delete processCleanupListeners.exit;
+  }
+  if (processCleanupListeners.SIGINT) {
+    process.off("SIGINT", processCleanupListeners.SIGINT);
+    delete processCleanupListeners.SIGINT;
+  }
+  if (processCleanupListeners.SIGTERM) {
+    process.off("SIGTERM", processCleanupListeners.SIGTERM);
+    delete processCleanupListeners.SIGTERM;
+  }
 };
 
 interface ResolvedIsolationEntryPoint {
@@ -98,23 +162,106 @@ interface ResolvedIsolationEntryPoint {
   execArgv: string[];
 }
 
-const resolveTsExecArgv = (): string[] => {
-  const args = [...process.execArgv];
-  const hasTsxImport = args.some((arg, index) => arg === "--import" && args[index + 1] === "tsx");
-  if (!hasTsxImport) {
-    args.push("--import", "tsx");
+const ISOLATED_CHILD_ENV_ALLOWLIST = [
+  "PATH",
+  "HOME",
+  "USER",
+  "LOGNAME",
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+  "SHELL",
+  "TMPDIR",
+  "TMP",
+  "TEMP",
+  "PNPM_HOME",
+  "XDG_CONFIG_HOME",
+  "XDG_CACHE_HOME",
+  "XDG_DATA_HOME",
+  "SSL_CERT_FILE",
+  "SSL_CERT_DIR"
+] as const;
+
+export const buildIsolatedChildProcessEnv = ({
+  parentEnv = process.env
+}: {
+  parentEnv?: NodeJS.ProcessEnv;
+} = {}): NodeJS.ProcessEnv => {
+  const env: NodeJS.ProcessEnv = {
+    NODE_ENV: "production"
+  };
+
+  for (const key of ISOLATED_CHILD_ENV_ALLOWLIST) {
+    const value = parentEnv[key];
+    if (value !== undefined) {
+      env[key] = value;
+    }
   }
-  return args;
+
+  return env;
+};
+
+const createIsolatedChildStartConfig = ({
+  host,
+  workDir,
+  logFormat,
+  shutdownTimeoutMs
+}: {
+  host: string;
+  workDir: string;
+  logFormat?: WorkspaceStartOptions["logFormat"];
+  shutdownTimeoutMs?: WorkspaceStartOptions["shutdownTimeoutMs"];
+}): IsolatedChildStartConfig => {
+  return {
+    host,
+    workDir,
+    ...(logFormat ? { logFormat } : {}),
+    ...(shutdownTimeoutMs !== undefined ? { shutdownTimeoutMs } : {})
+  };
+};
+
+const isTsxRuntimeArg = (value: string): boolean => {
+  return value === "tsx" || value.includes("/tsx/") || value.includes("\\tsx\\");
+};
+
+const isRunningWithTsx = (): boolean => {
+  return process.execArgv.some((arg) => isTsxRuntimeArg(arg));
+};
+
+const resolveTsExecArgv = (): string[] => {
+  if (isRunningWithTsx()) {
+    const args: string[] = [];
+
+    for (let index = 0; index < process.execArgv.length; index += 1) {
+      const arg = process.execArgv[index];
+      const nextArg = process.execArgv[index + 1];
+      const isTsxPairFlag = arg === "--import" || arg === "--require" || arg === "--loader";
+      if (isTsxPairFlag && typeof nextArg === "string" && isTsxRuntimeArg(nextArg)) {
+        args.push(arg, nextArg);
+        index += 1;
+      }
+    }
+
+    if (args.length > 0) {
+      return args;
+    }
+  }
+
+  return ["--import", "tsx"];
 };
 
 // ── Resolve the entry point for fork ────────────────────────────────────────
 const resolveEntryPoint = (): ResolvedIsolationEntryPoint => {
+  const tsPath = path.join(packageRoot, "src", "isolated-server-entry.ts");
+  if (isRunningWithTsx() && existsSync(tsPath)) {
+    return { path: tsPath, execArgv: resolveTsExecArgv() };
+  }
+
   const jsPath = path.join(packageRoot, "dist", "isolated-server-entry.js");
   if (existsSync(jsPath)) {
     return { path: jsPath, execArgv: [] };
   }
 
-  const tsPath = path.join(packageRoot, "src", "isolated-server-entry.ts");
   if (existsSync(tsPath)) {
     return { path: tsPath, execArgv: resolveTsExecArgv() };
   }
@@ -150,8 +297,6 @@ export const createProjectInstance = async (
     throw new Error(`Instance for project '${projectKey}' already exists. Remove it first.`);
   }
 
-  registerParentCleanup();
-
   const baseDir = options.workDir ?? process.cwd();
   const workDir = path.join(baseDir, ".figmapipe", projectKey);
   await mkdir(workDir, { recursive: true });
@@ -168,7 +313,7 @@ export const createProjectInstance = async (
     const child = fork(entryPoint.path, [], {
       stdio: ["ignore", "pipe", "pipe", "ipc"],
       execArgv: entryPoint.execArgv,
-      env: { ...process.env, NODE_ENV: "production" }
+      env: buildIsolatedChildProcessEnv()
     });
 
     child.on("error", (err) => {
@@ -185,27 +330,28 @@ export const createProjectInstance = async (
     });
 
     child.on("message", (msg: unknown) => {
-      const message = msg as Record<string, unknown>;
-
-      if (message.type === "awaiting_config") {
-        // Send start config
+      if (isIsolatedChildAwaitingConfigMessage(msg)) {
+        // Keep targetPath in WorkspaceStartOptions for compatibility with callers
+        // that reuse submit-time option objects, but isolated server startup does
+        // not define target-root behavior and intentionally omits it from IPC.
         child.send({
           type: "start",
-          config: {
+          config: createIsolatedChildStartConfig({
             host,
             workDir,
-            targetPath: options.targetPath ?? "figma-generated"
-          }
+            logFormat: options.logFormat,
+            shutdownTimeoutMs: options.shutdownTimeoutMs
+          })
         });
-      } else if (message.type === "ready") {
+      } else if (isIsolatedChildReadyMessage(msg)) {
         clearTimeout(timeout);
 
         const instance: ManagedInstance = {
-          instanceId: message.instanceId as string,
+          instanceId: msg.instanceId,
           projectKey,
           workDir,
           host,
-          port: message.port as number,
+          port: msg.port,
           createdAt: new Date().toISOString(),
           process: child
         };
@@ -214,12 +360,10 @@ export const createProjectInstance = async (
 
         // Return public interface (without process reference)
         resolve(toPublicInstance(instance));
-      } else if (message.type === "error") {
+      } else if (isIsolatedChildErrorMessage(msg)) {
         clearTimeout(timeout);
         child.kill("SIGTERM");
-        const errorMessage =
-          typeof message.message === "string" ? message.message : "unknown startup error";
-        reject(new Error(`Instance for '${projectKey}' failed: ${errorMessage}`));
+        reject(new Error(`Instance for '${projectKey}' failed: ${msg.message}`));
       }
     });
   });

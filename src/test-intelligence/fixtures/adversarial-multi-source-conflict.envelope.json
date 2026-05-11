@@ -1,0 +1,27 @@
+{
+  "version": "1.0.0",
+  "sources": [
+    {
+      "sourceId": "figma-primary",
+      "kind": "figma_local_json",
+      "contentHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "capturedAt": "2026-04-27T09:00:00.000Z"
+    },
+    {
+      "sourceId": "jira-paste-a",
+      "kind": "jira_paste",
+      "contentHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "capturedAt": "2026-04-27T09:01:00.000Z",
+      "canonicalIssueKey": "PAY-1442"
+    },
+    {
+      "sourceId": "jira-paste-b",
+      "kind": "jira_paste",
+      "contentHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "capturedAt": "2026-04-27T09:02:00.000Z",
+      "canonicalIssueKey": "PAY-1442"
+    }
+  ],
+  "aggregateContentHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "conflictResolutionPolicy": "reviewer_decides"
+}

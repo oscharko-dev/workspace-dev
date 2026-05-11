@@ -1,0 +1,11 @@
+node_modules/
+dist/
+artifacts/
+.figmapipe/
+playwright-report/
+test-results/
+changed-surfaces-resolved.json
+ui-gate-*.json
+*.test.mjs
+*.test.ts
+*.test.tsx

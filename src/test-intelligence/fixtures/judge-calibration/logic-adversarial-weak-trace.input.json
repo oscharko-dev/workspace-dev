@@ -1,0 +1,31 @@
+{
+  "judge": "logic",
+  "input": {
+    "testDesignModel": {
+      "screens": [{ "screenId": "7:1", "screenName": "Profile edit" }],
+      "fields": [
+        { "id": "field-bio", "screenId": "7:1", "label": "Bio" }
+      ]
+    },
+    "coveragePlan": {
+      "perScreen": [{ "screenId": "7:1", "requiredFlows": ["save"] }]
+    },
+    "generatedTestCases": {
+      "schemaVersion": "1.0.0",
+      "jobId": "calibration-logic-adversarial-weak-trace",
+      "testCases": [
+        {
+          "id": "tc-weak-1",
+          "title": "Save bio (no figmaTraceRefs)",
+          "type": "functional",
+          "qualitySignals": {
+            "coveredFieldIds": ["field-bio"],
+            "coveredActionIds": ["save"],
+            "coveredScreenIds": ["7:1"]
+          },
+          "figmaTraceRefs": []
+        }
+      ]
+    }
+  }
+}

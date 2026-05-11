@@ -1,0 +1,38 @@
+{
+  "fixtureId": "faithfulness-edge-numeric-format",
+  "judge": "faithfulness",
+  "scenarioKind": "edge",
+  "humanVerdict": "accept",
+  "humanFindingCodes": [],
+  "rationale": "Locale formatting (comma decimal vs period decimal) is consistent with the captured Figma frame for a EU banking flow; reviewer accepted.",
+  "goldVerdicts": [
+    {
+      "reviewer": "reviewer:banking-sme:alpha",
+      "verdict": "accept",
+      "findingCodes": [],
+      "rationale": "Banking-domain SME first-pass review: Locale formatting (comma decimal vs period decimal) is consistent with the captured Figma frame for a EU banking flow; reviewer accepted.",
+      "timestamp": "2026-04-29T10:00:00.000Z"
+    },
+    {
+      "reviewer": "reviewer:insurance-sme:gamma",
+      "verdict": "repair",
+      "findingCodes": [
+        "mismatch_locale_format"
+      ],
+      "rationale": "Independent second-reviewer pass: EU comma-decimal locale could read ambiguous against an EN baseline; flagged as repairable to add an explicit locale assertion.",
+      "timestamp": "2026-04-30T14:00:00.000Z"
+    }
+  ],
+  "adjudicated": true,
+  "adjudication": {
+    "arbiter": "reviewer:senior-arbiter:delta",
+    "verdict": "accept",
+    "findingCodes": [],
+    "rationale": "Senior arbiter resolution: EU comma-decimal is the captured-frame's native locale and matches the production banking flow's accept-state \u2014 second-reviewer's locale-assertion ask is over-strict for this fixture; case accepts.",
+    "timestamp": "2026-05-02T09:00:00.000Z"
+  },
+  "mockJudgeResponse": {
+    "predictedVerdict": "accept",
+    "predictedFindingCodes": []
+  }
+}

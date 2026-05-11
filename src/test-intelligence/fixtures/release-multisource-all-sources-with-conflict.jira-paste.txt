@@ -1,0 +1,5 @@
+Key: BEN-8001
+Summary: Add Account Holder Name to beneficiary record
+Type: Story
+Status: Open
+Description: Add a new beneficiary capturing the Account Holder Name and BIC. The Account Holder Name field must accept Unicode letters and dashes. Acceptance: 1) Account Holder Name is required. 2) BIC must match the SWIFT format. 3) Confirmation completes within 1 second.

@@ -1,0 +1,121 @@
+{
+  "name": "Adversarial pathological style stacks",
+  "lastModified": "2026-05-05T00:00:00.000Z",
+  "document": {
+    "id": "0:0",
+    "type": "DOCUMENT",
+    "children": [
+      {
+        "id": "0:1",
+        "type": "CANVAS",
+        "name": "Page 1",
+        "children": [
+          {
+            "id": "screen-root",
+            "type": "FRAME",
+            "name": "Style Stress Screen",
+            "absoluteBoundingBox": {
+              "x": 0,
+              "y": 0,
+              "width": 1280,
+              "height": 720
+            },
+            "children": [
+              {
+                "id": "style-stress-node",
+                "type": "FRAME",
+                "name": "Stress Card",
+                "cornerRadius": 24,
+                "absoluteBoundingBox": {
+                  "x": 48,
+                  "y": 48,
+                  "width": 600,
+                  "height": 320
+                },
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "color": {
+                      "r": 0.16,
+                      "g": 0.2,
+                      "b": 0.32,
+                      "a": 1
+                    },
+                    "opacity": 1,
+                    "debugTrace": "fill-conflict-‍trace"
+                  },
+                  {
+                    "type": "GRADIENT_LINEAR",
+                    "opacity": 0.92,
+                    "gradientStops": [
+                      {
+                        "position": 0,
+                        "color": {
+                          "r": 0.16,
+                          "g": 0.2,
+                          "b": 0.32,
+                          "a": 1
+                        }
+                      },
+                      {
+                        "position": 1,
+                        "color": {
+                          "r": 0.84,
+                          "g": 0.32,
+                          "b": 0.2,
+                          "a": 1
+                        }
+                      }
+                    ],
+                    "gradientHandlePositions": [
+                      {
+                        "x": 0,
+                        "y": 0
+                      },
+                      {
+                        "x": 1,
+                        "y": 1
+                      }
+                    ]
+                  }
+                ],
+                "effects": [
+                  {
+                    "type": "DROP_SHADOW",
+                    "visible": true,
+                    "color": {
+                      "r": 0,
+                      "g": 0,
+                      "b": 0,
+                      "a": 0.22
+                    },
+                    "radius": 24,
+                    "offset": {
+                      "x": 0,
+                      "y": 12
+                    }
+                  }
+                ],
+                "children": [
+                  {
+                    "id": "style-stress-text",
+                    "type": "TEXT",
+                    "name": "Stress text",
+                    "characters": "Large style fan-out fixture seed",
+                    "style": {
+                      "fontSize": 16,
+                      "fontWeight": 700,
+                      "fontFamily": "Inter",
+                      "lineHeightPx": 24,
+                      "textAlignHorizontal": "LEFT"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

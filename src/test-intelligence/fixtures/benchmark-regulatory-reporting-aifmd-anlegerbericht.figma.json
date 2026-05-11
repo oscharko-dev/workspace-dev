@@ -1,0 +1,143 @@
+{
+  "source": {
+    "kind": "figma_local_json"
+  },
+  "screens": [
+    {
+      "screenId": "s-aif",
+      "screenName": "AIFMD Anlegerbericht",
+      "screenPath": "/regulatory/aifmd/investor-report",
+      "nodes": [
+        {
+          "nodeId": "n-fund-id",
+          "nodeName": "Fund-Identifier",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "fund/id",
+          "text": "Fund-Identifier",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Format AIF-#######"
+          ]
+        },
+        {
+          "nodeId": "n-fund-isin",
+          "nodeName": "Fund ISIN",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "fund/isin",
+          "text": "Fund ISIN",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Length 12",
+            "ISIN-checksum"
+          ]
+        },
+        {
+          "nodeId": "n-aifm-lei",
+          "nodeName": "AIFM LEI",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "fund/aifm-lei",
+          "text": "AIFM LEI",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Length 20",
+            "LEI-checksum"
+          ]
+        },
+        {
+          "nodeId": "n-period-start",
+          "nodeName": "Berichtsperiode Beginn",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "report/period-start",
+          "text": "Berichtsperiode Beginn",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "ISO date"
+          ]
+        },
+        {
+          "nodeId": "n-period-end",
+          "nodeName": "Berichtsperiode Ende",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "report/period-end",
+          "text": "Berichtsperiode Ende",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "ISO date",
+            "Date >= period-start"
+          ]
+        },
+        {
+          "nodeId": "n-nav",
+          "nodeName": "Nettoinventarwert (EUR)",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "fund/nav",
+          "text": "Nettoinventarwert (EUR)",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Numeric",
+            "Min 0"
+          ]
+        },
+        {
+          "nodeId": "n-leverage",
+          "nodeName": "Leverage-Faktor",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "fund/leverage",
+          "text": "Leverage-Faktor",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Numeric",
+            "Min 0",
+            "Max 50"
+          ]
+        },
+        {
+          "nodeId": "n-risk-profile",
+          "nodeName": "Risikoprofil",
+          "nodeType": "SELECT_FIELD",
+          "nodePath": "fund/risk-profile",
+          "text": "Risikoprofil",
+          "childNodeIds": [],
+          "defaultValue": "moderate",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-art-23-disclosed",
+          "nodeName": "AIFMD Art. 23 Erstinformation veroeffentlicht",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "compliance/art-23-disclosed",
+          "text": "AIFMD Art. 23 Erstinformation veroeffentlicht",
+          "childNodeIds": [],
+          "defaultValue": "No",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-submit",
+          "nodeName": "Bericht einreichen",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/submit",
+          "text": "Bericht einreichen",
+          "childNodeIds": []
+        }
+      ]
+    }
+  ]
+}

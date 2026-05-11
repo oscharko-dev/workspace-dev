@@ -1,0 +1,37 @@
+{
+  "fixtureId": "logic-edge-missing-a11y-case",
+  "judge": "logic",
+  "scenarioKind": "edge",
+  "humanVerdict": "repair",
+  "humanFindingCodes": [
+    "missing_form_screen_a11y_case"
+  ],
+  "rationale": "Form screen lacks an explicit a11y/keyboard-only case; reviewer flagged it repairable to add the missing case.",
+  "goldVerdicts": [
+    {
+      "reviewer": "reviewer:banking-sme:beta",
+      "verdict": "repair",
+      "findingCodes": [
+        "missing_form_screen_a11y_case"
+      ],
+      "rationale": "Banking-domain SME first-pass review: Form screen lacks an explicit a11y/keyboard-only case; reviewer flagged it repairable to add the missing case.",
+      "timestamp": "2026-04-29T10:00:00.000Z"
+    },
+    {
+      "reviewer": "reviewer:insurance-sme:gamma",
+      "verdict": "repair",
+      "findingCodes": [
+        "missing_form_screen_a11y_case"
+      ],
+      "rationale": "Independent second-reviewer pass: confirmed the first-pass verdict \u2014 Form screen lacks an explicit a11y/keyboard-only case; reviewer flagged it repairable to add the missing case.",
+      "timestamp": "2026-04-30T14:00:00.000Z"
+    }
+  ],
+  "adjudicated": false,
+  "mockJudgeResponse": {
+    "predictedVerdict": "repair",
+    "predictedFindingCodes": [
+      "missing_form_screen_a11y_case"
+    ]
+  }
+}

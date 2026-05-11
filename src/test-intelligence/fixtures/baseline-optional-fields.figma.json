@@ -1,0 +1,65 @@
+{
+  "source": {
+    "kind": "figma_local_json"
+  },
+  "screens": [
+    {
+      "screenId": "s-contact-profile",
+      "screenName": "Contact Profile",
+      "nodes": [
+        {
+          "nodeId": "n-email",
+          "nodeName": "Email",
+          "nodeType": "TEXT_INPUT",
+          "text": "Email",
+          "defaultValue": "anna@example.test",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-phone",
+          "nodeName": "Mobile Phone",
+          "nodeType": "TEXT_INPUT",
+          "text": "Mobile Phone",
+          "defaultValue": "",
+          "validations": ["Required if Email is empty"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-company",
+          "nodeName": "Company",
+          "nodeType": "TEXT_INPUT",
+          "text": "Company (optional)",
+          "defaultValue": "",
+          "validations": ["Optional"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-job-title",
+          "nodeName": "Job Title",
+          "nodeType": "TEXT_INPUT",
+          "text": "Job Title",
+          "defaultValue": "",
+          "validations": ["Required if Company is filled"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-country",
+          "nodeName": "Country",
+          "nodeType": "TEXT_INPUT",
+          "text": "Country",
+          "defaultValue": "DE",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-save",
+          "nodeName": "Save",
+          "nodeType": "BUTTON",
+          "text": "Save",
+          "childNodeIds": []
+        }
+      ]
+    }
+  ]
+}

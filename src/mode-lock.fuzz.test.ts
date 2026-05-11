@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import fc from "fast-check";
-import { validateModeLock } from "./mode-lock.js";
+import { getAllowedFigmaSourceModes, getAllowedLlmCodegenModes, validateModeLock } from "./mode-lock.js";
 
 const normalize = (value: string | undefined): string | undefined => {
   if (value === undefined) {
@@ -13,12 +13,12 @@ const normalize = (value: string | undefined): string | undefined => {
 
 const isAllowedFigmaSourceMode = (value: string | undefined): boolean => {
   const normalized = normalize(value);
-  return normalized === undefined || normalized === "rest";
+  return normalized === undefined || getAllowedFigmaSourceModes().includes(normalized);
 };
 
 const isAllowedLlmCodegenMode = (value: string | undefined): boolean => {
   const normalized = normalize(value);
-  return normalized === undefined || normalized === "deterministic";
+  return normalized === undefined || getAllowedLlmCodegenModes().includes(normalized);
 };
 
 test("fuzz: validateModeLock validity matches mode constraints", () => {

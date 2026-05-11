@@ -1,0 +1,16 @@
+{
+  "screens": [
+    {
+      "screenId": "screen-login",
+      "screenName": "Login",
+      "file": "src/pages/login.tsx",
+      "components": []
+    },
+    {
+      "screenId": "screen-mfa",
+      "screenName": "MFA",
+      "file": "src/pages/mfa.tsx",
+      "components": []
+    }
+  ]
+}

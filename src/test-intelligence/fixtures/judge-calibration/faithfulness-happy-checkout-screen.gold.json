@@ -1,0 +1,29 @@
+{
+  "fixtureId": "faithfulness-happy-checkout-screen",
+  "judge": "faithfulness",
+  "scenarioKind": "happy",
+  "humanVerdict": "accept",
+  "humanFindingCodes": [],
+  "rationale": "All checkout controls are visible and labeled identically in the capture and the steps; reviewer accepted.",
+  "goldVerdicts": [
+    {
+      "reviewer": "reviewer:banking-sme:alpha",
+      "verdict": "accept",
+      "findingCodes": [],
+      "rationale": "Banking-domain SME first-pass review: All checkout controls are visible and labeled identically in the capture and the steps; reviewer accepted.",
+      "timestamp": "2026-04-29T10:00:00.000Z"
+    },
+    {
+      "reviewer": "reviewer:banking-sme:beta",
+      "verdict": "accept",
+      "findingCodes": [],
+      "rationale": "Independent second-reviewer pass: confirmed the first-pass verdict \u2014 All checkout controls are visible and labeled identically in the capture and the steps; reviewer accepted.",
+      "timestamp": "2026-04-30T14:00:00.000Z"
+    }
+  ],
+  "adjudicated": false,
+  "mockJudgeResponse": {
+    "predictedVerdict": "accept",
+    "predictedFindingCodes": []
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "fixtureId": "logic-edge-single-step-tc",
+  "judge": "logic",
+  "scenarioKind": "edge",
+  "humanVerdict": "accept",
+  "humanFindingCodes": [],
+  "rationale": "A one-step happy-path case for a search query is acceptable (single field, single action); reviewer accepted as production-ready.",
+  "goldVerdicts": [
+    {
+      "reviewer": "reviewer:banking-sme:alpha",
+      "verdict": "accept",
+      "findingCodes": [],
+      "rationale": "Banking-domain SME first-pass review: A one-step happy-path case for a search query is acceptable (single field, single action); reviewer accepted as production-ready.",
+      "timestamp": "2026-04-29T10:00:00.000Z"
+    },
+    {
+      "reviewer": "reviewer:banking-sme:beta",
+      "verdict": "accept",
+      "findingCodes": [],
+      "rationale": "Independent second-reviewer pass: confirmed the first-pass verdict \u2014 A one-step happy-path case for a search query is acceptable (single field, single action); reviewer accepted as production-ready.",
+      "timestamp": "2026-04-30T14:00:00.000Z"
+    }
+  ],
+  "adjudicated": false,
+  "mockJudgeResponse": {
+    "predictedVerdict": "accept",
+    "predictedFindingCodes": []
+  }
+}

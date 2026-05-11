@@ -13,7 +13,7 @@ const lcovPath = path.resolve(coverageDir, "lcov.info");
 const MINIMUM_THRESHOLD = {
   lines: 90,
   statements: 90,
-  branches: 80,
+  branches: 85,
   functions: 90
 };
 

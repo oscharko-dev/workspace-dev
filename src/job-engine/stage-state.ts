@@ -1,15 +1,23 @@
 import type {
+  WorkspaceCompositeQualityReport,
   WorkspaceFigmaSourceMode,
+  WorkspaceJobConfidence,
+  WorkspaceJobDiagnostic,
   WorkspaceJobLog,
   WorkspaceJobStage,
   WorkspaceJobStageName,
   WorkspaceJobStageStatus,
   WorkspaceJobStatus,
-  WorkspaceLlmCodegenMode
+  WorkspaceLlmCodegenMode,
+  WorkspacePipelineId,
+  WorkspacePipelineQualityPassportSummary,
 } from "../contracts/index.js";
+import { redactLogMessage, type WorkspaceRuntimeLogger } from "../logging.js";
+import {
+  clonePipelineMetadata,
+  resolveJobPipelineMetadata,
+} from "./pipeline/pipeline-runtime-metadata.js";
 import type { JobRecord } from "./types.js";
-
-const LOG_LIMIT = 300;
 
 export const STAGE_ORDER: WorkspaceJobStageName[] = [
   "figma.source",
@@ -18,7 +26,7 @@ export const STAGE_ORDER: WorkspaceJobStageName[] = [
   "codegen.generate",
   "validate.project",
   "repro.export",
-  "git.pr"
+  "git.pr",
 ];
 
 export const toFileSystemSafe = (value: string): string => {
@@ -32,20 +40,37 @@ export const toFileSystemSafe = (value: string): string => {
 
 export const nowIso = (): string => new Date().toISOString();
 
+const LEGACY_COMPATIBILITY_PIPELINE_ID = "rocket" satisfies WorkspacePipelineId;
+
+export const resolveJobPipelineId = (
+  job: Pick<JobRecord, "request">,
+): WorkspacePipelineId =>
+  job.request.pipelineId ?? LEGACY_COMPATIBILITY_PIPELINE_ID;
+
 export const createInitialStages = (): WorkspaceJobStage[] => {
   return STAGE_ORDER.map((name) => ({
     name,
-    status: "queued"
+    status: "queued",
   }));
 };
 
-export const toAcceptedModes = (): {
+export const toAcceptedModes = ({
+  figmaSourceMode,
+}: {
+  figmaSourceMode?: string;
+} = {}): {
   figmaSourceMode: WorkspaceFigmaSourceMode;
   llmCodegenMode: WorkspaceLlmCodegenMode;
 } => {
+  const normalizedFigmaSourceMode = figmaSourceMode?.trim().toLowerCase();
   return {
-    figmaSourceMode: "rest",
-    llmCodegenMode: "deterministic"
+    figmaSourceMode:
+      normalizedFigmaSourceMode === "local_json"
+        ? "local_json"
+        : normalizedFigmaSourceMode === "hybrid"
+          ? "hybrid"
+          : "rest",
+    llmCodegenMode: "deterministic",
   };
 };
 
@@ -53,7 +78,7 @@ export const updateStage = ({
   job,
   stage,
   status,
-  message
+  message,
 }: {
   job: JobRecord;
   stage: WorkspaceJobStageName;
@@ -92,46 +117,180 @@ export const pushLog = ({
   job,
   level,
   message,
-  stage
+  stage,
+  logLimit = job.logLimit ?? 300,
 }: {
   job: JobRecord;
   level: WorkspaceJobLog["level"];
   message: string;
   stage?: WorkspaceJobStageName;
-}): void => {
-  const redactedMessage = message
-    .replace(/(token\s*=\s*)([^\s]+)/gi, "$1[REDACTED]")
-    .replace(/(authorization\s*:\s*bearer\s+)([^\s]+)/gi, "$1[REDACTED]")
-    .replace(/(x-access-token:)([^@\s]+)/gi, "$1[REDACTED]");
-
+  logLimit?: number;
+}): WorkspaceJobLog => {
   const entry: WorkspaceJobLog = {
     at: nowIso(),
     level,
-    message: redactedMessage
+    message: redactLogMessage(message),
   };
   if (stage) {
     entry.stage = stage;
   }
 
   job.logs.push(entry);
-  if (job.logs.length > LOG_LIMIT) {
-    job.logs.splice(0, job.logs.length - LOG_LIMIT);
+  if (job.logs.length > logLimit) {
+    job.logs.splice(0, job.logs.length - logLimit);
   }
+  return entry;
 };
 
+export const pushRuntimeLog = ({
+  job,
+  logger,
+  level,
+  message,
+  stage,
+  logLimit = job.logLimit ?? 300,
+}: {
+  job: JobRecord;
+  logger: WorkspaceRuntimeLogger;
+  level: WorkspaceJobLog["level"];
+  message: string;
+  stage?: WorkspaceJobStageName;
+  logLimit?: number;
+}): WorkspaceJobLog => {
+  const entry = pushLog({
+    job,
+    level,
+    message,
+    ...(stage ? { stage } : {}),
+    logLimit,
+  });
+  logger.log({
+    level,
+    message: entry.message,
+    jobId: job.jobId,
+    ...(entry.stage ? { stage: entry.stage } : {}),
+  });
+  return entry;
+};
+
+export const cloneCompositeQuality = (
+  report: WorkspaceCompositeQualityReport,
+): WorkspaceCompositeQualityReport => ({
+  ...report,
+  ...(report.performance
+    ? {
+        performance: {
+          ...report.performance,
+          samples: report.performance.samples.map((sample) => ({ ...sample })),
+          aggregateMetrics: { ...report.performance.aggregateMetrics },
+          warnings: [...report.performance.warnings],
+        },
+      }
+    : {}),
+  ...(report.composite
+    ? {
+        composite: {
+          ...report.composite,
+          includedDimensions: [...report.composite.includedDimensions],
+        },
+      }
+    : {}),
+  ...(report.warnings ? { warnings: [...report.warnings] } : {}),
+});
+
+export const cloneJobConfidence = (
+  confidence: WorkspaceJobConfidence,
+): WorkspaceJobConfidence => ({
+  ...confidence,
+  ...(confidence.contributors
+    ? { contributors: confidence.contributors.map((entry) => ({ ...entry })) }
+    : {}),
+  ...(confidence.screens
+    ? {
+        screens: confidence.screens.map((screen) => ({
+          ...screen,
+          contributors: screen.contributors.map((entry) => ({ ...entry })),
+          components: screen.components.map((component) => ({
+            ...component,
+            contributors: component.contributors.map((entry) => ({ ...entry })),
+          })),
+        })),
+      }
+    : {}),
+  ...(confidence.lowConfidenceSummary
+    ? { lowConfidenceSummary: [...confidence.lowConfidenceSummary] }
+    : {}),
+});
+
+export const cloneQualityPassportSummary = (
+  qualityPassport: WorkspacePipelineQualityPassportSummary,
+): WorkspacePipelineQualityPassportSummary => ({
+  ...qualityPassport,
+  tokenCoverage: { ...qualityPassport.tokenCoverage },
+  semanticCoverage: { ...qualityPassport.semanticCoverage },
+});
+
+const cloneJobDiagnostics = (
+  diagnostics: WorkspaceJobDiagnostic[],
+): WorkspaceJobDiagnostic[] =>
+  diagnostics.map((diagnostic) => structuredClone(diagnostic));
+
+export const cloneJobLineage = (
+  lineage: NonNullable<JobRecord["lineage"]>,
+): NonNullable<WorkspaceJobStatus["lineage"]> => ({
+  ...lineage,
+  ...(lineage.pipelineMetadata
+    ? {
+        pipelineMetadata: clonePipelineMetadata(lineage.pipelineMetadata),
+      }
+    : {}),
+  ...(lineage.retryTargets ? { retryTargets: [...lineage.retryTargets] } : {}),
+});
+
+export const cloneJobError = (
+  error: NonNullable<JobRecord["error"]>,
+): NonNullable<WorkspaceJobStatus["error"]> => ({
+  ...error,
+  ...(error.retryTargets
+    ? {
+        retryTargets: error.retryTargets.map((target) => ({
+          ...target,
+        })),
+      }
+    : {}),
+  ...(error.diagnostics
+    ? { diagnostics: cloneJobDiagnostics(error.diagnostics) }
+    : {}),
+});
+
 export const toPublicJob = (job: JobRecord): WorkspaceJobStatus => {
+  const pipelineId = resolveJobPipelineId(job);
+  const pipelineMetadata = resolveJobPipelineMetadata(job);
   const status: WorkspaceJobStatus = {
     jobId: job.jobId,
+    pipelineId,
+    pipelineMetadata,
     status: job.status,
     submittedAt: job.submittedAt,
-    request: { ...job.request },
+    request: {
+      ...job.request,
+      pipelineId,
+      pipelineMetadata: clonePipelineMetadata(pipelineMetadata),
+    },
     stages: job.stages.map((stage) => ({ ...stage })),
     logs: job.logs.map((entry) => ({ ...entry })),
     artifacts: { ...job.artifacts },
-    preview: { ...job.preview }
+    preview: { ...job.preview },
+    queue: { ...job.queue },
   };
+  if (job.pasteDeltaSummary) {
+    status.pasteDeltaSummary = { ...job.pasteDeltaSummary };
+  }
   if (job.currentStage) {
     status.currentStage = job.currentStage;
+  }
+  if (job.outcome) {
+    status.outcome = job.outcome;
   }
   if (job.startedAt) {
     status.startedAt = job.startedAt;
@@ -139,11 +298,71 @@ export const toPublicJob = (job: JobRecord): WorkspaceJobStatus => {
   if (job.finishedAt) {
     status.finishedAt = job.finishedAt;
   }
+  if (job.lineage) {
+    status.lineage = cloneJobLineage(job.lineage);
+  }
+  if (job.cancellation) {
+    status.cancellation = { ...job.cancellation };
+  }
+  if (job.generationDiff) {
+    status.generationDiff = { ...job.generationDiff };
+  }
+  if (job.visualAudit) {
+    status.visualAudit = {
+      ...job.visualAudit,
+      ...(job.visualAudit.regions
+        ? {
+            regions: job.visualAudit.regions.map((region) => ({ ...region })),
+          }
+        : {}),
+    };
+  }
+  if (job.visualQuality) {
+    status.visualQuality = { ...job.visualQuality };
+  }
+  if (job.compositeQuality) {
+    status.compositeQuality = cloneCompositeQuality(job.compositeQuality);
+  }
+  if (job.confidence) {
+    status.confidence = cloneJobConfidence(job.confidence);
+  }
   if (job.gitPr) {
     status.gitPr = { ...job.gitPr };
   }
+  if (job.inspector) {
+    status.inspector = {
+      ...job.inspector,
+      pipelineId,
+      pipelineMetadata: clonePipelineMetadata(pipelineMetadata),
+      ...(job.inspector.retryableStages
+        ? { retryableStages: [...job.inspector.retryableStages] }
+        : {}),
+      ...(job.inspector.retryTargets
+        ? {
+            retryTargets: job.inspector.retryTargets.map((target) => ({
+              ...target,
+            })),
+          }
+        : {}),
+      ...(job.inspector.qualityPassport
+        ? {
+            qualityPassport: cloneQualityPassportSummary(
+              job.inspector.qualityPassport,
+            ),
+          }
+        : {}),
+      stages: job.inspector.stages.map((stage) => ({
+        ...stage,
+        ...(stage.retryTargets
+          ? {
+              retryTargets: stage.retryTargets.map((target) => ({ ...target })),
+            }
+          : {}),
+      })),
+    };
+  }
   if (job.error) {
-    status.error = { ...job.error };
+    status.error = cloneJobError(job.error);
   }
 
   return status;
@@ -151,8 +370,18 @@ export const toPublicJob = (job: JobRecord): WorkspaceJobStatus => {
 
 export const toJobSummary = (job: JobRecord): string => {
   if (job.status === "completed") {
-    const count = job.stages.filter((stage) => stage.status === "completed").length;
+    const count = job.stages.filter(
+      (stage) => stage.status === "completed",
+    ).length;
     return `Job completed successfully. ${count}/${job.stages.length} stages completed.`;
+  }
+  if (job.status === "partial") {
+    const stage = job.error?.stage ?? job.currentStage ?? "unknown";
+    return `Job partially completed. Recovery is available from stage '${stage}'.`;
+  }
+  if (job.status === "canceled") {
+    const reason = job.cancellation?.reason ?? "Cancellation requested.";
+    return `Job canceled. ${reason}`;
   }
   if (job.status === "failed") {
     const stage = job.error?.stage ?? job.currentStage ?? "unknown";

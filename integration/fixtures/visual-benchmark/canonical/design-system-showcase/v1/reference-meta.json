@@ -1,0 +1,19 @@
+{
+  "capturedAt": "2026-04-12T13:08:58.201Z",
+  "comparison": {
+    "maxDiffPercent": 4.8,
+    "viewportId": "default"
+  },
+  "export": {
+    "format": "png",
+    "scale": 1
+  },
+  "figmaLastModified": "2026-04-12T06:29:36Z",
+  "fileKey": "xr6NfWtzAj4mAk54ZsBs53",
+  "fixtureId": "design-system-showcase",
+  "label": "Test-View-05",
+  "nodeId": "1:63838",
+  "nodeName": "NEO Desktop (stationär) ID-001.7_v1",
+  "referenceVersion": 1,
+  "sha256": "5873d806db0aaf8382e439b7c1a9d568b8e2a70421259176f634eea183ee68f0"
+}

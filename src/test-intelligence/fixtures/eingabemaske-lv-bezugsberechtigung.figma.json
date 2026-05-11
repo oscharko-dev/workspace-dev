@@ -1,0 +1,154 @@
+{
+  "source": {
+    "kind": "figma_local_json"
+  },
+  "screens": [
+    {
+      "screenId": "s-lv-bezug",
+      "screenName": "Lebensversicherung Bezugsberechtigung",
+      "screenPath": "/insurance/lv/beneficiaries",
+      "nodes": [
+        {
+          "nodeId": "n-bezugsart",
+          "nodeName": "Bezugsart",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "policy/designation/type",
+          "text": "Bezugsart (widerruflich, unwiderruflich)",
+          "defaultValue": "widerruflich",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-beg1-name",
+          "nodeName": "Beguenstigter 1 Name",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "policy/beneficiaries[0]/name",
+          "text": "Beguenstigter 1: Name",
+          "defaultValue": "",
+          "validations": ["Required", "Max 80 characters"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-beg1-verhaeltnis",
+          "nodeName": "Beguenstigter 1 Verhaeltnis",
+          "nodeType": "SELECT_FIELD",
+          "nodePath": "policy/beneficiaries[0]/relationship",
+          "text": "Beguenstigter 1: Verhaeltnis (Ehepartner, Kind, Eltern, Sonstige)",
+          "defaultValue": "Ehepartner",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-beg1-quote",
+          "nodeName": "Beguenstigter 1 Quote",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "policy/beneficiaries[0]/quote-percent",
+          "text": "Beguenstigter 1: Quote in Prozent",
+          "defaultValue": "",
+          "validations": ["Required", "Numeric in range 1..100", "Max 2 decimals"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-beg2-name",
+          "nodeName": "Beguenstigter 2 Name",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "policy/beneficiaries[1]/name",
+          "text": "Beguenstigter 2: Name",
+          "defaultValue": "",
+          "validations": ["Optional", "Max 80 characters"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-beg2-verhaeltnis",
+          "nodeName": "Beguenstigter 2 Verhaeltnis",
+          "nodeType": "SELECT_FIELD",
+          "nodePath": "policy/beneficiaries[1]/relationship",
+          "text": "Beguenstigter 2: Verhaeltnis",
+          "defaultValue": "",
+          "validations": ["Required if Beguenstigter 2 Name is provided"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-beg2-quote",
+          "nodeName": "Beguenstigter 2 Quote",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "policy/beneficiaries[1]/quote-percent",
+          "text": "Beguenstigter 2: Quote in Prozent",
+          "defaultValue": "",
+          "validations": [
+            "Required if Beguenstigter 2 Name is provided",
+            "Numeric in range 1..100"
+          ],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-beg3-name",
+          "nodeName": "Beguenstigter 3 Name",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "policy/beneficiaries[2]/name",
+          "text": "Beguenstigter 3: Name",
+          "defaultValue": "",
+          "validations": ["Optional"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-beg3-verhaeltnis",
+          "nodeName": "Beguenstigter 3 Verhaeltnis",
+          "nodeType": "SELECT_FIELD",
+          "nodePath": "policy/beneficiaries[2]/relationship",
+          "text": "Beguenstigter 3: Verhaeltnis",
+          "defaultValue": "",
+          "validations": ["Required if Beguenstigter 3 Name is provided"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-beg3-quote",
+          "nodeName": "Beguenstigter 3 Quote",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "policy/beneficiaries[2]/quote-percent",
+          "text": "Beguenstigter 3: Quote in Prozent",
+          "defaultValue": "",
+          "validations": [
+            "Required if Beguenstigter 3 Name is provided",
+            "Numeric in range 1..100"
+          ],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-summe",
+          "nodeName": "Summe der Quoten",
+          "nodeType": "RESULT_DISPLAY",
+          "nodePath": "policy/beneficiaries/quote-sum",
+          "text": "Summe der Quoten in Prozent (muss exakt 100 ergeben, sonst Plausibilitaetsfehler)",
+          "defaultValue": "",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-disclaimer-bezug",
+          "nodeName": "Hinweis zu unwiderruflicher Bezugsberechtigung",
+          "nodeType": "INFORMATIVE_LABEL",
+          "nodePath": "policy/disclaimer/irrevocable",
+          "text": "Hinweis: Eine unwiderrufliche Bezugsberechtigung kann nur mit schriftlicher Zustimmung des Bezugsberechtigten geaendert oder widerrufen werden.",
+          "defaultValue": "",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-speichern",
+          "nodeName": "Aenderung speichern",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/save",
+          "text": "Aenderung speichern",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-abbrechen",
+          "nodeName": "Abbrechen",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/cancel",
+          "text": "Abbrechen",
+          "childNodeIds": []
+        }
+      ]
+    }
+  ]
+}

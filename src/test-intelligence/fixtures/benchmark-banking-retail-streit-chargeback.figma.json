@@ -1,0 +1,225 @@
+{
+  "source": {
+    "kind": "figma_local_json"
+  },
+  "screens": [
+    {
+      "screenId": "s-disp-1",
+      "screenName": "Chargeback Schritt 1: Transaktion",
+      "screenPath": "/banking/retail/dispute/step-1",
+      "nodes": [
+        {
+          "nodeId": "n-tx-id",
+          "nodeName": "Transaktions-ID",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "dispute/tx-id",
+          "text": "Transaktions-ID",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Format TXN-############"
+          ]
+        },
+        {
+          "nodeId": "n-tx-date",
+          "nodeName": "Buchungsdatum",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "dispute/tx-date",
+          "text": "Buchungsdatum",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "ISO date",
+            "Date <= today"
+          ]
+        },
+        {
+          "nodeId": "n-tx-amount",
+          "nodeName": "Betrag in EUR",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "dispute/tx-amount",
+          "text": "Betrag in EUR",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Numeric",
+            "Min 0.01"
+          ]
+        },
+        {
+          "nodeId": "n-tx-merchant",
+          "nodeName": "Haendler",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "dispute/merchant-name",
+          "text": "Haendler",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Max 80 characters"
+          ]
+        },
+        {
+          "nodeId": "n-next-1",
+          "nodeName": "Weiter",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/next",
+          "text": "Weiter",
+          "childNodeIds": [],
+          "navigationTarget": "s-disp-2"
+        }
+      ]
+    },
+    {
+      "screenId": "s-disp-2",
+      "screenName": "Chargeback Schritt 2: Grund",
+      "screenPath": "/banking/retail/dispute/step-2",
+      "nodes": [
+        {
+          "nodeId": "n-reason",
+          "nodeName": "Reklamationsgrund",
+          "nodeType": "SELECT_FIELD",
+          "nodePath": "dispute/reason",
+          "text": "Reklamationsgrund",
+          "childNodeIds": [],
+          "defaultValue": "Ware nicht erhalten",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-reason-detail",
+          "nodeName": "Detailbeschreibung",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "dispute/reason-detail",
+          "text": "Detailbeschreibung",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Min 30 characters",
+            "Max 1000 characters"
+          ]
+        },
+        {
+          "nodeId": "n-evidence-ref",
+          "nodeName": "Evidenz-Referenz",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "dispute/evidence-ref",
+          "text": "Evidenz-Referenz",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required if reason is 'Ware nicht erhalten' or 'Ware mangelhaft'",
+            "Max 60 characters"
+          ]
+        },
+        {
+          "nodeId": "n-merchant-contacted",
+          "nodeName": "Haendler kontaktiert",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "dispute/merchant-contacted",
+          "text": "Haendler kontaktiert",
+          "childNodeIds": [],
+          "defaultValue": "No",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-back-2",
+          "nodeName": "Zurueck",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/back",
+          "text": "Zurueck",
+          "childNodeIds": [],
+          "navigationTarget": "s-disp-1"
+        },
+        {
+          "nodeId": "n-next-2",
+          "nodeName": "Weiter",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/next",
+          "text": "Weiter",
+          "childNodeIds": [],
+          "navigationTarget": "s-disp-3"
+        }
+      ]
+    },
+    {
+      "screenId": "s-disp-3",
+      "screenName": "Chargeback Schritt 3: Erklaerung",
+      "screenPath": "/banking/retail/dispute/step-3",
+      "nodes": [
+        {
+          "nodeId": "n-decl-truth",
+          "nodeName": "Wahrheitsgemaesse Angaben",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "dispute/declaration-truth",
+          "text": "Wahrheitsgemaesse Angaben",
+          "childNodeIds": [],
+          "defaultValue": "No",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-decl-card",
+          "nodeName": "Karte nicht weitergegeben",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "dispute/declaration-card-secrecy",
+          "text": "Karte nicht weitergegeben",
+          "childNodeIds": [],
+          "defaultValue": "No",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-decl-recover",
+          "nodeName": "Keine Rueckerstattung erhalten",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "dispute/declaration-no-recovery",
+          "text": "Keine Rueckerstattung erhalten",
+          "childNodeIds": [],
+          "defaultValue": "No",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-agb",
+          "nodeName": "AGB akzeptiert",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "compliance/agb-accepted",
+          "text": "AGB akzeptiert",
+          "childNodeIds": [],
+          "defaultValue": "No",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-back-3",
+          "nodeName": "Zurueck",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/back",
+          "text": "Zurueck",
+          "childNodeIds": [],
+          "navigationTarget": "s-disp-2"
+        },
+        {
+          "nodeId": "n-submit",
+          "nodeName": "Reklamation einreichen",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/submit",
+          "text": "Reklamation einreichen",
+          "childNodeIds": []
+        }
+      ]
+    }
+  ]
+}

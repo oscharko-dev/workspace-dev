@@ -1,0 +1,1107 @@
+{
+  "generatedApp": {
+    "attempts": 1,
+    "build": {
+      "args": [
+        "build"
+      ],
+      "attempt": 1,
+      "command": "pnpm",
+      "outputCaptureKey": "validate.project.attempt-1.build",
+      "status": "passed",
+      "timedOut": false
+    },
+    "install": {
+      "command": {
+        "args": [
+          "install",
+          "--ignore-scripts",
+          "--no-frozen-lockfile",
+          "--reporter",
+          "append-only",
+          "--prefer-offline"
+        ],
+        "attempt": 1,
+        "command": "pnpm",
+        "outputCaptureKey": "validate.project.install",
+        "status": "passed",
+        "timedOut": false
+      },
+      "status": "completed",
+      "strategy": "normalized"
+    },
+    "lint": {
+      "args": [
+        "lint"
+      ],
+      "attempt": 1,
+      "command": "pnpm",
+      "outputCaptureKey": "validate.project.attempt-1.lint",
+      "status": "passed",
+      "timedOut": false
+    },
+    "lintAutofix": {
+      "args": [
+        "lint",
+        "--fix"
+      ],
+      "attempt": 1,
+      "changedFiles": [
+        "src/context/SeitenContentPatternContext.tsx",
+        "src/screens/__tests__/SeitenContent.test.tsx"
+      ],
+      "command": "pnpm",
+      "outputCaptureKey": "validate.project.attempt-1.lint-autofix",
+      "status": "completed",
+      "timedOut": false
+    },
+    "status": "ok",
+    "test": {
+      "args": [
+        "run",
+        "test"
+      ],
+      "attempt": 1,
+      "command": "pnpm",
+      "outputCaptureKey": "validate.project.attempt-1.test",
+      "status": "failed",
+      "timedOut": false
+    },
+    "typecheck": {
+      "args": [
+        "typecheck"
+      ],
+      "attempt": 1,
+      "command": "pnpm",
+      "outputCaptureKey": "validate.project.attempt-1.typecheck",
+      "status": "passed",
+      "timedOut": false
+    },
+    "validateUi": {
+      "args": [
+        "run",
+        "validate:ui"
+      ],
+      "attempt": 1,
+      "command": "pnpm",
+      "outputCaptureKey": "validate.project.attempt-1.validate-ui",
+      "status": "passed",
+      "timedOut": false
+    }
+  },
+  "import": {
+    "customerProfile": {
+      "import": {
+        "issueCount": 0,
+        "issues": [],
+        "policy": "error"
+      },
+      "match": {
+        "policy": "warn"
+      },
+      "status": "ok",
+      "token": {
+        "policy": "warn"
+      }
+    },
+    "status": "ok"
+  },
+  "mapping": {
+    "componentApi": {
+      "counts": {
+        "byReason": {
+          "component_api_children_unsupported": 3,
+          "component_api_missing": 0,
+          "component_api_prop_unsupported": 6,
+          "component_api_signature_conflict": 0,
+          "component_api_slot_unsupported": 0
+        }
+      },
+      "issueCount": 9,
+      "issues": [
+        {
+          "code": "component_api_prop_unsupported",
+          "componentKey": "Chip",
+          "figmaFamilyKey": "component:1:48552",
+          "figmaFamilyName": "<Chip>",
+          "message": "Resolved component 'Chip' does not expose prop 'state' (mapped from 'state').",
+          "severity": "warning",
+          "sourceProp": "state",
+          "targetProp": "state"
+        },
+        {
+          "code": "component_api_prop_unsupported",
+          "componentKey": "Divider",
+          "figmaFamilyKey": "component:1:38908",
+          "figmaFamilyName": "<Divider>",
+          "message": "Resolved component 'Divider' does not expose prop 'textalign' (mapped from 'textalign').",
+          "severity": "warning",
+          "sourceProp": "textalign",
+          "targetProp": "textalign"
+        },
+        {
+          "code": "component_api_prop_unsupported",
+          "componentKey": "IconButton",
+          "figmaFamilyKey": "component:1:43449",
+          "figmaFamilyName": "<IconButton>",
+          "message": "Resolved component 'IconButton' does not expose prop 'state' (mapped from 'state').",
+          "severity": "warning",
+          "sourceProp": "state",
+          "targetProp": "state"
+        },
+        {
+          "code": "component_api_children_unsupported",
+          "componentKey": "Typography",
+          "figmaFamilyKey": "component:1:38311",
+          "figmaFamilyName": "<Typography>",
+          "message": "Resolved component 'Typography' does not expose 'children', but the generator surface relies on it.",
+          "severity": "warning",
+          "targetProp": "children"
+        },
+        {
+          "code": "component_api_prop_unsupported",
+          "componentKey": "Typography",
+          "figmaFamilyKey": "component:1:38311",
+          "figmaFamilyName": "<Typography>",
+          "message": "Resolved component 'Typography' does not expose prop 'variant' (mapped from 'variant').",
+          "severity": "warning",
+          "sourceProp": "variant",
+          "targetProp": "variant"
+        },
+        {
+          "code": "component_api_children_unsupported",
+          "componentKey": "Typography",
+          "figmaFamilyKey": "component:1:38313",
+          "figmaFamilyName": "<Typography>",
+          "message": "Resolved component 'Typography' does not expose 'children', but the generator surface relies on it.",
+          "severity": "warning",
+          "targetProp": "children"
+        },
+        {
+          "code": "component_api_prop_unsupported",
+          "componentKey": "Typography",
+          "figmaFamilyKey": "component:1:38313",
+          "figmaFamilyName": "<Typography>",
+          "message": "Resolved component 'Typography' does not expose prop 'variant' (mapped from 'variant').",
+          "severity": "warning",
+          "sourceProp": "variant",
+          "targetProp": "variant"
+        },
+        {
+          "code": "component_api_children_unsupported",
+          "componentKey": "Typography",
+          "figmaFamilyKey": "component:1:38329",
+          "figmaFamilyName": "<Typography>",
+          "message": "Resolved component 'Typography' does not expose 'children', but the generator surface relies on it.",
+          "severity": "warning",
+          "targetProp": "children"
+        },
+        {
+          "code": "component_api_prop_unsupported",
+          "componentKey": "Typography",
+          "figmaFamilyKey": "component:1:38329",
+          "figmaFamilyName": "<Typography>",
+          "message": "Resolved component 'Typography' does not expose prop 'variant' (mapped from 'variant').",
+          "severity": "warning",
+          "sourceProp": "variant",
+          "targetProp": "variant"
+        }
+      ],
+      "status": "warn"
+    },
+    "componentMatchReport": {
+      "filePath": "<fixture-root>/derived/component-match-report.json",
+      "status": "ok"
+    },
+    "customerProfileMatch": {
+      "counts": {
+        "byReason": {
+          "match_ambiguous": 3,
+          "match_unmatched": 14,
+          "profile_family_unresolved": 0,
+          "profile_import_family_mismatch": 0,
+          "profile_import_missing": 19,
+          "profile_import_resolved": 6
+        },
+        "byStatus": {
+          "mui_fallback_allowed": 19,
+          "mui_fallback_denied": 0,
+          "not_applicable": 17,
+          "resolved_import": 6
+        },
+        "iconByReason": {
+          "match_ambiguous": 0,
+          "match_unmatched": 36,
+          "not_icon_family": 29,
+          "profile_family_unresolved": 0,
+          "profile_icon_import_missing": 0,
+          "profile_icon_import_resolved": 3,
+          "profile_icon_wrapper_allowed": 0,
+          "profile_icon_wrapper_denied": 10,
+          "profile_icon_wrapper_missing": 0
+        },
+        "iconByStatus": {
+          "ambiguous": 0,
+          "not_applicable": 29,
+          "resolved_import": 3,
+          "unresolved": 36,
+          "wrapper_fallback_allowed": 0,
+          "wrapper_fallback_denied": 10
+        }
+      },
+      "issueCount": 63,
+      "issues": [
+        {
+          "figmaFamilyKey": "component:1:49959",
+          "figmaFamilyName": "_<CharacterCount>",
+          "kind": "component",
+          "message": "Figma family '_<CharacterCount>' is unmatched in component.match_report.",
+          "reason": "match_unmatched",
+          "status": "not_applicable"
+        },
+        {
+          "figmaFamilyKey": "component:1:45022",
+          "figmaFamilyName": "_<InputAdornment>",
+          "kind": "component",
+          "message": "Figma family '_<InputAdornment>' is unmatched in component.match_report.",
+          "reason": "match_unmatched",
+          "status": "not_applicable"
+        },
+        {
+          "figmaFamilyKey": "component:1:41120",
+          "figmaFamilyName": "<Avatar>",
+          "iconKey": "avatar",
+          "kind": "icon",
+          "message": "icon 'avatar' in Figma family '<Avatar>' is denied generic customer icon wrapper fallback.",
+          "profileFamily": "Components",
+          "reason": "profile_icon_wrapper_denied",
+          "status": "wrapper_fallback_denied",
+          "storybookTier": "Components"
+        },
+        {
+          "figmaFamilyKey": "component:1:41120",
+          "figmaFamilyName": "<Avatar>",
+          "iconKey": "circular",
+          "kind": "icon",
+          "message": "icon 'circular' in Figma family '<Avatar>' is denied generic customer icon wrapper fallback.",
+          "profileFamily": "Components",
+          "reason": "profile_icon_wrapper_denied",
+          "status": "wrapper_fallback_denied",
+          "storybookTier": "Components"
+        },
+        {
+          "figmaFamilyKey": "component:1:41120",
+          "figmaFamilyName": "<Avatar>",
+          "iconKey": "circular_mit_icon",
+          "kind": "icon",
+          "message": "icon 'circular_mit_icon' in Figma family '<Avatar>' is denied generic customer icon wrapper fallback.",
+          "profileFamily": "Components",
+          "reason": "profile_icon_wrapper_denied",
+          "status": "wrapper_fallback_denied",
+          "storybookTier": "Components"
+        },
+        {
+          "figmaFamilyKey": "component:1:41120",
+          "figmaFamilyName": "<Avatar>",
+          "iconKey": "display.avatar.avatar",
+          "kind": "icon",
+          "message": "icon 'display.avatar.avatar' in Figma family '<Avatar>' is denied generic customer icon wrapper fallback.",
+          "profileFamily": "Components",
+          "reason": "profile_icon_wrapper_denied",
+          "status": "wrapper_fallback_denied",
+          "storybookTier": "Components"
+        },
+        {
+          "figmaFamilyKey": "component:1:41120",
+          "figmaFamilyName": "<Avatar>",
+          "iconKey": "logo_mit_icon",
+          "kind": "icon",
+          "message": "icon 'logo_mit_icon' in Figma family '<Avatar>' is denied generic customer icon wrapper fallback.",
+          "profileFamily": "Components",
+          "reason": "profile_icon_wrapper_denied",
+          "status": "wrapper_fallback_denied",
+          "storybookTier": "Components"
+        },
+        {
+          "figmaFamilyKey": "component:1:41120",
+          "figmaFamilyName": "<Avatar>",
+          "iconKey": "rounded_mit_icon",
+          "kind": "icon",
+          "message": "icon 'rounded_mit_icon' in Figma family '<Avatar>' is denied generic customer icon wrapper fallback.",
+          "profileFamily": "Components",
+          "reason": "profile_icon_wrapper_denied",
+          "status": "wrapper_fallback_denied",
+          "storybookTier": "Components"
+        },
+        {
+          "figmaFamilyKey": "component:1:41120",
+          "figmaFamilyName": "<Avatar>",
+          "iconKey": "the_shape_of_the_avatar_square_variant_will_be_automatically_overwritten_by",
+          "kind": "icon",
+          "message": "icon 'the_shape_of_the_avatar_square_variant_will_be_automatically_overwritten_by' in Figma family '<Avatar>' is denied generic customer icon wrapper fallback.",
+          "profileFamily": "Components",
+          "reason": "profile_icon_wrapper_denied",
+          "status": "wrapper_fallback_denied",
+          "storybookTier": "Components"
+        },
+        {
+          "figmaFamilyKey": "component:1:43449",
+          "figmaFamilyName": "<IconButton>",
+          "iconKey": "button",
+          "kind": "icon",
+          "message": "icon 'button' in Figma family '<IconButton>' is denied generic customer icon wrapper fallback.",
+          "profileFamily": "Components",
+          "reason": "profile_icon_wrapper_denied",
+          "status": "wrapper_fallback_denied",
+          "storybookTier": "Components"
+        },
+        {
+          "figmaFamilyKey": "component:1:43449",
+          "figmaFamilyName": "<IconButton>",
+          "iconKey": "children",
+          "kind": "icon",
+          "message": "icon 'children' in Figma family '<IconButton>' is denied generic customer icon wrapper fallback.",
+          "profileFamily": "Components",
+          "reason": "profile_icon_wrapper_denied",
+          "status": "wrapper_fallback_denied",
+          "storybookTier": "Components"
+        },
+        {
+          "figmaFamilyKey": "component:1:43449",
+          "figmaFamilyName": "<IconButton>",
+          "iconKey": "display.button",
+          "kind": "icon",
+          "message": "icon 'display.button' in Figma family '<IconButton>' is denied generic customer icon wrapper fallback.",
+          "profileFamily": "Components",
+          "reason": "profile_icon_wrapper_denied",
+          "status": "wrapper_fallback_denied",
+          "storybookTier": "Components"
+        },
+        {
+          "figmaFamilyKey": "name:stack",
+          "figmaFamilyName": "<Stack>",
+          "kind": "component",
+          "message": "Figma family '<Stack>' remains ambiguous in component.match_report.",
+          "reason": "match_ambiguous",
+          "status": "not_applicable"
+        },
+        {
+          "figmaFamilyKey": "component:1:41763",
+          "figmaFamilyName": "<Stack2>(Nested)",
+          "kind": "component",
+          "message": "Figma family '<Stack2>(Nested)' remains ambiguous in component.match_report.",
+          "reason": "match_ambiguous",
+          "status": "not_applicable"
+        },
+        {
+          "figmaFamilyKey": "component:1:42114",
+          "figmaFamilyName": "<Stack3>(Nested)",
+          "kind": "component",
+          "message": "Figma family '<Stack3>(Nested)' is unmatched in component.match_report.",
+          "reason": "match_unmatched",
+          "status": "not_applicable"
+        },
+        {
+          "figmaFamilyKey": "component:1:42234",
+          "figmaFamilyName": "<Stack3>(Nested)",
+          "kind": "component",
+          "message": "Figma family '<Stack3>(Nested)' is unmatched in component.match_report.",
+          "reason": "match_unmatched",
+          "status": "not_applicable"
+        },
+        {
+          "figmaFamilyKey": "component:1:40054",
+          "figmaFamilyName": "<Stack4>(Nested)",
+          "kind": "component",
+          "message": "Figma family '<Stack4>(Nested)' is unmatched in component.match_report.",
+          "reason": "match_unmatched",
+          "status": "not_applicable"
+        },
+        {
+          "figmaFamilyKey": "component:1:43658",
+          "figmaFamilyName": "<Stack6>(Nested)",
+          "kind": "component",
+          "message": "Figma family '<Stack6>(Nested)' remains ambiguous in component.match_report.",
+          "reason": "match_ambiguous",
+          "status": "not_applicable"
+        },
+        {
+          "figmaFamilyKey": "component:1:38926",
+          "figmaFamilyName": "ic_arrow_subitem_s 🔥",
+          "iconKey": "arrow_subitem_s",
+          "kind": "icon",
+          "message": "icon 'arrow_subitem_s' in Figma family 'ic_arrow_subitem_s 🔥' is unmatched in component.match_report.",
+          "reason": "match_unmatched",
+          "status": "unresolved"
+        },
+        {
+          "figmaFamilyKey": "component:1:38926",
+          "figmaFamilyName": "ic_arrow_subitem_s 🔥",
+          "iconKey": "docs",
+          "kind": "icon",
+          "message": "icon 'docs' in Figma family 'ic_arrow_subitem_s 🔥' is unmatched in component.match_report.",
+          "reason": "match_unmatched",
+          "status": "unresolved"
+        },
+        {
+          "figmaFamilyKey": "component:1:38926",
+          "figmaFamilyName": "ic_arrow_subitem_s 🔥",
+          "iconKey": "finanzinformatik.cpl_module_reactlib",
+          "kind": "icon",
+          "message": "icon 'finanzinformatik.cpl_module_reactlib' in Figma family 'ic_arrow_subitem_s 🔥' is unmatched in component.match_report.",
+          "reason": "match_unmatched",
+          "status": "unresolved"
+        },
+        {
+          "figmaFamilyKey": "component:1:38926",
+          "figmaFamilyName": "ic_arrow_subitem_s 🔥",
+          "iconKey": "reactlib.brand_icon",
+          "kind": "icon",
+          "message": "icon 'reactlib.brand_icon' in Figma family 'ic_arrow_subitem_s 🔥' is unmatched in component.match_report.",
+          "reason": "match_unmatched",
+          "status": "unresolved"
+        },
+        {
+          "figmaFamilyKey": "component:1:38926",
+          "figmaFamilyName": "ic_arrow_subitem_s 🔥",
+          "kind": "component",
+          "message": "Figma family 'ic_arrow_subitem_s 🔥' is unmatched in component.match_report.",
+          "reason": "match_unmatched",
+          "status": "not_applicable"
+        },
+        {
+          "figmaFamilyKey": "component:1:42111",
+          "figmaFamilyName": "ic_chart_upward_s 1",
+          "iconKey": "chart_upward_s_1",
+          "kind": "icon",
+          "message": "icon 'chart_upward_s_1' in Figma family 'ic_chart_upward_s 1' is unmatched in component.match_report.",
+          "reason": "match_unmatched",
+          "status": "unresolved"
+        },
+        {
+          "figmaFamilyKey": "component:1:42111",
+          "figmaFamilyName": "ic_chart_upward_s 1",
+          "iconKey": "docs",
+          "kind": "icon",
+          "message": "icon 'docs' in Figma family 'ic_chart_upward_s 1' is unmatched in component.match_report.",
+          "reason": "match_unmatched",
+          "status": "unresolved"
+        },
+        {
+          "figmaFamilyKey": "component:1:42111",
+          "figmaFamilyName": "ic_chart_upward_s 1",
+          "iconKey": "finanzinformatik.cpl_module_reactlib",
+          "kind": "icon",
+          "message": "icon 'finanzinformatik.cpl_module_reactlib' in Figma family 'ic_chart_upward_s 1' is unmatched in component.match_report.",
+          "reason": "match_unmatched",
+          "status": "unresolved"
+        },
+        {
+          "figmaFamilyKey": "component:1:42111",
+          "figmaFamilyName": "ic_chart_upward_s 1",
+          "iconKey": "reactlib.brand_icon",
+          "kind": "icon",
+          "message": "icon 'reactlib.brand_icon' in Figma family 'ic_chart_upward_s 1' is unmatched in component.match_report.",
+          "reason": "match_unmatched",
+          "status": "unresolved"
+        },
+        {
+          "figmaFamilyKey": "component:1:42111",
+          "figmaFamilyName": "ic_chart_upward_s 1",
+          "kind": "component",
+          "message": "Figma family 'ic_chart_upward_s 1' is unmatched in component.match_report.",
+          "reason": "match_unmatched",
+          "status": "not_applicable"
+        },
+        {
+          "figmaFamilyKey": "component:1:43496",
+          "figmaFamilyName": "ic_circle_s 🔥",
+          "iconKey": "circle_s",
+          "kind": "icon",
+          "message": "icon 'circle_s' in Figma family 'ic_circle_s 🔥' is unmatched in component.match_report.",
+          "reason": "match_unmatched",
+          "status": "unresolved"
+        },
+        {
+          "figmaFamilyKey": "component:1:43496",
+          "figmaFamilyName": "ic_circle_s 🔥",
+          "iconKey": "docs",
+          "kind": "icon",
+          "message": "icon 'docs' in Figma family 'ic_circle_s 🔥' is unmatched in component.match_report.",
+          "reason": "match_unmatched",
+          "status": "unresolved"
+        },
+        {
+          "figmaFamilyKey": "component:1:43496",
+          "figmaFamilyName": "ic_circle_s 🔥",
+          "iconKey": "finanzinformatik.cpl_module_reactlib",
+          "kind": "icon",
+          "message": "icon 'finanzinformatik.cpl_module_reactlib' in Figma family 'ic_circle_s 🔥' is unmatched in component.match_report.",
+          "reason": "match_unmatched",
+          "status": "unresolved"
+        },
+        {
+          "figmaFamilyKey": "component:1:43496",
+          "figmaFamilyName": "ic_circle_s 🔥",
+          "iconKey": "reactlib.brand_icon",
+          "kind": "icon",
+          "message": "icon 'reactlib.brand_icon' in Figma family 'ic_circle_s 🔥' is unmatched in component.match_report.",
+          "reason": "match_unmatched",
+          "status": "unresolved"
+        },
+        {
+          "figmaFamilyKey": "component:1:43496",
+          "figmaFamilyName": "ic_circle_s 🔥",
+          "kind": "component",
+          "message": "Figma family 'ic_circle_s 🔥' is unmatched in component.match_report.",
+          "reason": "match_unmatched",
+          "status": "not_applicable"
+        },
+        {
+          "figmaFamilyKey": "component:1:54357",
+          "figmaFamilyName": "ic_coin_stack_s",
+          "iconKey": "coin_stack_s",
+          "kind": "icon",
+          "message": "icon 'coin_stack_s' in Figma family 'ic_coin_stack_s' is unmatched in component.match_report.",
+          "reason": "match_unmatched",
+          "status": "unresolved"
+        },
+        {
+          "figmaFamilyKey": "component:1:54357",
+          "figmaFamilyName": "ic_coin_stack_s",
+          "iconKey": "docs",
+          "kind": "icon",
+          "message": "icon 'docs' in Figma family 'ic_coin_stack_s' is unmatched in component.match_report.",
+          "reason": "match_unmatched",
+          "status": "unresolved"
+        },
+        {
+          "figmaFamilyKey": "component:1:54357",
+          "figmaFamilyName": "ic_coin_stack_s",
+          "iconKey": "finanzinformatik.cpl_module_reactlib",
+          "kind": "icon",
+          "message": "icon 'finanzinformatik.cpl_module_reactlib' in Figma family 'ic_coin_stack_s' is unmatched in component.match_report.",
+          "reason": "match_unmatched",
+          "status": "unresolved"
+        },
+        {
+          "figmaFamilyKey": "component:1:54357",
+          "figmaFamilyName": "ic_coin_stack_s",
+          "iconKey": "reactlib.brand_icon",
+          "kind": "icon",
+          "message": "icon 'reactlib.brand_icon' in Figma family 'ic_coin_stack_s' is unmatched in component.match_report.",
+          "reason": "match_unmatched",
+          "status": "unresolved"
+        },
+        {
+          "figmaFamilyKey": "component:1:54357",
+          "figmaFamilyName": "ic_coin_stack_s",
+          "kind": "component",
+          "message": "Figma family 'ic_coin_stack_s' is unmatched in component.match_report.",
+          "reason": "match_unmatched",
+          "status": "not_applicable"
+        },
+        {
+          "figmaFamilyKey": "component:1:636",
+          "figmaFamilyName": "ic_down_s 🔥",
+          "iconKey": "docs",
+          "kind": "icon",
+          "message": "icon 'docs' in Figma family 'ic_down_s 🔥' is unmatched in component.match_report.",
+          "reason": "match_unmatched",
+          "status": "unresolved"
+        },
+        {
+          "figmaFamilyKey": "component:1:636",
+          "figmaFamilyName": "ic_down_s 🔥",
+          "iconKey": "down_s",
+          "kind": "icon",
+          "message": "icon 'down_s' in Figma family 'ic_down_s 🔥' is unmatched in component.match_report.",
+          "reason": "match_unmatched",
+          "status": "unresolved"
+        },
+        {
+          "figmaFamilyKey": "component:1:636",
+          "figmaFamilyName": "ic_down_s 🔥",
+          "iconKey": "finanzinformatik.cpl_module_reactlib",
+          "kind": "icon",
+          "message": "icon 'finanzinformatik.cpl_module_reactlib' in Figma family 'ic_down_s 🔥' is unmatched in component.match_report.",
+          "reason": "match_unmatched",
+          "status": "unresolved"
+        },
+        {
+          "figmaFamilyKey": "component:1:636",
+          "figmaFamilyName": "ic_down_s 🔥",
+          "iconKey": "reactlib.brand_icon",
+          "kind": "icon",
+          "message": "icon 'reactlib.brand_icon' in Figma family 'ic_down_s 🔥' is unmatched in component.match_report.",
+          "reason": "match_unmatched",
+          "status": "unresolved"
+        },
+        {
+          "figmaFamilyKey": "component:1:636",
+          "figmaFamilyName": "ic_down_s 🔥",
+          "kind": "component",
+          "message": "Figma family 'ic_down_s 🔥' is unmatched in component.match_report.",
+          "reason": "match_unmatched",
+          "status": "not_applicable"
+        },
+        {
+          "figmaFamilyKey": "component:1:43307",
+          "figmaFamilyName": "ic_info_circle_s 🔥",
+          "iconKey": "docs",
+          "kind": "icon",
+          "message": "icon 'docs' in Figma family 'ic_info_circle_s 🔥' is unmatched in component.match_report.",
+          "reason": "match_unmatched",
+          "status": "unresolved"
+        },
+        {
+          "figmaFamilyKey": "component:1:43307",
+          "figmaFamilyName": "ic_info_circle_s 🔥",
+          "iconKey": "finanzinformatik.cpl_module_reactlib",
+          "kind": "icon",
+          "message": "icon 'finanzinformatik.cpl_module_reactlib' in Figma family 'ic_info_circle_s 🔥' is unmatched in component.match_report.",
+          "reason": "match_unmatched",
+          "status": "unresolved"
+        },
+        {
+          "figmaFamilyKey": "component:1:43307",
+          "figmaFamilyName": "ic_info_circle_s 🔥",
+          "iconKey": "info_circle_s",
+          "kind": "icon",
+          "message": "icon 'info_circle_s' in Figma family 'ic_info_circle_s 🔥' is unmatched in component.match_report.",
+          "reason": "match_unmatched",
+          "status": "unresolved"
+        },
+        {
+          "figmaFamilyKey": "component:1:43307",
+          "figmaFamilyName": "ic_info_circle_s 🔥",
+          "iconKey": "reactlib.brand_icon",
+          "kind": "icon",
+          "message": "icon 'reactlib.brand_icon' in Figma family 'ic_info_circle_s 🔥' is unmatched in component.match_report.",
+          "reason": "match_unmatched",
+          "status": "unresolved"
+        },
+        {
+          "figmaFamilyKey": "component:1:43307",
+          "figmaFamilyName": "ic_info_circle_s 🔥",
+          "kind": "component",
+          "message": "Figma family 'ic_info_circle_s 🔥' is unmatched in component.match_report.",
+          "reason": "match_unmatched",
+          "status": "not_applicable"
+        },
+        {
+          "figmaFamilyKey": "component:1:43500",
+          "figmaFamilyName": "ic_radio_selected_s 🔥",
+          "iconKey": "docs",
+          "kind": "icon",
+          "message": "icon 'docs' in Figma family 'ic_radio_selected_s 🔥' is unmatched in component.match_report.",
+          "reason": "match_unmatched",
+          "status": "unresolved"
+        },
+        {
+          "figmaFamilyKey": "component:1:43500",
+          "figmaFamilyName": "ic_radio_selected_s 🔥",
+          "iconKey": "finanzinformatik.cpl_module_reactlib",
+          "kind": "icon",
+          "message": "icon 'finanzinformatik.cpl_module_reactlib' in Figma family 'ic_radio_selected_s 🔥' is unmatched in component.match_report.",
+          "reason": "match_unmatched",
+          "status": "unresolved"
+        },
+        {
+          "figmaFamilyKey": "component:1:43500",
+          "figmaFamilyName": "ic_radio_selected_s 🔥",
+          "iconKey": "radio_selected_s",
+          "kind": "icon",
+          "message": "icon 'radio_selected_s' in Figma family 'ic_radio_selected_s 🔥' is unmatched in component.match_report.",
+          "reason": "match_unmatched",
+          "status": "unresolved"
+        },
+        {
+          "figmaFamilyKey": "component:1:43500",
+          "figmaFamilyName": "ic_radio_selected_s 🔥",
+          "iconKey": "reactlib.brand_icon",
+          "kind": "icon",
+          "message": "icon 'reactlib.brand_icon' in Figma family 'ic_radio_selected_s 🔥' is unmatched in component.match_report.",
+          "reason": "match_unmatched",
+          "status": "unresolved"
+        },
+        {
+          "figmaFamilyKey": "component:1:43500",
+          "figmaFamilyName": "ic_radio_selected_s 🔥",
+          "kind": "component",
+          "message": "Figma family 'ic_radio_selected_s 🔥' is unmatched in component.match_report.",
+          "reason": "match_unmatched",
+          "status": "not_applicable"
+        },
+        {
+          "figmaFamilyKey": "component:1:54302",
+          "figmaFamilyName": "ic_shopping_cart_s",
+          "iconKey": "docs",
+          "kind": "icon",
+          "message": "icon 'docs' in Figma family 'ic_shopping_cart_s' is unmatched in component.match_report.",
+          "reason": "match_unmatched",
+          "status": "unresolved"
+        },
+        {
+          "figmaFamilyKey": "component:1:54302",
+          "figmaFamilyName": "ic_shopping_cart_s",
+          "iconKey": "finanzinformatik.cpl_module_reactlib",
+          "kind": "icon",
+          "message": "icon 'finanzinformatik.cpl_module_reactlib' in Figma family 'ic_shopping_cart_s' is unmatched in component.match_report.",
+          "reason": "match_unmatched",
+          "status": "unresolved"
+        },
+        {
+          "figmaFamilyKey": "component:1:54302",
+          "figmaFamilyName": "ic_shopping_cart_s",
+          "iconKey": "reactlib.brand_icon",
+          "kind": "icon",
+          "message": "icon 'reactlib.brand_icon' in Figma family 'ic_shopping_cart_s' is unmatched in component.match_report.",
+          "reason": "match_unmatched",
+          "status": "unresolved"
+        },
+        {
+          "figmaFamilyKey": "component:1:54302",
+          "figmaFamilyName": "ic_shopping_cart_s",
+          "iconKey": "shopping_cart_s",
+          "kind": "icon",
+          "message": "icon 'shopping_cart_s' in Figma family 'ic_shopping_cart_s' is unmatched in component.match_report.",
+          "reason": "match_unmatched",
+          "status": "unresolved"
+        },
+        {
+          "figmaFamilyKey": "component:1:54302",
+          "figmaFamilyName": "ic_shopping_cart_s",
+          "kind": "component",
+          "message": "Figma family 'ic_shopping_cart_s' is unmatched in component.match_report.",
+          "reason": "match_unmatched",
+          "status": "not_applicable"
+        },
+        {
+          "figmaFamilyKey": "component:1:40602",
+          "figmaFamilyName": "ic_user_s 🔥",
+          "iconKey": "docs",
+          "kind": "icon",
+          "message": "icon 'docs' in Figma family 'ic_user_s 🔥' is unmatched in component.match_report.",
+          "reason": "match_unmatched",
+          "status": "unresolved"
+        },
+        {
+          "figmaFamilyKey": "component:1:40602",
+          "figmaFamilyName": "ic_user_s 🔥",
+          "iconKey": "finanzinformatik.cpl_module_reactlib",
+          "kind": "icon",
+          "message": "icon 'finanzinformatik.cpl_module_reactlib' in Figma family 'ic_user_s 🔥' is unmatched in component.match_report.",
+          "reason": "match_unmatched",
+          "status": "unresolved"
+        },
+        {
+          "figmaFamilyKey": "component:1:40602",
+          "figmaFamilyName": "ic_user_s 🔥",
+          "iconKey": "reactlib.brand_icon",
+          "kind": "icon",
+          "message": "icon 'reactlib.brand_icon' in Figma family 'ic_user_s 🔥' is unmatched in component.match_report.",
+          "reason": "match_unmatched",
+          "status": "unresolved"
+        },
+        {
+          "figmaFamilyKey": "component:1:40602",
+          "figmaFamilyName": "ic_user_s 🔥",
+          "iconKey": "user_s",
+          "kind": "icon",
+          "message": "icon 'user_s' in Figma family 'ic_user_s 🔥' is unmatched in component.match_report.",
+          "reason": "match_unmatched",
+          "status": "unresolved"
+        },
+        {
+          "figmaFamilyKey": "component:1:40602",
+          "figmaFamilyName": "ic_user_s 🔥",
+          "kind": "component",
+          "message": "Figma family 'ic_user_s 🔥' is unmatched in component.match_report.",
+          "reason": "match_unmatched",
+          "status": "not_applicable"
+        }
+      ],
+      "policy": "warn",
+      "status": "warn"
+    },
+    "figmaLibraryResolution": {
+      "filePath": "<fixture-root>/derived/figma-library-resolution.json",
+      "status": "ok",
+      "summary": {
+        "bySource": {
+          "cache": 13,
+          "live": 0,
+          "localCatalog": 28
+        },
+        "cacheHit": 13,
+        "entriesWithOriginFileKey": 13,
+        "error": 0,
+        "offlineReused": 13,
+        "partial": 28,
+        "resolved": 13,
+        "total": 41
+      }
+    },
+    "status": "warn"
+  },
+  "status": "warn",
+  "storybook": {
+    "artifacts": {
+      "catalog": {
+        "filePath": "<fixture-root>/derived/storybook.catalog.json",
+        "status": "ok"
+      },
+      "components": {
+        "filePath": "<fixture-root>/derived/storybook.components.json",
+        "status": "ok"
+      },
+      "componentVisualCatalog": {
+        "filePath": "<fixture-root>/derived/storybook.component-visual-catalog.json",
+        "status": "ok"
+      },
+      "evidence": {
+        "status": "ok"
+      },
+      "themes": {
+        "filePath": "<fixture-root>/derived/storybook.themes.json",
+        "status": "ok"
+      },
+      "tokens": {
+        "filePath": "<fixture-root>/derived/storybook.tokens.json",
+        "status": "ok"
+      }
+    },
+    "composition": {
+      "ambiguous": 3,
+      "docsOnlyFamilyNames": [
+        "<Radio>",
+        "<Radio>",
+        "<Stack> ButtonCombination"
+      ],
+      "docsOnlyReferenceCount": 3,
+      "matched": 25,
+      "totalFigmaFamilies": 42,
+      "unmatched": 14
+    },
+    "status": "ok"
+  },
+  "style": {
+    "customerProfile": {
+      "matchPolicy": "warn",
+      "tokenPolicy": "warn"
+    },
+    "diagnostics": {
+      "componentMatchReport": {
+        "resolvedCustomerComponentCount": 4,
+        "validatedComponentNames": [
+          "Chip",
+          "Divider",
+          "IconButton",
+          "Typography"
+        ]
+      },
+      "evidence": {
+        "authoritativeStylingEvidenceCount": 151,
+        "referenceOnlyEvidenceTypes": [
+          "docs_image",
+          "docs_text",
+          "mdx_link",
+          "story_design_link"
+        ],
+        "referenceOnlyStylingEvidenceCount": 6297
+      },
+      "themes": {
+        "diagnosticCount": 11,
+        "diagnostics": [
+          {
+            "code": "JS_EVAL_OBJECT_KEY_UNRESOLVED",
+            "message": "Unable to statically evaluate object key '[`.${lB.root}`]'.",
+            "severity": "warning"
+          },
+          {
+            "code": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+            "message": "Storybook args declared 'max' without a static backfill value.",
+            "severity": "warning"
+          },
+          {
+            "code": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+            "message": "Storybook argTypes declared 'max' without a static backfill value.",
+            "severity": "warning"
+          },
+          {
+            "code": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+            "message": "Storybook argTypes declared 'maxItems' without a static backfill value.",
+            "severity": "warning"
+          },
+          {
+            "code": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+            "message": "Storybook argTypes declared 'margin' without a static backfill value.",
+            "severity": "warning"
+          },
+          {
+            "code": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+            "message": "Storybook argTypes declared 'spacing' without a static backfill value.",
+            "severity": "warning"
+          },
+          {
+            "code": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+            "message": "Storybook argTypes declared 'spacing' without a static backfill value.",
+            "severity": "warning"
+          },
+          {
+            "code": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+            "message": "Storybook argTypes declared 'minLength' without a static backfill value.",
+            "severity": "warning"
+          },
+          {
+            "code": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+            "message": "Storybook args declared 'maxRows' without a static backfill value.",
+            "severity": "warning"
+          },
+          {
+            "code": "STORYBOOK_THEME_BUNDLE_SKIPPED",
+            "message": "Skipped Storybook theme bundle 'assets/iframe-C6LG5DgH.js' because it produced fatal extraction diagnostics for an already-selected theme context.",
+            "severity": "warning"
+          },
+          {
+            "code": "STORYBOOK_THEME_BUNDLE_SKIPPED",
+            "message": "Skipped Storybook theme bundle 'assets/SelectableFITabelle-BtlbP9d6.js' because it produced fatal extraction diagnostics for an already-selected theme context.",
+            "severity": "warning"
+          }
+        ],
+        "errorCount": 0
+      },
+      "tokens": {
+        "diagnosticCount": 11,
+        "diagnostics": [
+          {
+            "code": "JS_EVAL_OBJECT_KEY_UNRESOLVED",
+            "message": "Unable to statically evaluate object key '[`.${lB.root}`]'.",
+            "severity": "warning"
+          },
+          {
+            "code": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+            "message": "Storybook args declared 'max' without a static backfill value.",
+            "severity": "warning"
+          },
+          {
+            "code": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+            "message": "Storybook argTypes declared 'max' without a static backfill value.",
+            "severity": "warning"
+          },
+          {
+            "code": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+            "message": "Storybook argTypes declared 'maxItems' without a static backfill value.",
+            "severity": "warning"
+          },
+          {
+            "code": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+            "message": "Storybook argTypes declared 'margin' without a static backfill value.",
+            "severity": "warning"
+          },
+          {
+            "code": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+            "message": "Storybook argTypes declared 'spacing' without a static backfill value.",
+            "severity": "warning"
+          },
+          {
+            "code": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+            "message": "Storybook argTypes declared 'spacing' without a static backfill value.",
+            "severity": "warning"
+          },
+          {
+            "code": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+            "message": "Storybook argTypes declared 'minLength' without a static backfill value.",
+            "severity": "warning"
+          },
+          {
+            "code": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+            "message": "Storybook args declared 'maxRows' without a static backfill value.",
+            "severity": "warning"
+          },
+          {
+            "code": "STORYBOOK_THEME_BUNDLE_SKIPPED",
+            "message": "Skipped Storybook theme bundle 'assets/iframe-C6LG5DgH.js' because it produced fatal extraction diagnostics for an already-selected theme context.",
+            "severity": "warning"
+          },
+          {
+            "code": "STORYBOOK_THEME_BUNDLE_SKIPPED",
+            "message": "Skipped Storybook theme bundle 'assets/SelectableFITabelle-BtlbP9d6.js' because it produced fatal extraction diagnostics for an already-selected theme context.",
+            "severity": "warning"
+          }
+        ],
+        "errorCount": 0
+      }
+    },
+    "issueCount": 0,
+    "issues": [],
+    "policy": "warn",
+    "status": "ok",
+    "storybook": {
+      "componentMatchReport": {
+        "filePath": "<fixture-root>/derived/component-match-report.json",
+        "status": "ok"
+      },
+      "evidence": {
+        "status": "ok"
+      },
+      "themes": {
+        "filePath": "<fixture-root>/derived/storybook.themes.json",
+        "status": "ok"
+      },
+      "tokens": {
+        "filePath": "<fixture-root>/derived/storybook.tokens.json",
+        "status": "ok"
+      }
+    }
+  },
+  "uiA11y": {
+    "a11yViolationCount": 0,
+    "artifacts": [
+      "<job-dir>/ui-gate/changed-surfaces-resolved.json",
+      "<job-dir>/ui-gate/ui-gate-visual-diffs.json",
+      "<job-dir>/ui-gate/ui-gate-a11y-findings.json",
+      "<job-dir>/ui-gate/ui-gate-interaction-findings.json",
+      "<job-dir>/ui-gate/ui-gate-visual-baseline.json"
+    ],
+    "checks": [
+      {
+        "count": 0,
+        "details": "Visual baseline created from current surfaces",
+        "name": "visual-baseline",
+        "status": "passed"
+      },
+      {
+        "count": 0,
+        "details": "Static accessibility checks over 26 source files",
+        "name": "a11y-static",
+        "status": "passed"
+      },
+      {
+        "count": 0,
+        "details": "Keyboard and semantic interaction checks over 26 source files",
+        "name": "interaction-static",
+        "status": "passed"
+      }
+    ],
+    "interactionViolationCount": 0,
+    "reportPath": "<job-dir>/ui-gate/ui-gate-report.json",
+    "status": "ok",
+    "summary": "UI gate evaluated 26 source file(s): visual=0, a11y=0, interaction=0",
+    "visualDiffCount": 0
+  },
+  "validatedAt": "<timestamp>",
+  "visualAudit": {
+    "status": "not_requested"
+  },
+  "visualQuality": {
+    "capturedAt": "<timestamp>",
+    "message": "Image dimensions do not match: reference is 1280x1512, test is 1280x800",
+    "referenceSource": "frozen_fixture",
+    "status": "failed",
+    "warnings": [
+      "Image dimensions do not match: reference is 1280x1512, test is 1280x800"
+    ]
+  }
+}

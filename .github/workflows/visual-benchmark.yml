@@ -1,0 +1,384 @@
+name: workspace-dev visual benchmark
+
+on:
+  push:
+    branches: [dev]
+  workflow_dispatch:
+    inputs:
+      browsers:
+        description: "Comma-separated browser list for the main benchmark job"
+        required: false
+        default: "chromium"
+        type: string
+      run_browser_matrix:
+        description: "Also run the manual per-browser matrix job"
+        required: false
+        default: false
+        type: boolean
+      run_live_drift_audit:
+        description: "Run live Figma drift audit against canonical references"
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/dev' }}
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    name: benchmark
+    permissions:
+      actions: read
+      contents: read
+      issues: write
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    env:
+      VISUAL_BENCHMARK_BROWSERS: ${{ github.event_name == 'workflow_dispatch' && inputs.browsers || 'chromium' }}
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d  # v6
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Validate browser list
+        run: |
+          input="$VISUAL_BENCHMARK_BROWSERS"
+          normalized=$(echo "$input" | tr ',' '\n' | sort -u | paste -sd, -)
+          for browser in $(echo "$normalized" | tr ',' ' '); do
+            case "$browser" in
+              chromium|firefox|webkit) ;;
+              *) echo "::error::Unknown browser '$browser' in VISUAL_BENCHMARK_BROWSERS"; exit 1 ;;
+            esac
+          done
+          echo "VISUAL_BENCHMARK_BROWSERS=$normalized" >> "$GITHUB_ENV"
+
+      - name: Get Playwright version
+        id: playwright-version
+        run: echo "version=$(node -p "require('./node_modules/@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.version }}-${{ env.VISUAL_BENCHMARK_BROWSERS }}
+
+      - name: Remove preinstalled Chrome apt source
+        run: |
+          sudo rm -f /etc/apt/sources.list.d/google-chrome.list
+          sudo rm -f /etc/apt/sources.list.d/google-chrome.sources
+
+      - name: Install Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: |
+          IFS=' ' read -r -a browsers <<< "${VISUAL_BENCHMARK_BROWSERS//,/ }"
+          pnpm exec playwright install --with-deps "${browsers[@]}"
+
+      - name: Install Playwright OS deps (cache hit)
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: |
+          IFS=' ' read -r -a browsers <<< "${VISUAL_BENCHMARK_BROWSERS//,/ }"
+          pnpm exec playwright install-deps "${browsers[@]}"
+
+      - name: Run visual benchmark verification suites
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/visual-benchmark/logs
+          {
+            pnpm exec tsx --test src/job-engine/visual-capture.test.ts src/job-engine/visual-diff.test.ts src/job-engine/visual-scoring.test.ts src/job-engine/pipeline/orchestrator.test.ts
+            pnpm exec tsx --test integration/visual-benchmark.execution.test.ts
+            pnpm exec tsx --test integration/visual-benchmark.test.ts
+            pnpm exec tsx --test integration/visual-benchmark-runner.error-isolation.test.ts
+            pnpm exec tsx --test integration/visual-quality-config.test.ts
+            pnpm exec tsx --test integration/mutation-testing.integration.test.ts integration/visual-benchmark.cli.test.ts integration/visual-benchmark-summary.test.ts integration/paste-delta-benchmark.test.ts integration/paste-delta-benchmark.integration.test.ts src/job-engine/paste-delta-roots.test.ts
+            pnpm exec tsx --test src/parity/ir-classification.test.ts src/parity/ir-screen-variants.test.ts src/parity/ir.test.ts
+            pnpm exec vitest run --config ui-src/vite.config.ts ui-src/src/features/visual-quality/data/report-schema.test.ts ui-src/src/features/visual-quality/data/file-source.test.ts
+          } 2>&1 | tee artifacts/visual-benchmark/logs/verification-suites.log
+          node scripts/assert-no-skipped-tests.mjs artifacts/visual-benchmark/logs/verification-suites.log
+
+      - name: Run paste delta benchmark gate
+        run: pnpm run benchmark:paste-delta -- --check
+
+      - name: Upload paste delta benchmark artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
+        if: always() && hashFiles('artifacts/testing/paste-delta-benchmark.json') != ''
+        with:
+          name: workspace-dev-paste-delta-benchmark-${{ github.run_id }}
+          path: artifacts/testing/paste-delta-benchmark.json
+          if-no-files-found: ignore
+
+      - name: Run frozen visual benchmark runner
+        id: benchmark-run
+        run: >-
+          pnpm benchmark:visual -- --ci --enforce-thresholds --browsers "$VISUAL_BENCHMARK_BROWSERS"
+          --storybook-component-catalog integration/fixtures/customer-board-golden/derived/storybook.component-visual-catalog.json
+          --storybook-static-dir storybook-static/storybook-static
+
+      - name: Install generated app dependencies for perf assertions
+        if: always() && steps.benchmark-run.outcome == 'success'
+        run: cd template/react-mui-app && pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Build generated app for perf assertions
+        if: always() && steps.benchmark-run.outcome == 'success'
+        run: cd template/react-mui-app && pnpm run build
+
+      - name: Run performance assertion for composite quality
+        if: always() && steps.benchmark-run.outcome == 'success'
+        env:
+          FIGMAPIPE_PERF_ALLOW_BASELINE_BOOTSTRAP: "true"
+          FIGMAPIPE_PERF_ROUTES_JSON: '["/"]'
+          FIGMAPIPE_PERF_PROFILES_JSON: '["mobile","desktop"]'
+          FIGMAPIPE_PERF_LIGHTHOUSE_TIMEOUT_MS: "90000"
+          FIGMAPIPE_PERF_LIGHTHOUSE_MAX_ATTEMPTS: "1"
+          FIGMAPIPE_PERF_BASELINE_PATH: template/react-mui-app/artifacts/performance/perf-baseline-ci.json
+        run: |
+          set +e
+          timeout 240s pnpm perf:web:assert
+          rc=$?
+          set -e
+          if [ "$rc" -eq 124 ]; then
+            echo "::warning::perf:web:assert timed out after 240s; skipping composite quality perf integration for this run."
+            exit 0
+          fi
+          exit "$rc"
+
+      - name: Compute composite quality report
+        if: always() && steps.benchmark-run.outcome == 'success' && hashFiles('artifacts/visual-benchmark/last-run.json') != '' && hashFiles('template/react-mui-app/artifacts/performance/perf-assert-report.json') != ''
+        run: >-
+          pnpm composite:quality
+          --visual-last-run artifacts/visual-benchmark/last-run.json
+          --perf-report template/react-mui-app/artifacts/performance/perf-assert-report.json
+          --perf-artifact-dir template/react-mui-app/artifacts/performance
+          --output artifacts/visual-benchmark/composite-quality-report.json
+          --no-history
+
+      - name: Summarize visual quality report
+        if: always() && steps.benchmark-run.outcome == 'success' && hashFiles('artifacts/visual-benchmark/last-run.json') != ''
+        env:
+          VISUAL_BENCHMARK_ALLOW_STEP_SUMMARY: ${{ github.event_name != 'pull_request' }}
+        run: node scripts/print-visual-benchmark-summary.mjs artifacts/visual-benchmark/last-run.json --check-output artifacts/visual-benchmark/check-output.json
+
+      - name: Prepare public visual benchmark artifacts
+        if: always() && hashFiles('artifacts/visual-benchmark/last-run.json') != ''
+        run: node scripts/prepare-visual-benchmark-public-artifacts.mjs
+
+      - name: Render visual benchmark PR comment payload
+        if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && hashFiles('artifacts/visual-benchmark/public-summary/last-run.public.json') != ''
+        env:
+          VISUAL_BENCHMARK_ALLOW_STEP_SUMMARY: "false"
+          REPORT_PATH: artifacts/visual-benchmark/public-summary/last-run.public.json
+          ARTIFACT_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: >-
+          node scripts/print-visual-benchmark-pr-comment.mjs
+          "$REPORT_PATH"
+          --output artifacts/visual-benchmark/public-summary/visual-benchmark-pr-comment.json
+          --artifact-url "$ARTIFACT_RUN_URL"
+
+      - name: Post or update visual benchmark PR comment
+        if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && hashFiles('artifacts/visual-benchmark/public-summary/visual-benchmark-pr-comment.json') != ''
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9
+        env:
+          PAYLOAD_PATH: artifacts/visual-benchmark/public-summary/visual-benchmark-pr-comment.json
+        with:
+          script: |
+            const fs = require("node:fs");
+            const { owner, repo } = context.repo;
+            const payloadPath = process.env.PAYLOAD_PATH;
+            const payload = JSON.parse(
+              fs.readFileSync(payloadPath, "utf8"),
+            );
+            if (typeof payload.marker !== "string" || payload.marker.length === 0) {
+              core.setFailed("The PR comment payload marker is missing or invalid.");
+              return;
+            }
+            if (typeof payload.body !== "string" || payload.body.length === 0) {
+              core.setFailed("The PR comment payload body is missing or invalid.");
+              return;
+            }
+            if (!payload.body.startsWith(payload.marker)) {
+              core.setFailed("The PR comment payload body must start with its marker.");
+              return;
+            }
+            const prNumber = Number(context.payload.pull_request?.number);
+            if (!Number.isInteger(prNumber) || prNumber <= 0) {
+              core.setFailed(`Invalid pull request number: '${context.payload.pull_request?.number}'.`);
+              return;
+            }
+            try {
+              const comments = await github.paginate(
+                github.rest.issues.listComments,
+                { owner, repo, issue_number: prNumber, per_page: 100 },
+              );
+              const existingComment = comments.find(
+                (comment) =>
+                  typeof comment.body === "string" &&
+                  comment.body.startsWith(payload.marker),
+              );
+
+              if (existingComment) {
+                await github.rest.issues.updateComment({
+                  owner,
+                  repo,
+                  comment_id: existingComment.id,
+                  body: payload.body,
+                });
+                core.info(`Updated existing PR comment ${existingComment.id}.`);
+                return;
+              }
+
+              const created = await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: prNumber,
+                body: payload.body,
+              });
+              core.info(`Created new PR comment ${created.data.id}.`);
+            } catch (error) {
+              if (
+                error?.status === 403 &&
+                error?.response?.data?.message === "Resource not accessible by integration"
+              ) {
+                core.warning(
+                  `Skipping visual benchmark PR comment because the workflow token cannot write issue comments for PR #${prNumber}.`,
+                );
+                return;
+              }
+              throw error;
+            }
+
+      - name: Upload visual benchmark artifacts (public PR summary)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
+        if: always() && github.event_name == 'pull_request'
+        with:
+          name: workspace-dev-visual-benchmark-${{ github.run_id }}
+          path: artifacts/visual-benchmark/public-summary
+          if-no-files-found: ignore
+
+      - name: Upload visual benchmark artifacts (trusted full bundle)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
+        if: always() && github.event_name != 'pull_request'
+        with:
+          name: workspace-dev-visual-benchmark-${{ github.run_id }}
+          path: artifacts/visual-benchmark
+          if-no-files-found: ignore
+
+  benchmark-browser-matrix:
+    if: github.event_name == 'workflow_dispatch' && inputs.run_browser_matrix
+    name: benchmark matrix (${{ matrix.browser }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d  # v6
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Get Playwright version
+        id: playwright-version
+        run: echo "version=$(node -p "require('./node_modules/@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.version }}-${{ matrix.browser }}
+
+      - name: Remove preinstalled Chrome apt source
+        run: |
+          sudo rm -f /etc/apt/sources.list.d/google-chrome.list
+          sudo rm -f /etc/apt/sources.list.d/google-chrome.sources
+
+      - name: Install Playwright browser (${{ matrix.browser }})
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        env:
+          MATRIX_BROWSER: ${{ matrix.browser }}
+        run: pnpm exec playwright install --with-deps "$MATRIX_BROWSER"
+
+      - name: Install Playwright OS deps (cache hit) (${{ matrix.browser }})
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        env:
+          MATRIX_BROWSER: ${{ matrix.browser }}
+        run: pnpm exec playwright install-deps "$MATRIX_BROWSER"
+
+      - name: Run frozen visual benchmark runner (${{ matrix.browser }})
+        env:
+          MATRIX_BROWSER: ${{ matrix.browser }}
+        run: >-
+          pnpm benchmark:visual -- --ci --enforce-thresholds --browsers "$MATRIX_BROWSER"
+          --storybook-component-catalog integration/fixtures/customer-board-golden/derived/storybook.component-visual-catalog.json
+          --storybook-static-dir storybook-static/storybook-static
+
+      - name: Summarize visual quality report
+        if: always() && hashFiles('artifacts/visual-benchmark/last-run.json') != ''
+        env:
+          VISUAL_BENCHMARK_ALLOW_STEP_SUMMARY: ${{ github.event_name != 'pull_request' }}
+        run: node scripts/print-visual-benchmark-summary.mjs artifacts/visual-benchmark/last-run.json --check-output artifacts/visual-benchmark/check-output.json
+
+      - name: Upload visual benchmark artifacts (${{ matrix.browser }})
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
+        if: always()
+        with:
+          name: workspace-dev-visual-benchmark-${{ github.run_id }}-${{ matrix.browser }}
+          path: artifacts/visual-benchmark
+          if-no-files-found: ignore
+
+  benchmark-live-drift-audit:
+    if: github.event_name == 'workflow_dispatch' && inputs.run_live_drift_audit
+    name: benchmark live drift audit
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d  # v6
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Run live drift audit (read-only)
+        env:
+          WORKSPACEDEV_FIGMA_TOKEN: ${{ secrets.WORKSPACEDEV_FIGMA_TOKEN }}
+        run: pnpm benchmark:visual -- --live

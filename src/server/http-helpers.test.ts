@@ -1,0 +1,356 @@
+import assert from "node:assert/strict";
+import { Readable } from "node:stream";
+import test from "node:test";
+import type { IncomingMessage, ServerResponse } from "node:http";
+import {
+  DEFAULT_STRICT_TRANSPORT_SECURITY,
+  DEFAULT_CONTENT_SECURITY_POLICY,
+  ENABLE_HSTS_ENV,
+  MAX_REQUEST_BODY_BYTES,
+  WORKSPACE_UI_CONTENT_SECURITY_POLICY,
+} from "./constants.js";
+import {
+  readJsonBody,
+  readStreamingJsonBody,
+  sendBuffer,
+  sendJson,
+  sendText,
+} from "./http-helpers.js";
+
+function createMockResponse(): ServerResponse & {
+  body?: Buffer | string;
+  headers: Record<string, string>;
+} {
+  const headers: Record<string, string> = {};
+  return {
+    statusCode: 200,
+    headers,
+    setHeader(name: string, value: string) {
+      headers[name.toLowerCase()] = value;
+      return this;
+    },
+    getHeader(name: string) {
+      return headers[name.toLowerCase()];
+    },
+    removeHeader(name: string) {
+      delete headers[name.toLowerCase()];
+      return this;
+    },
+    end(payload?: string | Buffer) {
+      this.body = payload;
+      return this;
+    },
+  } as unknown as ServerResponse & {
+    body?: Buffer | string;
+    headers: Record<string, string>;
+  };
+}
+
+function toIncomingMessage(chunks: Array<string | Buffer>): IncomingMessage {
+  return Readable.from(chunks) as IncomingMessage;
+}
+
+test("sendJson writes JSON content-type, trailing newline, and default security headers", () => {
+  const response = createMockResponse();
+  sendJson({
+    response,
+    statusCode: 202,
+    payload: { ok: true },
+  });
+
+  assert.equal(response.statusCode, 202);
+  assert.equal(
+    response.headers["content-type"],
+    "application/json; charset=utf-8",
+  );
+  assert.equal(
+    response.headers["content-security-policy"],
+    DEFAULT_CONTENT_SECURITY_POLICY,
+  );
+  assert.equal(response.headers["x-frame-options"], "SAMEORIGIN");
+  assert.equal(response.headers["x-content-type-options"], "nosniff");
+  assert.equal(response.headers["referrer-policy"], "no-referrer");
+  assert.equal(response.body, '{"ok":true}\n');
+});
+
+test("sendJson appends x-request-id to JSON error envelopes only", () => {
+  const response = createMockResponse();
+  response.setHeader("x-request-id", "req-helper-1");
+  sendJson({
+    response,
+    statusCode: 400,
+    payload: {
+      error: "VALIDATION_ERROR",
+      message: "Request validation failed.",
+    },
+  });
+
+  assert.equal(
+    response.body,
+    '{"error":"VALIDATION_ERROR","message":"Request validation failed.","requestId":"req-helper-1"}\n',
+  );
+});
+
+test("sendText supports cache control and an explicit UI CSP override", () => {
+  const textResponse = createMockResponse();
+  sendText({
+    response: textResponse,
+    statusCode: 200,
+    contentType: "text/plain; charset=utf-8",
+    payload: "hello",
+    cacheControl: "no-store",
+    contentSecurityPolicy: WORKSPACE_UI_CONTENT_SECURITY_POLICY,
+  });
+  assert.equal(
+    textResponse.headers["content-type"],
+    "text/plain; charset=utf-8",
+  );
+  assert.equal(textResponse.headers["cache-control"], "no-store");
+  assert.equal(
+    textResponse.headers["content-security-policy"],
+    WORKSPACE_UI_CONTENT_SECURITY_POLICY,
+  );
+  assert.equal(textResponse.body, "hello");
+});
+
+test("sendBuffer applies the default CSP when frame embedding is not allowed", () => {
+  const bufferResponse = createMockResponse();
+  sendBuffer({
+    response: bufferResponse,
+    statusCode: 200,
+    contentType: "application/octet-stream",
+    payload: Buffer.from("ok", "utf8"),
+  });
+  assert.equal(
+    bufferResponse.headers["content-type"],
+    "application/octet-stream",
+  );
+  assert.equal(
+    bufferResponse.headers["content-security-policy"],
+    DEFAULT_CONTENT_SECURITY_POLICY,
+  );
+  assert.equal(bufferResponse.headers["x-frame-options"], "SAMEORIGIN");
+  assert.deepEqual(bufferResponse.body, Buffer.from("ok", "utf8"));
+});
+
+test("sendBuffer omits frame-related headers when frame embedding is allowed", () => {
+  const response = createMockResponse();
+  sendBuffer({
+    response,
+    statusCode: 200,
+    contentType: "text/html; charset=utf-8",
+    payload: Buffer.from("<html></html>", "utf8"),
+    allowFrameEmbedding: true,
+    contentSecurityPolicy: WORKSPACE_UI_CONTENT_SECURITY_POLICY,
+  });
+
+  assert.equal(response.headers["content-security-policy"], undefined);
+  assert.equal(response.headers["x-frame-options"], undefined);
+  assert.equal(response.headers["x-content-type-options"], "nosniff");
+  assert.equal(response.headers["referrer-policy"], "no-referrer");
+});
+
+test("sendJson emits HSTS only when explicitly enabled for secure deployments", () => {
+  const response = createMockResponse();
+  const originalHsts = process.env[ENABLE_HSTS_ENV];
+
+  process.env[ENABLE_HSTS_ENV] = "true";
+  try {
+    sendJson({
+      response,
+      statusCode: 200,
+      payload: { ok: true },
+    });
+  } finally {
+    if (originalHsts === undefined) {
+      delete process.env[ENABLE_HSTS_ENV];
+    } else {
+      process.env[ENABLE_HSTS_ENV] = originalHsts;
+    }
+  }
+
+  assert.equal(
+    response.headers["strict-transport-security"],
+    DEFAULT_STRICT_TRANSPORT_SECURITY,
+  );
+});
+
+test("sendJson does not emit HSTS on plain localhost by default", () => {
+  const response = createMockResponse();
+  const originalHsts = process.env[ENABLE_HSTS_ENV];
+
+  delete process.env[ENABLE_HSTS_ENV];
+  try {
+    sendJson({
+      response,
+      statusCode: 200,
+      payload: { ok: true },
+    });
+  } finally {
+    if (originalHsts === undefined) {
+      delete process.env[ENABLE_HSTS_ENV];
+    } else {
+      process.env[ENABLE_HSTS_ENV] = originalHsts;
+    }
+  }
+
+  assert.equal(response.headers["strict-transport-security"], undefined);
+});
+
+test("readJsonBody parses valid JSON, empty bodies, invalid JSON, and oversize payloads", async () => {
+  await assert.doesNotReject(async () => {
+    const parsed = await readJsonBody(toIncomingMessage(['{"ok":true}']));
+    assert.deepEqual(parsed, { ok: true, value: { ok: true } });
+  });
+
+  await assert.doesNotReject(async () => {
+    const parsed = await readJsonBody(toIncomingMessage(["   "]));
+    assert.deepEqual(parsed, { ok: true, value: undefined });
+  });
+
+  await assert.doesNotReject(async () => {
+    const parsed = await readJsonBody(toIncomingMessage(['{"broken"']));
+    assert.deepEqual(parsed, {
+      ok: false,
+      reason: "INVALID_JSON",
+      error: "Invalid JSON payload.",
+    });
+  });
+
+  await assert.doesNotReject(async () => {
+    const parsed = await readJsonBody(
+      toIncomingMessage([
+        Buffer.from("a".repeat(MAX_REQUEST_BODY_BYTES + 1), "utf8"),
+      ]),
+    );
+    assert.deepEqual(parsed, {
+      ok: false,
+      reason: "OVERSIZE",
+      error: "Request body exceeds 1 MiB size limit.",
+      maxBytes: MAX_REQUEST_BODY_BYTES,
+    });
+  });
+});
+
+test("readJsonBody respects an explicit maxBytes override", async () => {
+  const override = 2 * 1024 * 1024;
+
+  // Body larger than the 1 MiB default but under the 2 MiB override → success.
+  const underOverride = await readJsonBody(
+    toIncomingMessage([
+      Buffer.from(`"${"a".repeat(MAX_REQUEST_BODY_BYTES + 1024)}"`, "utf8"),
+    ]),
+    { maxBytes: override },
+  );
+  assert.equal(underOverride.ok, true);
+
+  // Body over the override → oversize with the override echoed back.
+  const overOverride = await readJsonBody(
+    toIncomingMessage([Buffer.from("a".repeat(override + 1), "utf8")]),
+    { maxBytes: override },
+  );
+  assert.deepEqual(overOverride, {
+    ok: false,
+    reason: "OVERSIZE",
+    error: "Request body exceeds 2 MiB size limit.",
+    maxBytes: override,
+  });
+});
+
+test("readStreamingJsonBody parses chunked JSON across token and utf8 boundaries", async () => {
+  const expected = {
+    figmaFileKey: "file-key",
+    figmaAccessToken: "token",
+    nested: [true, false, null, { count: 2 }],
+    text: "hello 🙂",
+  };
+  const payload = Buffer.from(JSON.stringify(expected), "utf8");
+  const emojiStart = payload.indexOf(Buffer.from("🙂", "utf8"));
+  assert.notEqual(emojiStart, -1);
+
+  const parsed = await readStreamingJsonBody(
+    toIncomingMessage([
+      payload.subarray(0, 7),
+      payload.subarray(7, emojiStart + 1),
+      payload.subarray(emojiStart + 1),
+    ]),
+  );
+
+  assert.deepEqual(parsed, {
+    ok: true,
+    value: expected,
+  });
+});
+
+test("readStreamingJsonBody aborts on an invalid prefix without consuming later chunks", async () => {
+  const parsed = await readStreamingJsonBody(
+    Readable.from(
+      (async function* () {
+        yield Buffer.from("{", "utf8");
+        yield Buffer.from("x", "utf8");
+        throw new Error("streaming parser should stop after the invalid prefix");
+      })(),
+    ) as IncomingMessage,
+  );
+
+  assert.deepEqual(parsed, {
+    ok: false,
+    reason: "INVALID_JSON",
+    error: "Invalid JSON payload.",
+  });
+});
+
+test("readStreamingJsonBody rejects non-JSON whitespace prefixes", async () => {
+  const parsed = await readStreamingJsonBody(
+    toIncomingMessage(['\u00a0{"ok":true}']),
+  );
+
+  assert.deepEqual(parsed, {
+    ok: false,
+    reason: "INVALID_JSON",
+    error: "Invalid JSON payload.",
+  });
+});
+
+test("readStreamingJsonBody matches JSON.parse for unicode escapes across chunk boundaries", async () => {
+  const rawPayload = '{"text":"\\u0061\\uD834\\uDD1E"}';
+  const parsed = await readStreamingJsonBody(
+    toIncomingMessage([
+      rawPayload.slice(0, 14),
+      rawPayload.slice(14, 20),
+      rawPayload.slice(20),
+    ]),
+  );
+
+  assert.deepEqual(parsed, {
+    ok: true,
+    value: JSON.parse(rawPayload),
+  });
+});
+
+test("readStreamingJsonBody preserves __proto__ as an own property", async () => {
+  const parsed = await readStreamingJsonBody(
+    toIncomingMessage(['{"__proto__":{"polluted":true}}']),
+  );
+
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok) {
+    return;
+  }
+
+  assert.equal(({} as { polluted?: unknown }).polluted, undefined);
+  assert.equal(Object.getPrototypeOf(parsed.value as object), Object.prototype);
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(parsed.value, "__proto__"),
+    true,
+  );
+  assert.deepEqual(
+    Object.getOwnPropertyDescriptor(parsed.value as object, "__proto__"),
+    {
+      value: { polluted: true },
+      writable: true,
+      enumerable: true,
+      configurable: true,
+    },
+  );
+});

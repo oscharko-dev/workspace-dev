@@ -1,0 +1,127 @@
+{
+  "name": "Simple Auth Board",
+  "document": {
+    "id": "0:0",
+    "type": "DOCUMENT",
+    "children": [
+      {
+        "id": "0:1",
+        "type": "CANVAS",
+        "name": "Page 1",
+        "children": [
+          {
+            "id": "screen-login",
+            "type": "FRAME",
+            "name": "Login",
+            "layoutMode": "VERTICAL",
+            "itemSpacing": 12,
+            "paddingTop": 16,
+            "paddingRight": 16,
+            "paddingBottom": 16,
+            "paddingLeft": 16,
+            "absoluteBoundingBox": { "x": 0, "y": 0, "width": 390, "height": 844 },
+            "fills": [
+              {
+                "type": "SOLID",
+                "visible": true,
+                "color": { "r": 0.98, "g": 0.98, "b": 0.99, "a": 1 }
+              }
+            ],
+            "children": [
+              {
+                "id": "login-title",
+                "type": "TEXT",
+                "name": "Title",
+                "characters": "Welcome Back",
+                "style": {
+                  "fontSize": 32,
+                  "fontWeight": 700,
+                  "fontFamily": "Inter",
+                  "lineHeightPx": 40,
+                  "textAlignHorizontal": "LEFT"
+                },
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "visible": true,
+                    "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 }
+                  }
+                ],
+                "absoluteBoundingBox": { "x": 16, "y": 16, "width": 220, "height": 40 }
+              },
+              {
+                "id": "email-field",
+                "type": "FRAME",
+                "name": "MuiFormControlRoot",
+                "layoutMode": "HORIZONTAL",
+                "itemSpacing": 8,
+                "primaryAxisAlignItems": "SPACE_BETWEEN",
+                "counterAxisAlignItems": "CENTER",
+                "absoluteBoundingBox": { "x": 16, "y": 80, "width": 358, "height": 56 },
+                "children": [
+                  {
+                    "id": "email-label",
+                    "type": "TEXT",
+                    "name": "Label",
+                    "characters": "Email",
+                    "style": {
+                      "fontSize": 14,
+                      "fontWeight": 500,
+                      "fontFamily": "Inter",
+                      "lineHeightPx": 20,
+                      "textAlignHorizontal": "LEFT"
+                    },
+                    "fills": [
+                      {
+                        "type": "SOLID",
+                        "visible": true,
+                        "color": { "r": 0.24, "g": 0.26, "b": 0.3, "a": 1 }
+                      }
+                    ],
+                    "absoluteBoundingBox": { "x": 24, "y": 96, "width": 60, "height": 20 }
+                  }
+                ]
+              },
+              {
+                "id": "submit-button",
+                "type": "FRAME",
+                "name": "Primary Button",
+                "absoluteBoundingBox": { "x": 16, "y": 156, "width": 220, "height": 48 },
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "visible": true,
+                    "color": { "r": 0.93, "g": 0, "b": 0.12, "a": 1 }
+                  }
+                ],
+                "children": [
+                  {
+                    "id": "submit-button-label",
+                    "type": "TEXT",
+                    "name": "Label",
+                    "characters": "Sign In",
+                    "style": {
+                      "fontSize": 16,
+                      "fontWeight": 600,
+                      "fontFamily": "Inter",
+                      "lineHeightPx": 22,
+                      "textAlignHorizontal": "CENTER"
+                    },
+                    "fills": [
+                      {
+                        "type": "SOLID",
+                        "visible": true,
+                        "color": { "r": 1, "g": 1, "b": 1, "a": 1 }
+                      }
+                    ],
+                    "absoluteBoundingBox": { "x": 84, "y": 169, "width": 90, "height": 22 }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

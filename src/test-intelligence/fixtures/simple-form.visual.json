@@ -1,0 +1,56 @@
+[
+  {
+    "screenId": "s-payment",
+    "sidecarDeployment": "mock",
+    "regions": [
+      {
+        "regionId": "n-iban",
+        "confidence": 0.95,
+        "label": "IBAN",
+        "controlType": "text_input",
+        "validationHints": ["Must be a valid IBAN"]
+      },
+      {
+        "regionId": "n-pan",
+        "confidence": 0.95,
+        "label": "Card Number",
+        "controlType": "text_input"
+      },
+      {
+        "regionId": "n-email",
+        "confidence": 0.95,
+        "label": "Email",
+        "controlType": "text_input"
+      },
+      {
+        "regionId": "n-phone",
+        "confidence": 0.95,
+        "label": "Phone",
+        "controlType": "text_input"
+      },
+      {
+        "regionId": "n-name",
+        "confidence": 0.95,
+        "label": "Cardholder Name",
+        "controlType": "text_input"
+      },
+      {
+        "regionId": "n-tax",
+        "confidence": 0.95,
+        "label": "Tax ID",
+        "controlType": "text_input"
+      },
+      {
+        "regionId": "n-submit",
+        "confidence": 0.95,
+        "label": "Pay",
+        "controlType": "button"
+      }
+    ],
+    "confidenceSummary": {
+      "min": 0.95,
+      "max": 0.95,
+      "mean": 0.95
+    }
+  }
+]

@@ -1,0 +1,37 @@
+{
+  "fixtureId": "faithfulness-adversarial-label-mismatch",
+  "judge": "faithfulness",
+  "scenarioKind": "adversarial",
+  "humanVerdict": "repair",
+  "humanFindingCodes": [
+    "mismatch_label_text"
+  ],
+  "rationale": "Step asserts 'Submit Loan' but the captured Figma label reads 'Apply for Loan'; reviewer marked as repairable label mismatch.",
+  "goldVerdicts": [
+    {
+      "reviewer": "reviewer:banking-sme:beta",
+      "verdict": "repair",
+      "findingCodes": [
+        "mismatch_label_text"
+      ],
+      "rationale": "Banking-domain SME first-pass review: Step asserts 'Submit Loan' but the captured Figma label reads 'Apply for Loan'; reviewer marked as repairable label mismatch.",
+      "timestamp": "2026-04-29T10:00:00.000Z"
+    },
+    {
+      "reviewer": "reviewer:insurance-sme:gamma",
+      "verdict": "repair",
+      "findingCodes": [
+        "mismatch_label_text"
+      ],
+      "rationale": "Independent second-reviewer pass: confirmed the first-pass verdict \u2014 Step asserts 'Submit Loan' but the captured Figma label reads 'Apply for Loan'; reviewer marked as repairable label mismatch.",
+      "timestamp": "2026-04-30T14:00:00.000Z"
+    }
+  ],
+  "adjudicated": false,
+  "mockJudgeResponse": {
+    "predictedVerdict": "repair",
+    "predictedFindingCodes": [
+      "mismatch_label_text"
+    ]
+  }
+}

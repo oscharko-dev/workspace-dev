@@ -1,5 +1,0 @@
-version = 1
-
-SPDX-PackageName = "workspace-dev"
-SPDX-PackageSupplier = "Organization: oscharko-dev"
-SPDX-PackageDownloadLocation = "https://github.com/oscharko-dev/workspace-dev"

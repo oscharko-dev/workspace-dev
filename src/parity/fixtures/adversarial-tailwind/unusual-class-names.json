@@ -1,0 +1,73 @@
+{
+  "name": "Adversarial unusual class names",
+  "lastModified": "2026-05-05T00:00:00.000Z",
+  "document": {
+    "id": "0:0",
+    "type": "DOCUMENT",
+    "children": [
+      {
+        "id": "0:1",
+        "type": "CANVAS",
+        "name": "Page 1",
+        "children": [
+          {
+            "id": "screen-root",
+            "type": "FRAME",
+            "name": "Safe Screen",
+            "absoluteBoundingBox": {
+              "x": 0,
+              "y": 0,
+              "width": 1280,
+              "height": 720
+            },
+            "children": [
+              {
+                "id": "safe-card",
+                "type": "FRAME",
+                "name": "Hero Card",
+                "absoluteBoundingBox": {
+                  "x": 40,
+                  "y": 48,
+                  "width": 480,
+                  "height": 220
+                },
+                "pluginData": {
+                  "tailwindClassCandidate": "按钮‍مرحبا‏"
+                },
+                "children": [
+                  {
+                    "id": "safe-heading",
+                    "type": "TEXT",
+                    "name": "Heading",
+                    "characters": "Revenue overview",
+                    "style": {
+                      "fontSize": 24,
+                      "fontWeight": 700,
+                      "fontFamily": "Inter",
+                      "lineHeightPx": 30,
+                      "textAlignHorizontal": "LEFT"
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "hidden-unusual",
+                "type": "FRAME",
+                "name": "Hidden Sanitized Content",
+                "visible": false,
+                "children": [
+                  {
+                    "id": "hidden-unusual-text",
+                    "type": "TEXT",
+                    "name": "Hidden text",
+                    "characters": "按钮‍مرحبا‏"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
