@@ -31,6 +31,68 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [1.44.0] - 2026-05-11
+
+Test-intelligence sub-contract bump for the **Tier-1 BaFin/EIOPA Wave A
+follow-ups** against the 2026-05-11 P0 multi-dataset audit. Five
+low-risk recalibrations across three contract surfaces (Issues #2169,
+#2170, #2171, #2129) so the M0 benchmark stops emitting wall-clock /
+quota / faithfulness false-positives on real banking-scale fixtures
+without weakening the underlying gates. All changes are additive (new
+tier row, additional test pin) or numeric-recalibration (coefficient
+bumps); no field removal, no rename, no error-code change.
+
+### Changed (Issue #2169 — FinOps elastic wall-clock recalibration)
+
+- `DEFAULT_FINOPS_WALL_CLOCK_BUDGET_POLICY` coefficients re-tuned to
+  match the observed `gpt-oss-120b` latency profile so the elastic
+  budget formula no longer blocks 11-case T7l7 / E5h5 fixtures with
+  2 judges + 1 adversarial + visual sidecar:
+    - `baseMs` 90_000 → 150_000.
+    - `perCaseMs` 1_800 → 4_000.
+    - `perAdditionalJudgeMs` 12_000 → 20_000.
+    - `perAdversarialRoundMs` 18_000 → 30_000.
+    - `visualSidecarMs` 15_000 → 30_000.
+    - `hardCeilingMs` 360_000 (6 min) → 1_800_000 (30 min, matches the
+      job-level cap).
+- Test pin updated in `finops-budget.test.ts` and
+  `policy-profile.test.ts` (clone round-trip).
+
+### Added (Issue #2171 — TIER_ELASTIC_EP_TIERS very-large-screen tier)
+
+- New tier entry on `TIER_ELASTIC_EP_TIERS`:
+  `{ minFieldCount: 30, multiplier: 0.75, floor: 0, label: "fields>=30: ceil(0.75*fields)" }`.
+- Re-labelled the previous tail tier from `fields>=20: …` to
+  `fields=20-29: ceil(0.85*fields)` so the closed table now spans
+  `[0-4, 5-8, 9-19, 20-29, 30+]`. The new tier drops the required EP
+  count on a 32-field banking-mask screen from 28 → 24, matching the
+  generator's actual deliverable size.
+- Test pin updated in `technique-quota.test.ts`.
+
+### Added (Issue #2170 — policy-gate all-evidence_partial regression test)
+
+- New regression test in `policy-gate.test.ts`: a case carrying 100 %
+  `evidence_partial` step verdicts MUST emit the partial-majority
+  warning AND demote to `needs_review` — never `approved`. Complements
+  the existing 3-of-4 boundary coverage and pins the `≥ 50 %` rule the
+  audit reviewer flagged as untested.
+
+### Changed (Issue #2129 — carbon-footprint test on ti-eval lane)
+
+- `package.json#scripts.test:ti-eval` now includes
+  `src/test-intelligence/carbon-footprint.test.ts` so the W9-2 module
+  is on the same CI-gated lane as every other Wave-9 evidence
+  artifact (it was already covered by `pnpm run test`'s glob).
+
+### Migration
+
+None. All five changes are coefficient / tier-table recalibrations or
+additional test pins. Existing fixtures and policy profiles continue
+to run unchanged; operators who pinned the previous coefficient values
+will see a slightly larger wall-clock budget and a slightly smaller EP
+quota on screens with `>= 30` fields, both strictly fail-open relative
+to the previous behaviour.
+
 ## [1.43.0] - 2026-05-11
 
 Test-intelligence sub-contract bump for Issue #2129 (Wave B.3, Tier-1
@@ -116,49 +178,33 @@ refresh, not via a runtime hook.
 
 ### Added (Issue #2131 — coverage-plan optimizer)
 
-- New module `src/test-intelligence/coverage-plan-optimizer.ts` exporting:
-    - `COVERAGE_PLAN_OPTIMIZER_REPORT_SCHEMA_VERSION = "1.0.0"`.
-    - `COVERAGE_PLAN_OPTIMIZER_BENCHMARK_SCHEMA_VERSION = "1.0.0"`.
-    - `COVERAGE_PLAN_OPTIMIZER_REPORT_ARTIFACT_FILENAME = "coverage-plan-optimizer.json"`,
-      `COVERAGE_PLAN_OPTIMIZER_ARTIFACT_DIRECTORY = "coverage-optimizer"`.
-    - `COVERAGE_PLAN_OPTIMIZER_BASELINE_REPO_PATH`,
-      `COVERAGE_PLAN_OPTIMIZER_PLOT_DIRECTORY`.
-    - `G_COVERAGE_OPTIMIZER_BASELINE_PASS` — CI hard-gate code.
-    - `COVERAGE_PLAN_OPTIMIZER_BASELINE_FIXED_GENERATED_AT = "1970-01-01T00:00:00.000Z"` —
-      structural timestamp baked into the committed baseline so bytes
-      do not drift with wall-clock time.
-    - `COVERAGE_PLAN_OPTIMIZER_METHODOLOGY_DISCLAIMER` — verbatim string
-      stamped on every produced report.
-    - `COVERAGE_PLAN_OPTIMIZER_KILL_RATE_FLOOR = 0.95`,
-      `COVERAGE_PLAN_OPTIMIZER_COST_CEILING = 0.80` — AC #4 thresholds.
-    - `COVERAGE_PLAN_OPTIMIZER_NUMERIC_PRECISION = 9` — emitted-number
-      rounding precision (decimals).
-    - `COVERAGE_PLAN_OPTIMIZER_OBJECTIVES` — closed four-element ordered
-      objective list with `COVERAGE_PLAN_OPTIMIZER_OBJECTIVE_DIRECTIONS`
-      map pinning per-objective improvement direction.
-    - `DEFAULT_NSGA_II_CONFIG` — published default GA hyper-parameters
-      (`populationSize=40, generations=60, crossoverRate=0.9,
-mutationRate=0.15`).
-    - `COVERAGE_PLAN_OPTIMIZER_DEFAULT_SEED = 0x2131_2131` — committed
-      baseline seed.
-    - `REFERENCE_BENCHMARK_FIXTURES` — curated three-fixture reference
-      corpus the committed baseline plans against
-      (`reference-login-form`, `reference-search-results`,
-      `reference-checkout-flow`).
-    - Pure functions: `evaluatePlan`, `optimizeFixture`,
-      `selectRecommendedPlan`, `buildCoveragePlanOptimizerReport`,
-      `buildCoveragePlanOptimizerBaselineReport`,
-      `serializeCoveragePlanOptimizerReport`,
-      `computeCoveragePlanOptimizerReportDigest`,
-      `renderParetoFrontierSvg`.
-    - Persistence: `writeCoveragePlanOptimizerReport` (atomic
-      `${path}.${pid}.${uuid}.tmp` rename).
-    - Types: `TechniqueCoefficients`, `FixtureBenchmark`,
-      `NsgaIIConfig`, `CoveragePlanOptimizerInput`, `ObjectiveVector`,
-      `ParetoIndividual`, `FixtureOptimizationResult`,
-      `CoveragePlanOptimizerReport`,
-      `CoveragePlanOptimizerObjective`,
-      `WriteCoveragePlanOptimizerReportInput`.
+- New module `src/test-intelligence/coverage-plan-optimizer.ts` exporting: - `COVERAGE_PLAN_OPTIMIZER_REPORT_SCHEMA_VERSION = "1.0.0"`. - `COVERAGE_PLAN_OPTIMIZER_BENCHMARK_SCHEMA_VERSION = "1.0.0"`. - `COVERAGE_PLAN_OPTIMIZER_REPORT_ARTIFACT_FILENAME = "coverage-plan-optimizer.json"`,
+  `COVERAGE_PLAN_OPTIMIZER_ARTIFACT_DIRECTORY = "coverage-optimizer"`. - `COVERAGE_PLAN_OPTIMIZER_BASELINE_REPO_PATH`,
+  `COVERAGE_PLAN_OPTIMIZER_PLOT_DIRECTORY`. - `G_COVERAGE_OPTIMIZER_BASELINE_PASS` — CI hard-gate code. - `COVERAGE_PLAN_OPTIMIZER_BASELINE_FIXED_GENERATED_AT = "1970-01-01T00:00:00.000Z"` —
+  structural timestamp baked into the committed baseline so bytes
+  do not drift with wall-clock time. - `COVERAGE_PLAN_OPTIMIZER_METHODOLOGY_DISCLAIMER` — verbatim string
+  stamped on every produced report. - `COVERAGE_PLAN_OPTIMIZER_KILL_RATE_FLOOR = 0.95`,
+  `COVERAGE_PLAN_OPTIMIZER_COST_CEILING = 0.80` — AC #4 thresholds. - `COVERAGE_PLAN_OPTIMIZER_NUMERIC_PRECISION = 9` — emitted-number
+  rounding precision (decimals). - `COVERAGE_PLAN_OPTIMIZER_OBJECTIVES` — closed four-element ordered
+  objective list with `COVERAGE_PLAN_OPTIMIZER_OBJECTIVE_DIRECTIONS`
+  map pinning per-objective improvement direction. - `DEFAULT_NSGA_II_CONFIG` — published default GA hyper-parameters
+  (`populationSize=40, generations=60, crossoverRate=0.9,
+mutationRate=0.15`). - `COVERAGE_PLAN_OPTIMIZER_DEFAULT_SEED = 0x2131_2131` — committed
+  baseline seed. - `REFERENCE_BENCHMARK_FIXTURES` — curated three-fixture reference
+  corpus the committed baseline plans against
+  (`reference-login-form`, `reference-search-results`,
+  `reference-checkout-flow`). - Pure functions: `evaluatePlan`, `optimizeFixture`,
+  `selectRecommendedPlan`, `buildCoveragePlanOptimizerReport`,
+  `buildCoveragePlanOptimizerBaselineReport`,
+  `serializeCoveragePlanOptimizerReport`,
+  `computeCoveragePlanOptimizerReportDigest`,
+  `renderParetoFrontierSvg`. - Persistence: `writeCoveragePlanOptimizerReport` (atomic
+  `${path}.${pid}.${uuid}.tmp` rename). - Types: `TechniqueCoefficients`, `FixtureBenchmark`,
+  `NsgaIIConfig`, `CoveragePlanOptimizerInput`, `ObjectiveVector`,
+  `ParetoIndividual`, `FixtureOptimizationResult`,
+  `CoveragePlanOptimizerReport`,
+  `CoveragePlanOptimizerObjective`,
+  `WriteCoveragePlanOptimizerReportInput`.
 - New committed artifacts under
   `fixtures/test-intelligence/coverage-plan-optimizer/`:
   `baseline.json`, `pareto-reference-checkout-flow.svg`,
@@ -586,12 +632,11 @@ or renamed.
   optional `executionEvidenceCorpusDir` input AND the directory
   contains at least one persisted record — legacy runs keep the
   manifest shape stable.
-- New CLI sub-command:
-    - `workspace-dev test-intelligence execution-pull --tms <id> --project <id> --since <iso> --tenant <id> --output-root <dir> [--endpoint <alias>] [--verifying-key <path>] [--strict-signature]`
-      — drives `connect → pullExecutions → ingestExecutionEvidence →
+- New CLI sub-command: - `workspace-dev test-intelligence execution-pull --tms <id> --project <id> --since <iso> --tenant <id> --output-root <dir> [--endpoint <alias>] [--verifying-key <path>] [--strict-signature]`
+  — drives `connect → pullExecutions → ingestExecutionEvidence →
 disconnect` end-to-end. Exit codes: `0` on success, `1` on
-      operator/config error, `2` on `G12_EXECUTION_EVIDENCE_SIGNED`
-      under `--strict-signature`.
+  operator/config error, `2` on `G12_EXECUTION_EVIDENCE_SIGNED`
+  under `--strict-signature`.
 - New documentation: `docs/test-intelligence/execution-evidence-loop.md`
   with the flow diagram + the customer's TMS-admin signing-key setup
   procedure.
@@ -679,12 +724,10 @@ field, type, or command was removed or renamed.
     - `TestIntelligenceOnboardOperatorError` parser-level error class.
     - `TEST_INTELLIGENCE_ONBOARD_HELP` help text constant.
 - New `test-intelligence onboard` CLI subcommand wired into
-  `src/cli.ts`, with two invocation forms:
-    - `test-intelligence onboard --tenant-id <id> --legal-name <name>
+  `src/cli.ts`, with two invocation forms: - `test-intelligence onboard --tenant-id <id> --legal-name <name>
 --policy-profile <id> --output-root <dir>
 [--force] [--environment-id <id>] [--project-id <id>]
-[--jurisdiction <code>] [--effective-date <iso>]`.
-    - `test-intelligence onboard --doctor --tenant-id <id>
+[--jurisdiction <code>] [--effective-date <iso>]`. - `test-intelligence onboard --doctor --tenant-id <id>
 --output-root <dir> [--environment-id <id>] [--project-id <id>]`.
 
 ### Behaviour notes
@@ -811,9 +854,9 @@ renamed.
       `TmsAuthKind`.
     - `ALLOWED_TMS_PUSH_REFUSAL_CODES`
       (`["credentials_missing", "credentials_invalid",
-   "project_validation_failed", "mapping_preview_missing",
-   "mapping_preview_unreadable", "no_mapped_test_cases",
-   "adapter_unsupported", "connect_failed"]`) +
+"project_validation_failed", "mapping_preview_missing",
+"mapping_preview_unreadable", "no_mapped_test_cases",
+"adapter_unsupported", "connect_failed"]`) +
       `TmsPushRefusalCode`.
 - New persisted-artifact types:
     - `TmsPushReportEntry` — per-case row with `testCaseId`,
@@ -1158,14 +1201,14 @@ and artifact constants for the queue, verdict, and per-run audit log.
   refused with `E_SIGNATURE_INVALID` / `E_KEY_FINGERPRINT_MISMATCH`.
 - New operator-facing CLI subcommands on the package entrypoint:
   `workspace-dev test-intelligence review list --tenant <id>
- [--profile <id>] [--sla-due-by <iso-8601>] [--root <dir>]`,
+[--profile <id>] [--sla-due-by <iso-8601>] [--root <dir>]`,
   `workspace-dev test-intelligence review get <item-id> --tenant <id>
- [--root <dir>]`, and
+[--root <dir>]`, and
   `workspace-dev test-intelligence review decide <item-id>
- --tenant <id> --verdict <approved|rejected|revised>
- --rationale <md-file> [--revised-tc <json-file>]
- --sign-key <pem> --decided-at <iso-8601>
- [--reviewer-principal <stable-id>] [--root <dir>]`.
+--tenant <id> --verdict <approved|rejected|revised>
+--rationale <md-file> [--revised-tc <json-file>]
+--sign-key <pem> --decided-at <iso-8601>
+[--reviewer-principal <stable-id>] [--root <dir>]`.
 - New framework-agnostic HTTP route handlers in
   `src/test-intelligence/human-review-http-routes.ts`:
   `handleListQueue`, `handleGetItem`, `handlePostDecision`. Each
