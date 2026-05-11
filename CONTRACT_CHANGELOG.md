@@ -31,6 +31,51 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [1.44.1] - 2026-05-11
+
+Test-intelligence behavioural bump for **Issue #2168** (Tier-1 BaFin/EIOPA
+Wave B.4) — `FIELD_LIFECYCLE_TRANSITION_TIER_TABLE` mandatory subset
+tightened from 7 transitions to 3. The previous classifier treated
+**every** `initial → X` edge as `mandatory_negative_path`, including the
+skip-state edges (`initial → validated`, `initial → error`,
+`initial → terminal`) that no production UI emits — every field
+realistically hops `initial → focused → in_progress` before validation.
+The P0 multi-dataset benchmark (2026-05-11) showed this over-firing
+producing 36–59 spurious `uncovered_field_lifecycle_transition` errors
+per fixture (LATyw / xr6Nf), drowning real coverage gaps.
+
+This release reduces the mandatory tier to its load-bearing subset
+(realistic entry + validation outcomes):
+
+- `initial → in_progress` — realistic field-entry edge.
+- `in_progress → validated` — `validation_pass` outcome.
+- `in_progress → error` — `validation_fail` outcome.
+
+Demoted edges become `recommended_positive_path`
+(`initial → focused`) or `state_transition_test_only`
+(`initial → validated|error|terminal`). The classifier exhaustiveness
+guard (`assertTransitionTierTableIsExhaustive`) still holds — 36 rows
+across the canonical 6-state lifecycle, every pair classified into
+exactly one of the three tiers.
+
+### Changed (Issue #2168 — mandatory tier subset tightened)
+
+- `src/test-intelligence/field-lifecycle-transition-tier.ts`:
+  `FIELD_LIFECYCLE_TRANSITION_TIER_TABLE` rows mutated for the four
+  edges listed above; everything else unchanged. The exported
+  `FieldLifecycleTransitionTier` discriminator is unchanged, and the
+  pure helpers (`classifyFieldLifecycleTransition`,
+  `classifyFieldLifecycleTransitionPair`) keep their signatures.
+
+### Migration
+
+Operators who pinned on the previous 7-row mandatory subset will see
+strictly fewer `uncovered_field_lifecycle_transition` ERROR-severity
+issues; the demoted edges either move to `_recommended` WARNING-severity
+or stay silent unless a `technique: "state_transition"` case is in
+play. No public type or contract-version field changes; downstream
+artifact byte-shape is unaffected aside from the issue list.
+
 ## [1.44.0] - 2026-05-11
 
 Test-intelligence sub-contract bump for the **Tier-1 BaFin/EIOPA Wave A
@@ -845,19 +890,14 @@ renamed.
   `src/contracts/index.ts`:
     - `TMS_PUSH_REPORT_SCHEMA_VERSION` (`"1.0.0"`).
     - `TMS_PUSH_REPORT_ARTIFACT_FILENAME` (`"tms-push-report.json"`).
-- New closed value sets exported from `src/contracts/index.ts`:
-    - `ALLOWED_TMS_ADAPTER_IDS` (`["alm", "polarion", "qtest", "xray"]`)
-        - the type alias `TmsAdapterId`.
-    - `ALLOWED_TMS_PUSH_VERDICTS`
-      (`["pushed", "skipped-dup", "failed"]`) + `TmsPushVerdict`.
-    - `ALLOWED_TMS_AUTH_KINDS` (`["pat", "oauth2", "bearer"]`) +
-      `TmsAuthKind`.
-    - `ALLOWED_TMS_PUSH_REFUSAL_CODES`
-      (`["credentials_missing", "credentials_invalid",
+- New closed value sets exported from `src/contracts/index.ts`: - `ALLOWED_TMS_ADAPTER_IDS` (`["alm", "polarion", "qtest", "xray"]`) - the type alias `TmsAdapterId`. - `ALLOWED_TMS_PUSH_VERDICTS`
+  (`["pushed", "skipped-dup", "failed"]`) + `TmsPushVerdict`. - `ALLOWED_TMS_AUTH_KINDS` (`["pat", "oauth2", "bearer"]`) +
+  `TmsAuthKind`. - `ALLOWED_TMS_PUSH_REFUSAL_CODES`
+  (`["credentials_missing", "credentials_invalid",
 "project_validation_failed", "mapping_preview_missing",
 "mapping_preview_unreadable", "no_mapped_test_cases",
 "adapter_unsupported", "connect_failed"]`) +
-      `TmsPushRefusalCode`.
+  `TmsPushRefusalCode`.
 - New persisted-artifact types:
     - `TmsPushReportEntry` — per-case row with `testCaseId`,
       `idempotencyKey`, `verdict`, `tmsTestCaseId`, `tmsErrorCode`,
