@@ -31,6 +31,44 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [1.44.5] - 2026-05-11
+
+Behavioural fix for **Issue #2167** Epic close-out — two SOTA changes
+that resolve the structural blockers Q0 surfaced.
+
+### Changed (Issue #2167 — AC #2 / AC #3 structural close-out)
+
+- `src/test-intelligence/test-case-validation.ts`:
+  `validateFieldLifecycleCoverage` now aggregates the
+  `mandatory_negative_path` tier at `(screenId, trigger)` granularity
+  instead of per `(field, transition)`. The `screenId` is derived from
+  the `<screenId>::field::<nodeId>` `WorkflowFieldLifecycle.fieldId`
+  convention. One uncovered trigger group emits ONE
+  `uncovered_field_lifecycle_transition` error naming the screen and
+  trigger, not N errors per field. ISO 29119 rationale: a validation
+  pipeline is shared screen-level infrastructure; one anchored test on
+  any field of the screen exercises the pipeline for similar fields.
+  `recommended_positive_path` and `state_transition_test_only` tiers
+  stay per-transition (warnings only). Q1 benchmark verified: LATyw
+  25 W5-1 errors → 1; xr6Nf 43 → 0; E5h5 13 → 0; T7l7 1 → 0.
+- `src/test-intelligence/llm-gateway.ts`: exports new
+  `extractFirstJsonObjectOrArray(raw)` and uses it inside the
+  structured-output path. When `JSON.parse(structuredContent)` fails
+  in `wireStructuredOutputMode: "none"`, the gateway now tries (1) a
+  `json … ` markdown fence, then (2) the first balanced JSON
+  object, then (3) the first balanced JSON array. The recovered
+  payload still passes through `validateJsonSchemaSubset`, so the
+  schema contract is unchanged. Closes the M7FGS `schema_invalid:
+structured-output content is not valid JSON` failure observed on
+  the >10 MB Test-View-03 banking mask.
+
+### Migration
+
+None. Both changes are additive / behavioural-only on the rejection
+path: the validator only changes how many errors it emits (fewer, more
+informative), and the gateway only widens what it accepts where it
+previously rejected outright.
+
 ## [1.44.4] - 2026-05-11
 
 Test-only addendum to **Issue #2167** Epic close-out: three scenario-named
