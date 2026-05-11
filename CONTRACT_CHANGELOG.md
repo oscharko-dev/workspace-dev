@@ -94,6 +94,72 @@ existing behavior changes.
 
 ---
 
+## [1.40.0] - 2026-05-11
+
+Test-intelligence sub-contract bump for Issue #2129 (Wave 9 / P4) —
+per-job energy + CO₂e footprint manifest. Adds a self-contained
+deterministic carbon-footprint module that derives `energyKwh` and
+`co2eGrams` from token usage × per-deployment energy coefficient ×
+operator-supplied per-region grid carbon intensity. The artifact is
+byte-stable, self-attesting (methodology disclaimer stamped verbatim),
+and explicitly scoped to ESG reporting / routing-tier comparison —
+not for legally binding emissions accounting.
+
+All changes are additive: a new module ships under
+`src/test-intelligence/carbon-footprint.ts`, no existing contract,
+manifest, or fixture is mutated, and the artifact lands at its own
+path `<runDir>/carbon/carbon-footprint.json`.
+
+### Added (Issue #2129 — per-job CO₂e footprint manifest)
+
+- New module `src/test-intelligence/carbon-footprint.ts` exporting:
+  - `CARBON_FOOTPRINT_REPORT_SCHEMA_VERSION = "1.0.0"`,
+    `ENERGY_COEFFICIENT_TABLE_SCHEMA_VERSION = "1.0.0"`,
+    `GRID_CARBON_INTENSITY_TABLE_SCHEMA_VERSION = "1.0.0"`,
+    `CARBON_FOOTPRINT_AGGREGATE_SCHEMA_VERSION = "1.0.0"`.
+  - `CARBON_FOOTPRINT_REPORT_ARTIFACT_FILENAME = "carbon-footprint.json"`,
+    `CARBON_FOOTPRINT_ARTIFACT_DIRECTORY = "carbon"`.
+  - `GRID_CARBON_INTENSITY_MAX_AGE_DAYS = 35` — operator-supplied table
+    fails closed when older than this ceiling (AC requires monthly
+    refresh; ceiling absorbs weekend / holiday slippage).
+  - `CARBON_FOOTPRINT_METHODOLOGY_DISCLAIMER` — verbatim string
+    stamped on every produced report.
+  - `REFERENCE_ENERGY_COEFFICIENT_TABLE` — published table covering
+    `anthropic-claude-3-7-{opus,sonnet}`, `azure-openai-gpt-4o`,
+    `azure-openai-gpt-4o-mini`, `mistral-large-3`, and
+    `gpt-oss-120b-mock`. Every entry carries a `citation` and `origin`
+    (`"published_paper" | "vendor_disclosure" | "estimated"`). All
+    shipped entries are `"estimated"` against peer-reviewed averages
+    and vendor sustainability whitepaper figures.
+  - Pure functions: `validateEnergyCoefficientTable`,
+    `validateGridCarbonIntensityTable`,
+    `computeGridCarbonIntensityTableAgeDays`,
+    `assertGridCarbonIntensityTableFresh`,
+    `requireEnergyCoefficient`, `requireGridCarbonIntensity`,
+    `buildCarbonFootprintReport`,
+    `computeCarbonFootprintReportDigest`,
+    `aggregateCarbonFootprint`, `rankCandidatesByCarbon`.
+  - Persistence: `writeCarbonFootprintReport` (atomic
+    `${path}.${pid}.${uuid}.tmp` rename).
+  - Types: `EnergyCoefficientRecord`, `EnergyCoefficientTable`,
+    `GridCarbonIntensityRecord`, `GridCarbonIntensityTable`,
+    `CarbonFootprintRoleUsage`, `CarbonFootprintRoleLine`,
+    `CarbonFootprintReport`, `CarbonFootprintAggregate`,
+    `CarbonFootprintAggregateRow`, `CarbonRoutingCandidate`,
+    `RankedCarbonRoutingCandidate`,
+    plus the typed `CarbonFootprintError` and
+    `CarbonFootprintErrorCode` discriminated union.
+- New ADR `docs/decisions/2026-05-11-issue-2129-carbon-footprint.md`
+  documenting methodology, citations, freshness ceiling, and the
+  routing-optimizer follow-up handle.
+
+All changes are additive; no existing field, type, gate code, or
+behaviour was removed or renamed. The Wave-1 evidence manifest is
+not mutated — operators who want the carbon report attested in the
+evidence manifest can add it via the existing append-artifact path.
+
+---
+
 ## [1.38.0] - 2026-05-11
 
 Test-intelligence sub-contract bump for Issue #2188 (Wave 8 / W8-6) —
