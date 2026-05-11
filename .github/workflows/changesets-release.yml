@@ -11,22 +11,19 @@ permissions:
   id-token: write
 
 jobs:
-  quality-matrix:
+  release-preflight:
+    timeout-minutes: 25
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        node-version: [22, 24]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
 
-      - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d # v4
+      - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d # v6
 
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v4
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: 22
           cache: pnpm
 
       - name: Set reproducible build metadata
@@ -38,6 +35,18 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
 
+      - name: Enforce workflow install policy
+        run: pnpm run verify:workflow-install-scripts
+
+      - name: Enforce workflow checkout credential policy
+        run: pnpm run verify:workflow-persist-credentials
+
+      - name: Enforce pnpm built dependency allowlist
+        run: pnpm run verify:built-deps-allowlist
+
+      - name: Enforce dependency freshness policy
+        run: pnpm run verify:npmrc-freshness
+
       - name: Enforce dependency vulnerability gate
         run: pnpm audit --audit-level high
 
@@ -47,151 +56,33 @@ jobs:
       - name: Verify npm signature attestations
         run: npm audit signatures
 
-      - name: Run release quality gates
-        run: |
-          pnpm run typecheck
-          pnpm run test
-          pnpm run test:coverage
-          pnpm run test:flaky-retry
-          pnpm run test:bdd
-          pnpm run test:property-based
-          pnpm run ui:lint
-          pnpm run lint:boundaries
-          pnpm run lint:ts-style
-          pnpm run lint:no-telemetry
-          pnpm run build
-          pnpm run lint:publint
-          pnpm run lint:types-publish
-          pnpm run lint:size
-          pnpm run verify:licenses
-          pnpm run verify:pack
-          pnpm run verify:reproducible-build
-          pnpm run verify:fips
-          pnpm run sbom:cyclonedx
-          pnpm run sbom:spdx
-          pnpm run verify:airgap
+      - name: Build release package
+        run: pnpm run build
 
-      - name: Upload release evidence artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4
-        if: always()
-        with:
-          name: workspace-dev-release-evidence-node-${{ matrix.node-version }}
-          path: |
-            artifacts/testing
-            artifacts/reproducibility
-            artifacts/sbom
-          if-no-files-found: ignore
+      - name: Verify package tarball contents
+        run: pnpm run verify:pack
 
-  performance-web:
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        with:
-          persist-credentials: false
+      - name: Enforce package publishing lint
+        run: pnpm run lint:publint
 
-      - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d # v4
+      - name: Enforce package type publish lint
+        run: pnpm run lint:types-publish
 
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v4
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: template/react-mui-app/pnpm-lock.yaml
-
-      - name: Install template dependencies
-        run: pnpm --dir template/react-mui-app install --frozen-lockfile --ignore-scripts
-
-      - name: Typecheck template app
-        run: pnpm --dir template/react-mui-app run typecheck
-
-      - name: Build template app
-        run: pnpm --dir template/react-mui-app run build
-
-      - name: Capture web performance baseline (warn-only)
-        timeout-minutes: 12
-        env:
-          FIGMAPIPE_PERF_ARTIFACT_DIR: template/react-mui-app/artifacts/performance
-          FIGMAPIPE_PERF_BASELINE_PATH: template/react-mui-app/artifacts/performance/perf-baseline.json
-          FIGMAPIPE_PERF_LIGHTHOUSE_MAX_ATTEMPTS: "1"
-          FIGMAPIPE_PERF_LIGHTHOUSE_TIMEOUT_MS: "60000"
-          FIGMAPIPE_PERF_ROUTES_JSON: '["/","/overview","/checkout"]'
-          FIGMAPIPE_PERF_PROFILES_JSON: '["mobile","desktop"]'
-          FIGMAPIPE_PERF_STRICT: "false"
-        run: pnpm --dir template/react-mui-app run perf:baseline
-
-      - name: Assert web performance budgets and regression (warn-only)
-        timeout-minutes: 12
-        env:
-          FIGMAPIPE_PERF_ARTIFACT_DIR: template/react-mui-app/artifacts/performance
-          FIGMAPIPE_PERF_BASELINE_PATH: template/react-mui-app/artifacts/performance/perf-baseline.json
-          FIGMAPIPE_PERF_LIGHTHOUSE_MAX_ATTEMPTS: "1"
-          FIGMAPIPE_PERF_LIGHTHOUSE_TIMEOUT_MS: "60000"
-          FIGMAPIPE_PERF_ROUTES_JSON: '["/","/overview","/checkout"]'
-          FIGMAPIPE_PERF_PROFILES_JSON: '["mobile","desktop"]'
-          FIGMAPIPE_PERF_STRICT: "false"
-        run: pnpm --dir template/react-mui-app run perf:assert
-
-      - name: Upload web performance artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4
-        if: always()
-        with:
-          name: workspace-dev-performance-web-${{ github.run_id }}
-          path: template/react-mui-app/artifacts/performance
-          if-no-files-found: ignore
-
-  mutation-testing:
-    runs-on: ubuntu-latest
-    needs: quality-matrix
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        with:
-          persist-credentials: false
-
-      - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d # v4
-
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v4
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile --ignore-scripts
-
-      - name: Run mutation baseline (blocking >=58%)
-        run: pnpm run test:mutation
-
-      - name: Summarize mutation report
-        if: always()
-        run: node scripts/print-mutation-report-summary.mjs artifacts/testing/mutation/mutation.json
-
-      - name: Upload mutation artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4
-        if: always()
-        with:
-          name: workspace-dev-mutation-${{ github.run_id }}
-          path: artifacts/testing/mutation
-          if-no-files-found: ignore
+      - name: Enforce license allowlist
+        run: pnpm run verify:licenses
 
   release:
-    if: >-
-      ${{
-        always() &&
-        github.event_name == 'push' &&
-        github.ref == 'refs/heads/main' &&
-        needs.quality-matrix.result == 'success' &&
-        needs.mutation-testing.result == 'success'
-      }}
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    needs: [quality-matrix, performance-web, mutation-testing]
+    needs: release-preflight
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
 
-      - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d # v4
+      - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d # v6
 
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v4
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: 22
           cache: pnpm

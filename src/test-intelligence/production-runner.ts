@@ -238,6 +238,12 @@ import {
   renderCustomerMarkdown,
 } from "./customer-markdown-renderer.js";
 import {
+  buildCustomerMarkdownPdf,
+  buildJiraStorySectionBody,
+  buildScreenshotReferenceSectionBody,
+  extractJiraStoryFromCustomContext,
+} from "./customer-markdown-pdf.js";
+import {
   fetchFigmaFileForTestIntelligence,
   fetchFigmaScreenCapturesForTestIntelligence,
   FigmaRestFetchError,
@@ -1509,6 +1515,15 @@ export interface RunFigmaToQcTestCasesResult {
   customerMarkdownPaths: {
     combined: string;
     perCase: ReadonlyArray<string>;
+    /**
+     * Path to the deterministic PDF rendering of the customer artefacts
+     * (sibling of `testfaelle.md` in the customer-markdown directory).
+     * The PDF contains three structural sections: combined
+     * `testfaelle.md`, `JIRA_STORY.md` content extracted from custom
+     * context when present (placeholder otherwise), and screenshot
+     * SHA-256 references. Raw screenshot bytes are never embedded.
+     */
+    pdf: string;
   };
 }
 
@@ -6059,6 +6074,40 @@ export const runFigmaToQcTestCases = async (
         bytes: Buffer.from(file.body, "utf8"),
       });
     }
+    // Deterministic PDF rendering of the customer artefacts.
+    //
+    // Three structural sections are always emitted:
+    //   1. `testfaelle.md` — the combined customer Markdown
+    //   2. `JIRA_STORY.md` — populated from a
+    //      `customContextMarkdown` `## JIRA_STORY` heading; falls back
+    //      to a placeholder that documents how to configure it. No
+    //      content is fabricated when the source is absent.
+    //   3. `Screen Shots der Maske` — hash references to the visual
+    //      captures persisted by `persistVisualCaptureArtifacts`. Raw
+    //      image bytes are NEVER embedded — the hard invariant from
+    //      `eingabemasken-fixtures.test.ts:294` /
+    //      `baseline-fixtures.test.ts:189` continues to hold.
+    const jiraStoryBody = buildJiraStorySectionBody(
+      extractJiraStoryFromCustomContext(customContextMarkdown?.bodyMarkdown),
+    );
+    const screenshotReferenceBody = buildScreenshotReferenceSectionBody(
+      visualCaptureArtifacts?.files.map((file) => ({
+        screenId: file.screenId,
+        filename: file.filename,
+        sha256: file.sha256,
+        byteLength: file.byteLength,
+      })) ?? [],
+    );
+    const pdfBytes = buildCustomerMarkdownPdf({
+      title: `Test-Case Ergebnisse — ${customerLabel}`,
+      sections: [
+        { heading: "testfaelle.md", body: rendered.combinedMarkdown },
+        { heading: "JIRA_STORY.md", body: jiraStoryBody },
+        { heading: "Screen Shots der Maske", body: screenshotReferenceBody },
+      ],
+    });
+    const pdfPath = join(markdownDir, "testfaelle.pdf");
+    await writeAtomicBytes(pdfPath, pdfBytes);
     const visualSidecarSummary =
       visualSidecarResult?.outcome === "success" &&
       visualSidecarArtifactBytes !== undefined
@@ -7051,6 +7100,7 @@ export const runFigmaToQcTestCases = async (
       customerMarkdownPaths: {
         combined: combinedMarkdownPath,
         perCase: perCasePaths,
+        pdf: pdfPath,
       },
       ...(harnessSummary !== undefined ? { harness: harnessSummary } : {}),
       ...(repairLoopResult !== undefined

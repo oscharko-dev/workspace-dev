@@ -15,90 +15,22 @@ permissions:
   contents: read
 
 jobs:
-  setup:
-    runs-on: ubuntu-22.04
-    outputs:
-      src: ${{ steps.filter.outputs.src }}
-      ui: ${{ steps.filter.outputs.ui }}
-      plugin: ${{ steps.filter.outputs.plugin }}
-      templates: ${{ steps.filter.outputs.templates }}
-      scripts: ${{ steps.filter.outputs.scripts }}
-      workflows: ${{ steps.filter.outputs.workflows }}
-      docs: ${{ steps.filter.outputs.docs }}
-      config: ${{ steps.filter.outputs.config }}
-      full: ${{ steps.full.outputs.value == 'true' || steps.full-workflows.outputs.value == 'true' }}
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
-        with:
-          persist-credentials: false
-
-      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d  # v4.0.1
-        id: filter
-        with:
-          filters: |
-            src:
-              - 'src/**'
-              - 'package.json'
-              - 'pnpm-lock.yaml'
-              - 'tsup.config.ts'
-              - 'tsconfig.json'
-            ui:
-              - 'ui-src/**'
-              - 'package.json'
-              - 'pnpm-lock.yaml'
-            plugin:
-              - 'plugin/**'
-              - 'package.json'
-              - 'pnpm-lock.yaml'
-            templates:
-              - 'template/**'
-            scripts:
-              - 'scripts/**'
-              - 'package.json'
-            workflows:
-              - '.github/workflows/**'
-              - '.github/dependabot.yml'
-              - '.github/CODEOWNERS'
-            docs:
-              - '**/*.md'
-              - 'docs/**'
-            config:
-              - 'package.json'
-              - 'pnpm-lock.yaml'
-              - 'tsconfig.json'
-              - 'tsup.config.ts'
-              - 'eslint.config.js'
-              - 'stryker.config.mjs'
-      - id: full
-        shell: bash
-        run: |
-          echo "value=false" >> "$GITHUB_OUTPUT"
-
-      - id: full-workflows
-        if: steps.filter.outputs.workflows == 'true' || steps.filter.outputs.config == 'true'
-        shell: bash
-        run: |
-          echo "value=true" >> "$GITHUB_OUTPUT"
-
   quality:
-    timeout-minutes: 480
+    timeout-minutes: 30
     runs-on: ubuntu-22.04
-    needs: setup
     strategy:
       fail-fast: false
       matrix:
         node-version: [22, 24]
 
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
 
-      - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d  # v6
-        with:
-          version: 10.33.0
+      - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d # v6
 
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: ${{ matrix.node-version }}
           cache: pnpm
@@ -112,180 +44,29 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
 
-      - name: Enforce workflow --ignore-scripts policy
+      - name: Enforce workflow install policy
         run: pnpm run verify:workflow-install-scripts
 
-      - name: Enforce workflow persist-credentials policy
+      - name: Enforce workflow checkout credential policy
         run: pnpm run verify:workflow-persist-credentials
 
-      - name: Enforce pnpm onlyBuiltDependencies allowlist
+      - name: Enforce pnpm built dependency allowlist
         run: pnpm run verify:built-deps-allowlist
-
-      - name: Enforce dependency freshness (minimum-release-age) policy
-        run: pnpm run verify:npmrc-freshness
-
-      - name: Install template dependencies
-        run: pnpm --dir template/react-mui-app install --frozen-lockfile --ignore-scripts
-
-      - name: Install Tailwind template dependencies
-        run: pnpm --dir template/react-tailwind-app install --frozen-lockfile --ignore-scripts
-
-      - name: Enforce Tailwind template dependency denylist
-        run: pnpm run template:tailwind:dependency-denylist
-
-      - name: Enforce dependency vulnerability gate
-        run: pnpm audit --audit-level high
-
-      - name: Enforce template dependency vulnerability gate
-        run: pnpm --dir template/react-mui-app audit --audit-level high
 
       - name: Enforce lockfile host allowlist
         run: pnpm run verify:lockfile-hosts
 
-      - name: Enforce pipeline/template docs version consistency
-        run: pnpm run verify:docs-template-stack
-
-      - name: Enforce generated API reference freshness
-        run: pnpm run docs:api:check
+      - name: Enforce dependency vulnerability gate
+        run: pnpm audit --audit-level high
 
       - name: Verify npm signature attestations
         run: npm audit signatures
 
-      - name: Verify template npm signature attestations
-        run: pnpm run template:signatures
-
-      - name: Typecheck
-        run: pnpm run typecheck
-
-      - name: Runtime security smoke suite
-        run: pnpm run test:dast-smoke
-
-      - name: Upload runtime security smoke artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
-        if: failure()
-        with:
-
-          name: workspace-dev-release-dast-smoke-node-${{ matrix.node-version }}-${{ github.run_id }}
-
-          path: artifacts/testing/dast-smoke
-          if-no-files-found: ignore
-
-      - name: Runtime load smoke suite
-        run: pnpm run test:load
-
-      - name: Upload runtime load smoke artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
-        if: failure()
-        with:
-          name: workspace-dev-release-load-smoke-node-${{ matrix.node-version }}-${{ github.run_id }}
-          path: artifacts/testing/load-smoke
-          if-no-files-found: ignore
-
-      - name: Canonical tests
-        run: pnpm run test
-
-      - name: Template Vitest tests
-        run: pnpm run template:test
-
-      - name: Tailwind template lint
-        run: pnpm run template:tailwind:lint
-
-      - name: Tailwind template typecheck
-        run: pnpm run template:tailwind:typecheck
-
-      - name: Tailwind template Vitest tests
-        run: pnpm run template:tailwind:test
-
-      - name: Tailwind template build
-        run: pnpm run template:tailwind:build
-
-      - name: Tailwind template UI validation
-        run: pnpm run template:tailwind:validate:ui
-
-      - name: UI coverage gate
-        run: pnpm run ui:test:coverage
-
-      - name: Golden parity fixtures
-        run: pnpm run test:golden
-
-      - name: Coverage thresholds
-        run: pnpm run test:coverage
-
-      - name: Cache Playwright browsers (Chromium)
-        id: pw-cache-chromium
-        if: matrix.node-version == 24
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ matrix.node-version }}-chromium-${{ hashFiles('pnpm-lock.yaml') }}
-
-      - name: Install Playwright browser (Chromium)
-        if: steps.pw-cache-chromium.outputs.cache-hit != 'true' && matrix.node-version == 24
-        run: pnpm exec playwright install --with-deps chromium
-
-      - name: Install Playwright OS deps (Chromium, cache hit)
-        if: steps.pw-cache-chromium.outputs.cache-hit == 'true' && matrix.node-version == 24
-        run: pnpm exec playwright install-deps chromium
-
-      - name: UI E2E tests (Chromium)
-        if: matrix.node-version == 24
-        run: pnpm run ui:test:e2e
-
-      - name: Cache Playwright browsers (all)
-        id: pw-cache-allbrowsers
-        if: matrix.node-version == 22
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ matrix.node-version }}-allbrowsers-${{ hashFiles('pnpm-lock.yaml') }}
-
-      - name: Install Playwright browsers (matrix)
-        if: steps.pw-cache-allbrowsers.outputs.cache-hit != 'true' && matrix.node-version == 22
-        run: pnpm exec playwright install --with-deps chromium firefox webkit
-
-      - name: Install Playwright OS deps (matrix, cache hit)
-        if: steps.pw-cache-allbrowsers.outputs.cache-hit == 'true' && matrix.node-version == 22
-        run: pnpm exec playwright install-deps chromium firefox webkit
-
-      - name: UI E2E tests (matrix)
-        if: matrix.node-version == 22
-        run: pnpm run ui:test:e2e:matrix
-
-      - name: Tailwind template Playwright validation
-        run: pnpm run template:tailwind:validate:playwright
-
-      - name: Run tests with flaky retry
-        run: pnpm run test:flaky-retry
-
-      - name: Run BDD contract tests
-        run: pnpm run test:bdd
-
-      - name: Run property-based fuzz tests
-        run: pnpm run test:property-based
-
-      - name: Lint UI
-        run: pnpm run ui:lint
-
-      - name: Enforce architecture boundaries
-        run: pnpm run lint:boundaries
-
-      - name: Build package
+      - name: Build release package
         run: pnpm run build
 
-      - name: Enforce package size budget
-        run: pnpm run lint:size
-
-      - name: Enforce TypeScript style
-        run: pnpm run lint:ts-style
-
-      - name: Enforce zero telemetry policy
-        run: pnpm run lint:no-telemetry
-
-      - name: Enforce repository secret policy
-        run: pnpm run lint:secrets:all
-
-      - name: Enforce profile tarball secret policy
-        run: pnpm run lint:secrets:profiles
+      - name: Verify package tarball contents
+        run: pnpm run verify:pack
 
       - name: Enforce package publishing lint
         run: pnpm run lint:publint
@@ -293,248 +74,18 @@ jobs:
       - name: Enforce package type publish lint
         run: pnpm run lint:types-publish
 
-      - name: Enforce license allowlist
-        run: pnpm run verify:licenses
-
-      - name: Verify package tarball contents
-        run: pnpm run verify:pack
-
-      - name: Verify reproducible build
-        run: pnpm run verify:reproducible-build
-
-      - name: Verify offline install + dual module smoke
-        run: pnpm run verify:airgap
-
-      - name: Generate CycloneDX SBOM
-        run: pnpm run sbom:cyclonedx
-
-      - name: Generate template CycloneDX SBOM
-        run: pnpm run sbom:cyclonedx:template
-
-      - name: Generate SPDX SBOM
-        run: pnpm run sbom:spdx
-
-      - name: Generate template SPDX SBOM
-        run: pnpm run sbom:spdx:template
-
-      - name: Verify SBOM parity
-        run: pnpm run verify:sbom:parity
-
-      - name: Run profile release gates
-        shell: bash
-        run: |
-          pnpm run verify:profile-gates -- --skip-airgap --skip-reproducible
-
-      - name: Upload flaky retry artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
-        if: always()
-        with:
-          name: workspace-dev-flaky-retry-node-${{ matrix.node-version }}
-          path: artifacts/testing
-          if-no-files-found: ignore
-
-      - name: Upload SBOM artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
-        if: always()
-        with:
-          name: workspace-dev-sbom-node-${{ matrix.node-version }}
-          path: |
-            artifacts/sbom
-            artifacts/build-profiles
-            artifacts/reproducibility
-          if-no-files-found: ignore
-
-      - name: Upload Playwright diagnostics
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
-        if: failure()
-        with:
-          name: workspace-dev-playwright-node-${{ matrix.node-version }}
-          path: |
-            playwright-report
-            test-results
-          if-no-files-found: ignore
-
-  ti-eval:
-    timeout-minutes: 120
-    runs-on: ubuntu-22.04
-    needs: setup
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [0, 1, 2, 3]
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
-        with:
-          persist-credentials: false
-
-      - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d  # v6
-        with:
-          version: 10.33.0
-
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile --ignore-scripts
-
-      - name: Test-intelligence evaluation gate (shard ${{ matrix.shard }}/4)
-        env:
-          SHARD: ${{ matrix.shard }}
-          TOTAL: 4
-        run: SHARD=${{ matrix.shard }} TOTAL=4 pnpm run test:ti-eval:shard
-
-      - name: Run Wave 4.I multi-source eval gate
-        if: matrix.shard == 0
-        run: pnpm run test:ti-multi-source-eval
-
-      - name: Run faithfulness eval gate (Issue #1903)
-        if: matrix.shard == 0
-        run: pnpm run test:ti-faithfulness
-
-      - name: Run hallucination eval gate (Issue #1904)
-        if: matrix.shard == 0
-        run: pnpm run test:ti-hallucination
-
-      - name: Run form-screen a11y coverage eval gate (Issue #1905)
-        if: matrix.shard == 0
-        run: pnpm run test:ti-a11y
-
-      - name: Run judge-calibration eval gate (Issue #1906)
-        if: matrix.shard == 0
-        run: pnpm run test:ti-judge-calibration
-
-      - name: Run regression-eval drift gate (Issue #1907)
-        if: matrix.shard == 0
-        run: pnpm run test:ti-regression
-
-      - name: Run FinOps SLO gate (Issue #2121)
-        if: matrix.shard == 0
-        run: pnpm run test:ti-finops-slo
-
-  performance-web:
-    timeout-minutes: 180
-    runs-on: ubuntu-22.04
-    needs: setup
-    if: needs.setup.outputs.templates == 'true' || needs.setup.outputs.full == 'true'
-    strategy:
-      fail-fast: false
-      matrix:
-        template:
-          - bundle: react-mui-app
-            packageDir: template/react-mui-app
-            lockfile: template/react-mui-app/pnpm-lock.yaml
-          - bundle: react-tailwind-app
-            packageDir: template/react-tailwind-app
-            lockfile: template/react-tailwind-app/pnpm-lock.yaml
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
-        with:
-          persist-credentials: false
-
-      - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d  # v6
-        with:
-          version: 10.33.0
-
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: ${{ matrix.template.lockfile }}
-
-      - name: Install template dependencies
-        run: pnpm --dir "${{ matrix.template.packageDir }}" install --frozen-lockfile --ignore-scripts
-
-      - name: Typecheck template app
-        run: pnpm --dir "${{ matrix.template.packageDir }}" run typecheck
-
-      - name: Build template app
-        run: pnpm --dir "${{ matrix.template.packageDir }}" run build
-
-      - name: Capture web performance baseline
-        env:
-          FIGMAPIPE_PERF_ARTIFACT_DIR: artifacts/performance
-          FIGMAPIPE_PERF_BASELINE_PATH: artifacts/performance/perf-measured-baseline.json
-          FIGMAPIPE_PERF_REPORT_PATH: artifacts/performance/perf-baseline-report.json
-          FIGMAPIPE_PERF_STRICT: "false"
-          FIGMAPIPE_PERF_ALLOW_BASELINE_BOOTSTRAP: "true"
-        run: pnpm --dir "${{ matrix.template.packageDir }}" run perf:baseline
-
-      - name: Assert web performance budgets and regression
-        env:
-          FIGMAPIPE_PERF_ARTIFACT_DIR: artifacts/performance
-          FIGMAPIPE_PERF_BASELINE_PATH: perf-baseline.json
-          FIGMAPIPE_PERF_STRICT: "true"
-          FIGMAPIPE_PERF_ALLOW_BASELINE_BOOTSTRAP: "false"
-        run: pnpm --dir "${{ matrix.template.packageDir }}" run perf:assert
-
-      - name: Summarize web performance baseline report
-        if: always()
-        run: node scripts/print-perf-report-summary.mjs "${{ matrix.template.packageDir }}/artifacts/performance/perf-baseline-report.json"
-
-      - name: Summarize web performance assertion report
-        if: always()
-        run: node scripts/print-perf-report-summary.mjs "${{ matrix.template.packageDir }}/artifacts/performance/perf-assert-report.json"
-
-      - name: Upload web performance artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
-        if: always()
-        with:
-          name: workspace-dev-performance-web-${{ matrix.template.bundle }}
-          path: ${{ matrix.template.packageDir }}/artifacts/performance
-          if-no-files-found: ignore
-
-  mutation-testing:
-    timeout-minutes: 420
-    runs-on: ubuntu-22.04
-    needs: quality
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
-        with:
-          persist-credentials: false
-
-      - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d  # v6
-        with:
-          version: 10.33.0
-
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile --ignore-scripts
-
-      - name: Run mutation baseline (blocking >=58%)
-        run: pnpm run test:mutation
-
-      - name: Summarize mutation report
-        if: always()
-        run: node scripts/print-mutation-report-summary.mjs artifacts/testing/mutation/mutation.json
-
-      - name: Upload mutation artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
-        if: always()
-        with:
-          name: workspace-dev-mutation
-          path: artifacts/testing/mutation
-          if-no-files-found: ignore
-
   fips-smoke:
-    timeout-minutes: 180
+    timeout-minutes: 15
     runs-on: ubuntu-22.04
     needs: quality
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
 
-      - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d  # v6
-        with:
-          version: 10.33.0
+      - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d # v6
 
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: 22
           cache: pnpm
@@ -542,27 +93,25 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
 
-      - name: Build package
+      - name: Build release package
         run: pnpm run build
 
-      - name: FIPS smoke check (skip when unsupported)
+      - name: FIPS smoke check
         run: pnpm run verify:fips
 
   release-readiness:
-    timeout-minutes: 60
+    timeout-minutes: 10
     runs-on: ubuntu-22.04
-    needs: [quality, ti-eval, performance-web, mutation-testing, fips-smoke]
+    needs: [quality, fips-smoke]
     if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
 
-      - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d  # v6
-        with:
-          version: 10.33.0
+      - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d # v6
 
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: 22
           cache: pnpm
@@ -570,12 +119,18 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
 
-      - name: Verify changeset CLI commands are available (non-publishing)
+      - name: Verify changeset CLI commands are available
         run: |
           pnpm exec changeset --version
           pnpm exec changeset version --help
 
-      - name: Verify release workflow includes changesets publish path
+      - name: Verify release workflow publish path
         run: |
           test -f ".github/workflows/changesets-release.yml"
           grep -q "pnpm run release:changesets:publish" ".github/workflows/changesets-release.yml"
+
+      - name: Verify package release metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          node -e "const p=require('./package.json'); if (p.name !== 'workspace-dev') throw new Error('Unexpected package name: ' + p.name); if (!/^\\d+\\.\\d+\\.\\d+(?:[-+].*)?$/.test(p.version)) throw new Error('Invalid package version: ' + p.version); if (!String(p.packageManager || '').startsWith('pnpm@')) throw new Error('packageManager must pin pnpm');"

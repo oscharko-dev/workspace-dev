@@ -599,6 +599,14 @@ test("runFigmaToQcTestCases happy path persists artifacts and renders customer M
     const md = await readFile(result.customerMarkdownPaths.combined, "utf8");
     assert.match(md, /Testfälle/u);
     assert.match(md, /Investitionssumme/u);
+    // Customer-markdown PDF sibling was written and is a real PDF.
+    assert.ok(result.customerMarkdownPaths.pdf.endsWith("testfaelle.pdf"));
+    const pdfBytes = await readFile(result.customerMarkdownPaths.pdf);
+    assert.equal(pdfBytes.subarray(0, 5).toString("ascii"), "%PDF-");
+    assert.match(
+      pdfBytes.subarray(pdfBytes.length - 6).toString("ascii"),
+      /%%EOF\s*$/u,
+    );
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }
@@ -6416,18 +6424,17 @@ test("runFigmaToQcTestCases leaves draft response schema tolerant for malformed 
 
     const recorded = client.recordedRequests();
     assert.ok(recorded.length > 0);
-    const schema =
-      recorded[0]?.responseSchema as
-        | {
-            properties?: {
-              testCases?: {
-                items?: {
-                  properties?: Record<string, unknown>;
-                };
+    const schema = recorded[0]?.responseSchema as
+      | {
+          properties?: {
+            testCases?: {
+              items?: {
+                properties?: Record<string, unknown>;
               };
             };
-          }
-        | undefined;
+          };
+        }
+      | undefined;
     assert.deepEqual(
       schema?.properties?.testCases?.items?.properties?.regulatoryRelevance,
       {},

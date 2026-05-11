@@ -31,6 +31,49 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## Internal implementation note - 2026-05-11
+
+Customer-Markdown PDF output for **Issue #2238**.
+
+This note is intentionally not a `TEST_INTELLIGENCE_CONTRACT_VERSION`
+bump. The PDF path is an internal production-runner result field; it is
+not exported from `src/contracts/index.ts`, not exposed through package
+`exports`, and not an over-the-wire HTTP response contract.
+
+A `testfaelle.pdf` sibling is now emitted under
+`<outputRoot>/jobs/<jobId>/test-intelligence/customer-markdown/`
+alongside the existing `testfaelle.md` and per-case Markdown files.
+The PDF encoder is hand-rolled (zero runtime deps), byte-stable, and
+contains three structural sections: the combined `testfaelle.md`, a
+`JIRA_STORY.md` section sourced from a `customContextMarkdown`
+`## JIRA_STORY` heading (placeholder when absent), and a
+`Screen Shots der Maske` section that lists SHA-256 hash references
+for the captured screens. Raw screenshot bytes are not embedded — the
+existing `no raw screenshots` invariant from
+`eingabemasken-fixtures.test.ts` / `baseline-fixtures.test.ts`
+continues to hold.
+
+### Changed (Issue #2238 - customer-markdown PDF artefact)
+
+- `RunFigmaToQcTestCasesResult.customerMarkdownPaths` gains an internal
+  `pdf: string` field pointing at the new `testfaelle.pdf` artefact
+  on disk. All in-repo runner-result stubs and CLI consumers are kept
+  in sync with the production runner shape.
+- `src/test-intelligence/customer-markdown-pdf.ts` (new): internal
+  helper module with `buildCustomerMarkdownPdf`,
+  `extractJiraStoryFromCustomContext`,
+  `buildJiraStorySectionBody`,
+  `buildScreenshotReferenceSectionBody`, plus the
+  `CustomerMarkdownPdfInput` / `CustomerMarkdownPdfSection` /
+  `ScreenshotReference` types.
+
+### Migration
+
+Consumers reading `RunFigmaToQcTestCasesResult.customerMarkdownPaths`
+inside this repository will see a new required `pdf` string field; the
+file is written atomically before the result resolves, so the path is
+always live when the result is observed.
+
 ## [1.44.7] - 2026-05-11
 
 Test-intelligence production-runner hardening for **Issue #2228**.

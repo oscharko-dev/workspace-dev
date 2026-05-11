@@ -194,6 +194,7 @@ const buildIssue1993RunResult = (
     customerMarkdownPaths: {
       combined: "/tmp/customer-markdown/testfaelle.md",
       perCase: [],
+      pdf: "/tmp/customer-markdown/testfaelle.pdf",
     },
     ...extras,
   }) as RunFigmaToQcTestCasesResult;
@@ -236,6 +237,7 @@ const emptyRunnerResult = (input: {
     customerMarkdownPaths: {
       combined: `${artifactDir}/customer-markdown/testfaelle.md`,
       perCase: [],
+      pdf: "/tmp/customer-markdown/testfaelle.pdf",
     },
   };
 };
@@ -1277,6 +1279,7 @@ test("runTestIntelligenceCommand: offline_eval routes to deterministic_llm", asy
         customerMarkdownPaths: {
           combined: "/tmp/customer-markdown/testfaelle.md",
           perCase: [],
+          pdf: "/tmp/customer-markdown/testfaelle.pdf",
         },
       }),
       buildLlmClient: () =>
@@ -1397,6 +1400,7 @@ test("runTestIntelligenceCommand: deterministic_llm with injected runner returns
     customerMarkdownPaths: {
       combined: "/tmp/customer-markdown/testfaelle.md",
       perCase: ["/tmp/customer-markdown/case-1.md"],
+      pdf: "/tmp/customer-markdown/testfaelle.pdf",
     },
   });
 
@@ -1500,6 +1504,7 @@ test("runTestIntelligenceCommand: deterministic_llm blocked + allowPolicyBlocked
     customerMarkdownPaths: {
       combined: "/tmp/customer-markdown/testfaelle.md",
       perCase: [],
+      pdf: "/tmp/customer-markdown/testfaelle.pdf",
     },
   });
 
@@ -1580,6 +1585,7 @@ test("runTestIntelligenceCommand: deterministic_llm blocked + --allow-policy-blo
     customerMarkdownPaths: {
       combined: "/tmp/customer-markdown/testfaelle.md",
       perCase: [],
+      pdf: "/tmp/customer-markdown/testfaelle.pdf",
     },
   });
 
@@ -1703,6 +1709,7 @@ test("runTestIntelligenceCommand: deterministic_llm + harness-mode shadow_eval f
       customerMarkdownPaths: {
         combined: "/tmp/customer-markdown/testfaelle.md",
         perCase: [],
+        pdf: "/tmp/customer-markdown/testfaelle.pdf",
       },
       harness: {
         mode: "shadow_eval",
@@ -1800,6 +1807,7 @@ test("runTestIntelligenceCommand: deterministic_llm + harness-mode off omits har
       customerMarkdownPaths: {
         combined: "/tmp/customer-markdown/testfaelle.md",
         perCase: [],
+        pdf: "/tmp/customer-markdown/testfaelle.pdf",
       },
     } as unknown as RunFigmaToQcTestCasesResult;
   };
@@ -1886,6 +1894,7 @@ test("runTestIntelligenceCommand: enable-visual-sidecar builds and forwards runn
       customerMarkdownPaths: {
         combined: "/tmp/customer-markdown/testfaelle.md",
         perCase: [],
+        pdf: "/tmp/customer-markdown/testfaelle.pdf",
       },
     } as unknown as RunFigmaToQcTestCasesResult;
   };
@@ -2349,6 +2358,7 @@ test("runTestIntelligenceCommand: strict preflight writes sanitized topology rep
           customerMarkdownPaths: {
             combined: "/tmp/customer-markdown/testfaelle.md",
             perCase: [],
+            pdf: "/tmp/customer-markdown/testfaelle.pdf",
           },
         } as unknown as RunFigmaToQcTestCasesResult;
       },
@@ -2480,6 +2490,7 @@ test("runTestIntelligenceCommand: legacy topology remains allowed when strict mo
           customerMarkdownPaths: {
             combined: "/tmp/customer-markdown/testfaelle.md",
             perCase: [],
+            pdf: "/tmp/customer-markdown/testfaelle.pdf",
           },
         } as unknown as RunFigmaToQcTestCasesResult;
       },
@@ -2811,6 +2822,7 @@ test("runTestIntelligenceCommand: deterministic_llm forwards customContextMarkdo
       customerMarkdownPaths: {
         combined: "/tmp/customer-markdown/testfaelle.md",
         perCase: [],
+        pdf: "/tmp/customer-markdown/testfaelle.pdf",
       },
     };
   };
@@ -2949,6 +2961,7 @@ test("runTestIntelligenceCommand: deterministic_llm forwards diversityPasses to 
       customerMarkdownPaths: {
         combined: "/tmp/customer-markdown/testfaelle.md",
         perCase: [],
+        pdf: "/tmp/customer-markdown/testfaelle.pdf",
       },
     };
   };
@@ -3239,6 +3252,7 @@ test("runTestIntelligenceCommand: deterministic_llm forwards customerProfile to 
       customerMarkdownPaths: {
         combined: "/tmp/customer-markdown/testfaelle.md",
         perCase: [],
+        pdf: "/tmp/customer-markdown/testfaelle.pdf",
       },
     };
   };
