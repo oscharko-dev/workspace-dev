@@ -141,7 +141,7 @@ jobs:
           set -euo pipefail
 
           if [[ -n "${NPM_TOKEN}" ]]; then
-            echo "Using repository NPM_TOKEN for npm publish because npm trusted publishing did not authenticate this workflow."
+            echo "Using repository NPM_TOKEN for npm publish because a publish token secret is configured."
             echo "auth_mode=npm-token" >> "$GITHUB_OUTPUT"
           else
             echo "No NPM_TOKEN secret available; using npm trusted publishing via GitHub OIDC."
@@ -151,8 +151,8 @@ jobs:
       - name: Apply pending changesets and publish package
         shell: bash
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ steps.npm_auth_mode.outputs.auth_mode == 'npm-token' && secrets.NPM_TOKEN || '' }}
+          NPM_TOKEN: ${{ steps.npm_auth_mode.outputs.auth_mode == 'npm-token' && secrets.NPM_TOKEN || '' }}
           WORKSPACE_DEV_PUBLISH_AUTH_MODE: ${{ steps.npm_auth_mode.outputs.auth_mode }}
         run: |
           set -euo pipefail
