@@ -51,13 +51,18 @@ import type { FigmaRestNode } from "./figma-rest-adapter.js";
 import {
   A11Y_JUDGE_VERDICT_ARTIFACT_FILENAME,
   BUSINESS_TEST_INTENT_IR_SCHEMA_VERSION,
+  HUMAN_REVIEW_LOG_ARTIFACT_FILENAME,
+  HUMAN_REVIEW_LOG_SCHEMA_VERSION,
+  HUMAN_REVIEW_QUEUE_ITEM_SCHEMA_VERSION,
   EU_BANKING_DEFAULT_POLICY_PROFILE_ID,
   FAITHFULNESS_VERDICT_ARTIFACT_FILENAME,
   GENEALOGY_ARTIFACT_FILENAME,
   JUDGE_CONSENSUS_ARTIFACT_FILENAME,
+  JOB_LEVEL_TEST_CASE_ID,
   LOGIC_JUDGE_VERDICT_ARTIFACT_FILENAME,
   RUN_QUALITY_ARTIFACT_FILENAME,
   SELF_CONSISTENCY_REPORT_ARTIFACT_FILENAME,
+  TEST_INTELLIGENCE_CONTRACT_VERSION,
   TEST_DATA_ORACLE_REPORT_ARTIFACT_FILENAME,
   WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
   type BusinessTestIntentIr,
@@ -66,6 +71,7 @@ import {
   type DetectedNavigation,
   type DetectedValidation,
 } from "../contracts/index.js";
+import { computeHumanReviewItemId } from "./human-review-queue.js";
 
 process.env[REGION_ATTESTATION_PINNED_REGION_ENV] ??= "eu-central-1";
 process.env[REGION_ATTESTATION_SIGNING_KEY_ENV] ??=
@@ -2783,6 +2789,11 @@ test("Issue #2102: multi-judge regulated disagreement records a review-events au
     path.join(os.tmpdir(), "ti-runner-2102-review-note-"),
   );
   const originalFetch = globalThis.fetch;
+  const tenantScope = {
+    tenantId: "acme",
+    environmentId: "staging",
+    projectId: "runner",
+  } as const;
   try {
     const bundle = createMockLlmGatewayClientBundle({
       testGeneration: {
@@ -2902,6 +2913,10 @@ test("Issue #2102: multi-judge regulated disagreement records a review-events au
       outputRoot: tempRoot,
       llm: { client: bundle.testGeneration, bundle },
       generation: { diversityPasses: 1 },
+      humanReview: {
+        rootDir: path.join(tempRoot, "test-intelligence", "human-review"),
+      },
+      replayCacheTenantScope: tenantScope,
     });
 
     assert.equal(result.blocked, true);
@@ -2924,6 +2939,116 @@ test("Issue #2102: multi-judge regulated disagreement records a review-events au
     assert.equal(auditNote?.metadata?.agreementShape, "split");
     assert.equal(auditNote?.metadata?.reviewDisposition, "needs_review");
     assert.equal(auditNote?.metadata?.regulatedDisagreement, true);
+
+    assert.equal(
+      result.artifactPaths.humanReviewLog?.endsWith(
+        HUMAN_REVIEW_LOG_ARTIFACT_FILENAME,
+      ),
+      true,
+    );
+
+    const humanReviewLog = JSON.parse(
+      await readFile(result.artifactPaths.humanReviewLog!, "utf8"),
+    ) as {
+      schemaVersion: string;
+      contractVersion: string;
+      jobId: string;
+      tenantId: string;
+      items: Array<{ itemId: string }>;
+      verdicts: unknown[];
+      slaBreaches: unknown[];
+    };
+    assert.equal(humanReviewLog.schemaVersion, HUMAN_REVIEW_LOG_SCHEMA_VERSION);
+    assert.equal(
+      humanReviewLog.contractVersion,
+      TEST_INTELLIGENCE_CONTRACT_VERSION,
+    );
+    assert.equal(humanReviewLog.jobId, result.jobId);
+    assert.equal(humanReviewLog.tenantId, tenantScope.tenantId);
+    assert.equal(humanReviewLog.items.length, 1);
+    const expectedHumanReviewItemId = computeHumanReviewItemId({
+      tenantId: tenantScope.tenantId,
+      runId: result.jobId,
+      testCaseId: JOB_LEVEL_TEST_CASE_ID,
+    });
+    assert.deepEqual(humanReviewLog.items.map((item) => item.itemId), [
+      expectedHumanReviewItemId,
+    ]);
+    assert.equal(humanReviewLog.verdicts.length, 0);
+    assert.equal(humanReviewLog.slaBreaches.length, 0);
+
+    const humanReviewItemId = humanReviewLog.items[0]!.itemId;
+    const humanReviewQueuePath = path.join(
+      tempRoot,
+      "test-intelligence",
+      "human-review",
+      humanReviewLog.tenantId,
+      "queue",
+      `${humanReviewItemId}.json`,
+    );
+    const humanReviewQueueItem = JSON.parse(
+      await readFile(humanReviewQueuePath, "utf8"),
+    ) as {
+      schemaVersion: string;
+      contractVersion: string;
+      itemId: string;
+      tenantId: string;
+      profileId: string;
+      runId: string;
+      testCaseId: string;
+      proposedDecision: string;
+      enqueuedAt: string;
+      slaDeadlineAt: string;
+      judgeDisagreement: {
+        decision: string;
+        escalation: string;
+        disagreementRate: number;
+        judges: Array<{ judgeId: string }>;
+      };
+    };
+    assert.equal(
+      humanReviewQueueItem.schemaVersion,
+      HUMAN_REVIEW_QUEUE_ITEM_SCHEMA_VERSION,
+    );
+    assert.equal(
+      humanReviewQueueItem.contractVersion,
+      TEST_INTELLIGENCE_CONTRACT_VERSION,
+    );
+    assert.equal(humanReviewQueueItem.itemId, humanReviewItemId);
+    assert.equal(humanReviewQueueItem.tenantId, tenantScope.tenantId);
+    assert.equal(
+      humanReviewQueueItem.profileId,
+      EU_BANKING_DEFAULT_POLICY_PROFILE_ID,
+    );
+    assert.equal(humanReviewQueueItem.runId, result.jobId);
+    assert.equal(humanReviewQueueItem.testCaseId, JOB_LEVEL_TEST_CASE_ID);
+    assert.equal(humanReviewQueueItem.proposedDecision, "needs_review");
+    assert.equal(humanReviewQueueItem.enqueuedAt, "2026-05-09T10:00:00Z");
+    const expectedSlaDeadlineAt = new Date(
+      Date.parse(humanReviewQueueItem.enqueuedAt) + 24 * 60 * 60 * 1000,
+    ).toISOString();
+    assert.equal(
+      humanReviewQueueItem.slaDeadlineAt,
+      expectedSlaDeadlineAt,
+    );
+    assert.equal(
+      humanReviewQueueItem.judgeDisagreement.decision,
+      "split_decision",
+    );
+    assert.equal(
+      humanReviewQueueItem.judgeDisagreement.escalation,
+      "human_review_required",
+    );
+    assert.equal(
+      humanReviewQueueItem.judgeDisagreement.disagreementRate,
+      0.5,
+    );
+    assert.deepEqual(
+      humanReviewQueueItem.judgeDisagreement.judges.map((judge) => judge.judgeId),
+      [...result.judgeConsensus.verdict.panel]
+        .map((entry) => entry.judgeId)
+        .sort((left, right) => left.localeCompare(right)),
+    );
   } finally {
     globalThis.fetch = originalFetch;
     await rm(tempRoot, { recursive: true, force: true });
