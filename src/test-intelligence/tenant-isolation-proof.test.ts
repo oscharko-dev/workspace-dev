@@ -8,7 +8,6 @@ import type { TenantScope } from "../contracts/index.js";
 import { canonicalJson } from "./content-hash.js";
 import { createPersistentReplayCache } from "./replay-cache-persistent.js";
 import {
-  DEFAULT_CACHE_KEY_EXAMPLES,
   DEFAULT_TENANT_SCOPE_EXAMPLES,
   G12_TENANT_ISOLATION_PROOF_PASS,
   TENANT_ISOLATION_PROOF_ARTIFACT_FILENAME,

@@ -31,6 +31,83 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [1.41.0] - 2026-05-11
+
+Test-intelligence sub-contract bump for Issue #2130 (Wave Q9-deferred /
+Phase 4 — P4 above SOTA) — constructive cross-tenant isolation proof
+artifact. Adds a deterministic, regulator-inspectable
+`tenant-isolation-proof.json` artifact that pins the cache-key digest
+construction, the on-disk storage namespace, the segment-validation
+rules that make tenant-scope segments literal path components, and
+the timing / eviction-order / error-disclosure side-channel analysis.
+Complementary to the per-run runtime attestation from Issue #2176:
+the attestation certifies "this run did not cross tenants"; the
+proof certifies "no run can cross tenants under the current code".
+
+A new CI gate (`G12_TENANT_ISOLATION_PROOF_PASS`) regenerates the
+proof from source on every PR and asserts byte-equality against the
+committed artifact, so any change to the cache-key construction or
+storage layout requires a fresh proof artifact plus ADR review.
+
+All changes are additive: a new module ships under
+`src/test-intelligence/tenant-isolation-proof.ts`, no existing
+contract, manifest, or fixture is mutated.
+
+### Added (Issue #2130 — cross-tenant isolation proof artifact)
+
+- New module `src/test-intelligence/tenant-isolation-proof.ts` exporting:
+  - `TENANT_ISOLATION_PROOF_SCHEMA_VERSION = "1.0.0"`.
+  - `TENANT_ISOLATION_PROOF_ARTIFACT_FILENAME = "tenant-isolation-proof.json"`,
+    `TENANT_ISOLATION_PROOF_DEFAULT_REPO_PATH`,
+    `TENANT_ISOLATION_PENTEST_DEFAULT_REPO_PATH`.
+  - `G12_TENANT_ISOLATION_PROOF_PASS` — CI hard-gate code.
+  - `TENANT_ISOLATION_PROOF_FIXED_GENERATED_AT = "1970-01-01T00:00:00.000Z"` —
+    structural-claim timestamp, baked into the committed artifact so
+    bytes do not drift with wall-clock time.
+  - `TENANT_ISOLATION_PROOF_METHODOLOGY_DISCLAIMER` — verbatim string
+    stamped on every produced proof.
+  - `DEFAULT_TENANT_SCOPE_EXAMPLES`, `DEFAULT_CACHE_KEY_EXAMPLES` —
+    curated fixtures that materialise the worked pre-image-distinctness
+    witnesses.
+  - Pure functions: `buildTenantIsolationProof`,
+    `computeTenantIsolationProofDigest`,
+    `serializeTenantIsolationProof`,
+    `buildTenantIsolationPentestEvidence`,
+    `serializeTenantIsolationPentestEvidence`,
+    `assertTenantIsolationPentestPasses`.
+  - Persistence: `writeTenantIsolationProof` (atomic
+    `${path}.${pid}.tmp` rename).
+  - Types: `CacheKeyConstruction`, `StorageNamespaceConstruction`,
+    `TenantCommitment`, `PreImageDistinctnessWitness`,
+    `SideChannelClass`, `SideChannelAnalysisEntry`,
+    `TenantIsolationProof`,
+    `BuildTenantIsolationProofInput`,
+    `WriteTenantIsolationProofInput`,
+    `WriteTenantIsolationProofResult`,
+    `TenantIsolationPentestAttempt`,
+    `TenantIsolationPentestEvidence`,
+    `BuildTenantIsolationPentestEvidenceInput`.
+  - Error class: `TenantIsolationLeakageDetected` (code
+    `"TENANT_ISOLATION_LEAKAGE_DETECTED"`).
+- New committed artifacts under
+  `fixtures/test-intelligence/tenant-isolation/`:
+  `tenant-isolation-proof.json` and
+  `tenant-isolation-pentest.json`.
+- New ADR `docs/adr/2130-cross-tenant-isolation-proof-artifact.md`
+  and DORA mapping doc `docs/dora/multi-tenant-isolation.md`
+  (Article 9 and Article 28 of EU 2022/2554).
+- New scripts: `scripts/generate-tenant-isolation-proof.mjs`,
+  `scripts/check-tenant-isolation-proof.mjs`,
+  `scripts/run-tenant-isolation-pentest.mjs`.
+- New `pnpm` scripts: `generate:tenant-isolation-proof`,
+  `test:ti-tenant-isolation-proof`.
+
+All changes are additive; no existing field, type, gate code, or
+behaviour was removed or renamed. The Issue #2176 runtime attestation
+(`tenant-isolation-attestation.json`) is unchanged.
+
+---
+
 ## [1.39.0] - 2026-05-11
 
 Test-intelligence sub-contract bump for Issue #2128 (Wave 9 / W9-deferred
