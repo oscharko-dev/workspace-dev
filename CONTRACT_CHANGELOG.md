@@ -31,6 +31,32 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [1.44.6] - 2026-05-11
+
+Post-merge cleanup for **Issue #2167** (Copilot review on PR #2226).
+No behaviour change beyond strict-mode gating; tightens existing code:
+
+- `src/test-intelligence/test-case-validation.ts` mandatory tier
+  grouping key is now `(screenId, trigger)` as documented (previously
+  also included `from / to`, which was redundant for the current
+  mandatory tier and contradicted the inline comment). Error-message
+  format unchanged for the per-transition-ID quoting that the
+  `Issue #2168 property` regression depends on.
+- `src/test-intelligence/llm-gateway.ts` JSON recovery on parse
+  failure is now gated to `wireStructuredOutputMode === "none"`. The
+  strict modes (`json_schema` / `json_object`) send `response_format`
+  to the provider, so a parse failure there is a wire-protocol
+  contract violation and must surface verbatim instead of being
+  silently recovered.
+
+### Migration
+
+None. Both changes are tightening: the grouping change is documented
+behaviour, and the recovery gate restores the pre-recovery rejection
+path for strict modes (the prior gate-free recovery only affected
+`"none"` callers in practice because no other mode emits invalid
+JSON).
+
 ## [1.44.5] - 2026-05-11
 
 Behavioural fix for **Issue #2167** Epic close-out — two SOTA changes
@@ -54,13 +80,14 @@ that resolve the structural blockers Q0 surfaced.
 - `src/test-intelligence/llm-gateway.ts`: exports new
   `extractFirstJsonObjectOrArray(raw)` and uses it inside the
   structured-output path. When `JSON.parse(structuredContent)` fails
-  in `wireStructuredOutputMode: "none"`, the gateway now tries (1) a
-  `json … ` markdown fence, then (2) the first balanced JSON
-  object, then (3) the first balanced JSON array. The recovered
-  payload still passes through `validateJsonSchemaSubset`, so the
-  schema contract is unchanged. Closes the M7FGS `schema_invalid:
-structured-output content is not valid JSON` failure observed on
-  the >10 MB Test-View-03 banking mask.
+  in `wireStructuredOutputMode: "none"`, the gateway now tries
+  (1) a `json`-tagged Markdown fenced code block, then
+  (2) the first balanced JSON object, then
+  (3) the first balanced JSON array.
+  The recovered payload still passes through `validateJsonSchemaSubset`,
+  so the schema contract is unchanged. Closes the M7FGS
+  `schema_invalid: structured-output content is not valid JSON`
+  failure observed on the >10 MB Test-View-03 banking mask.
 
 ### Migration
 
@@ -111,16 +138,18 @@ flipping any test red.
 
 ### Added (Issue #2167 — runner-hardening follow-up)
 
-- `src/test-intelligence/production-runner.ts`: - `PRODUCTION_RUNNER_FAILURE_CLASSES` gains
-  `"HUMAN_REVIEW_CONFIG_INVALID"`. Raised before any FS I/O when
-  `humanReview.rootDir` is not a non-empty / non-whitespace string,
-  or when `humanReview.slaMs` is not a positive, finite, safe
-  integer ≤ 30 days. `retryable === false`. - `enqueueHumanReview` / `getHumanReviewQueueItem` /
-  `buildHumanReviewLog` are now wrapped in a `try`/`catch` that
-  rethrows as `ProductionRunnerError{ failureClass: "PERSIST_FAILED",
-retryable: false, cause: err }`, so the request handler maps a
-  human-review I/O failure to the same envelope as every other
-  artifact-write failure.
+- `src/test-intelligence/production-runner.ts`:
+    - `PRODUCTION_RUNNER_FAILURE_CLASSES` gains
+      `"HUMAN_REVIEW_CONFIG_INVALID"`. Raised before any FS I/O when
+      `humanReview.rootDir` is not a non-empty / non-whitespace string,
+      or when `humanReview.slaMs` is not a positive, finite, safe
+      integer ≤ 30 days. `retryable === false`.
+    - `enqueueHumanReview` / `getHumanReviewQueueItem` /
+      `buildHumanReviewLog` are now wrapped in a `try`/`catch` that
+      rethrows as
+      `ProductionRunnerError{ failureClass: "PERSIST_FAILED", retryable: false, cause: err }`,
+      so the request handler maps a human-review I/O failure to the
+      same envelope as every other artifact-write failure.
 
 ### Migration
 
