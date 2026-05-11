@@ -286,16 +286,18 @@ test("resolveFinOpsRequestLimits maps the four request fields", () => {
 });
 
 test("resolveWallClockBudget applies the default elastic coefficients", () => {
+  // Wave-5 W5-2 follow-up (2026-05-11): coefficients re-calibrated for
+  // live `gpt-oss-120b` latency. baseMs 90→150, perCaseMs 1.8→4,
+  // perAdditionalJudgeMs 12→20, perAdversarialRoundMs 18→30,
+  // visualSidecarMs 15→30. The expected formula is now derived against
+  // the new constants so the test stays a value-pin.
   const budget = resolveWallClockBudget({
     caseCount: 9,
     judgePanelSize: 2,
     adversarialRounds: 2,
     visualSidecarEnabled: true,
   });
-  assert.equal(
-    budget,
-    90_000 + 9 * 1_800 + 12_000 + 2 * 18_000 + 15_000,
-  );
+  assert.equal(budget, 150_000 + 9 * 4_000 + 20_000 + 2 * 30_000 + 30_000);
 });
 
 test("resolveWallClockBudget clamps to the configured hard ceiling", () => {

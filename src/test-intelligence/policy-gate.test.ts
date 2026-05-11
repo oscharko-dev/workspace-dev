@@ -94,19 +94,22 @@ const buildAccessibilityCase = (
 ): GeneratedTestCase =>
   buildCase({
     type: "accessibility",
-    title: "Form accessibility covers keyboard navigation, focus order, and screen-reader announcements",
+    title:
+      "Form accessibility covers keyboard navigation, focus order, and screen-reader announcements",
     objective:
       "Confirm keyboard navigation, focus order, and screen-reader announcements for the form.",
     steps: [
       {
         index: 1,
         action: "Tab through every control using only the keyboard",
-        expected: "Keyboard navigation reaches every control in a logical order",
+        expected:
+          "Keyboard navigation reaches every control in a logical order",
       },
       {
         index: 2,
         action: "Verify focus order and visible focus indicator while tabbing",
-        expected: "Focus order stays logical and every control shows a visible focus indicator",
+        expected:
+          "Focus order stays logical and every control shows a visible focus indicator",
       },
       {
         index: 3,
@@ -366,12 +369,15 @@ test("Issue #1951: missing screen-reader coverage on a form-screen accessibility
           {
             index: 1,
             action: "Tab through every control using only the keyboard",
-            expected: "Keyboard navigation reaches every control in a logical order",
+            expected:
+              "Keyboard navigation reaches every control in a logical order",
           },
           {
             index: 2,
-            action: "Verify focus order and visible focus indicator while tabbing",
-            expected: "Focus order stays logical and every control shows a visible focus indicator",
+            action:
+              "Verify focus order and visible focus indicator while tabbing",
+            expected:
+              "Focus order stays logical and every control shows a visible focus indicator",
           },
         ],
         expectedResults: [
@@ -582,14 +588,10 @@ test("Issue #2069: fallback-recovered visual sidecar emits info-only policy evid
     (v) => v.rule === "policy:visual-sidecar:fallback_used",
   );
   assert.ok(jobViolation);
-  assert.equal(
-    jobViolation?.outcome,
-    "visual_sidecar_fallback_used_succeeded",
-  );
+  assert.equal(jobViolation?.outcome, "visual_sidecar_fallback_used_succeeded");
   assert.equal(jobViolation?.severity, "info");
   const missingFaithfulness = report.jobLevelViolations.find(
-    (v) =>
-      v.rule === "policy:cross-modal-faithfulness:evaluation-missing",
+    (v) => v.rule === "policy:cross-modal-faithfulness:evaluation-missing",
   );
   assert.equal(missingFaithfulness?.severity, "error");
   assert.equal(report.blocked, true);
@@ -722,8 +724,7 @@ test("Issue #2100: invalid signed semantic overrides are rejected at least 1000 
         assert.ok(
           decision?.violations.some(
             (v) =>
-              v.rule === "policy:override_invalid" &&
-              v.severity === "error",
+              v.rule === "policy:override_invalid" && v.severity === "error",
           ),
         );
         assert.ok(
@@ -1006,7 +1007,10 @@ test("Issue #2068: fixed override on a derived profile preserves the legacy 12-E
     (entry) => entry.rule === "policy:technique-coverage-minimum",
   );
   assert.ok(violation, "fixed mode should still flag the 12-EP deficit");
-  assert.match(violation?.reason ?? "", /at least 12 "equivalence_partitioning"/);
+  assert.match(
+    violation?.reason ?? "",
+    /at least 12 "equivalence_partitioning"/,
+  );
 });
 
 test("Issue #2026: full field coverage from shared EP cases clears the policy gate", () => {
@@ -1263,7 +1267,12 @@ test("Issue #2066: a positive step mismatch still blocks even when the legacy sc
     [
       buildCase({
         steps: [
-          { index: 1, action: "Enter amount", data: "100", expected: "Field accepts" },
+          {
+            index: 1,
+            action: "Enter amount",
+            data: "100",
+            expected: "Field accepts",
+          },
           { index: 2, action: "See receipt" },
         ],
       }),
@@ -1393,10 +1402,30 @@ test("Issue #2170: partial-majority case fires the warning rule and ships at nee
     faithfulnessVerdict: buildFaithfulnessVerdict({
       score: 1,
       stepVerdicts: [
-        { testCaseId: "tc-partial", stepIndex: 1, verdict: "evidence_partial", message: "label visible" },
-        { testCaseId: "tc-partial", stepIndex: 2, verdict: "evidence_partial", message: "heading visible" },
-        { testCaseId: "tc-partial", stepIndex: 3, verdict: "evidence_partial", message: "disclosure visible" },
-        { testCaseId: "tc-partial", stepIndex: 4, verdict: "match", message: "receipt visible" },
+        {
+          testCaseId: "tc-partial",
+          stepIndex: 1,
+          verdict: "evidence_partial",
+          message: "label visible",
+        },
+        {
+          testCaseId: "tc-partial",
+          stepIndex: 2,
+          verdict: "evidence_partial",
+          message: "heading visible",
+        },
+        {
+          testCaseId: "tc-partial",
+          stepIndex: 3,
+          verdict: "evidence_partial",
+          message: "disclosure visible",
+        },
+        {
+          testCaseId: "tc-partial",
+          stepIndex: 4,
+          verdict: "match",
+          message: "receipt visible",
+        },
       ],
     }),
   });
@@ -1411,6 +1440,83 @@ test("Issue #2170: partial-majority case fires the warning rule and ships at nee
     "cross_modal_faithfulness_partial_majority",
   );
   assert.equal(report.decisions[0]?.decision, "needs_review");
+  assert.equal(report.blocked, false);
+});
+
+test("Issue #2170 audit follow-up: a case with 100 % evidence_partial verdicts fires the partial-majority warning and ships at needs_review (not pass)", () => {
+  // Wave-A audit-finding LOW 2: the existing 3-of-4 partial-majority
+  // test (75 %) covers the boundary; this fixture exercises the
+  // worst-case 4-of-4 (100 % evidence_partial) to assert the policy
+  // gate does not silently allow an all-partial-evidence case through
+  // as `approved` — it must surface the partial-majority warning AND
+  // demote the case to `needs_review`.
+  const ctx = harness(
+    [
+      buildCase({
+        id: "tc-all-partial",
+        steps: [
+          { index: 1, action: "Open the loan disclosure" },
+          { index: 2, action: "See the legal heading" },
+          { index: 3, action: "Confirm the privacy notice block" },
+          { index: 4, action: "See the receipt confirmation" },
+        ],
+      }),
+    ],
+    buildIntent(),
+  );
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    faithfulnessVerdict: buildFaithfulnessVerdict({
+      score: 1,
+      stepVerdicts: [
+        {
+          testCaseId: "tc-all-partial",
+          stepIndex: 1,
+          verdict: "evidence_partial",
+          message: "label matches; rest not visible",
+        },
+        {
+          testCaseId: "tc-all-partial",
+          stepIndex: 2,
+          verdict: "evidence_partial",
+          message: "label matches; rest not visible",
+        },
+        {
+          testCaseId: "tc-all-partial",
+          stepIndex: 3,
+          verdict: "evidence_partial",
+          message: "label matches; rest not visible",
+        },
+        {
+          testCaseId: "tc-all-partial",
+          stepIndex: 4,
+          verdict: "evidence_partial",
+          message: "label matches; rest not visible",
+        },
+      ],
+    }),
+  });
+  const partialMajority = report.decisions[0]?.violations.find(
+    (entry) =>
+      entry.rule === "policy:cross-modal-faithfulness-partial-majority",
+  );
+  assert.ok(
+    partialMajority,
+    "expected the partial-majority warning to fire on a 100 % evidence_partial case",
+  );
+  assert.equal(partialMajority?.severity, "warning");
+  assert.equal(report.decisions[0]?.decision, "needs_review");
+  assert.notEqual(
+    report.decisions[0]?.decision,
+    "approved",
+    "an all-evidence_partial case must NEVER be auto-approved",
+  );
   assert.equal(report.blocked, false);
 });
 
@@ -1439,9 +1545,24 @@ test("Issue #2170: a case with minority evidence_partial verdicts is approved wi
     faithfulnessVerdict: buildFaithfulnessVerdict({
       score: 1,
       stepVerdicts: [
-        { testCaseId: "tc-minority", stepIndex: 1, verdict: "match", message: "form visible" },
-        { testCaseId: "tc-minority", stepIndex: 2, verdict: "evidence_partial", message: "heading visible" },
-        { testCaseId: "tc-minority", stepIndex: 3, verdict: "match", message: "submit visible" },
+        {
+          testCaseId: "tc-minority",
+          stepIndex: 1,
+          verdict: "match",
+          message: "form visible",
+        },
+        {
+          testCaseId: "tc-minority",
+          stepIndex: 2,
+          verdict: "evidence_partial",
+          message: "heading visible",
+        },
+        {
+          testCaseId: "tc-minority",
+          stepIndex: 3,
+          verdict: "match",
+          message: "submit visible",
+        },
       ],
     }),
   });
@@ -1484,9 +1605,24 @@ test("Issue #2170: state_transition technique case clears the gate at the relaxe
       // tier accepts the steps at the 0.65 floor — gate must not block.
       score: 0.5,
       stepVerdicts: [
-        { testCaseId: "tc-workflow", stepIndex: 1, verdict: "evidence_partial", message: "intermediate frame" },
-        { testCaseId: "tc-workflow", stepIndex: 2, verdict: "evidence_partial", message: "intermediate frame" },
-        { testCaseId: "tc-workflow", stepIndex: 3, verdict: "evidence_partial", message: "intermediate frame" },
+        {
+          testCaseId: "tc-workflow",
+          stepIndex: 1,
+          verdict: "evidence_partial",
+          message: "intermediate frame",
+        },
+        {
+          testCaseId: "tc-workflow",
+          stepIndex: 2,
+          verdict: "evidence_partial",
+          message: "intermediate frame",
+        },
+        {
+          testCaseId: "tc-workflow",
+          stepIndex: 3,
+          verdict: "evidence_partial",
+          message: "intermediate frame",
+        },
       ],
     }),
   });
@@ -2070,7 +2206,11 @@ test("Issue #1948: live re-run scenario — Banking financial-transaction action
       },
     ],
     screens: [
-      { screenId: "s-payment", screenName: "Payment", trace: { nodeId: "s-payment" } },
+      {
+        screenId: "s-payment",
+        screenName: "Payment",
+        trace: { nodeId: "s-payment" },
+      },
     ],
   });
   const ctx = harness(
@@ -2117,7 +2257,10 @@ test("Issue #1948: live re-run scenario — Banking financial-transaction action
   const violation = report.jobLevelViolations.find(
     (entry) => entry.rule === "policy:p0-risk-element-uncovered",
   );
-  assert.ok(violation, "expected p0 uncovered violation for unsubmitted payment");
+  assert.ok(
+    violation,
+    "expected p0 uncovered violation for unsubmitted payment",
+  );
   assert.equal(report.blocked, true);
 });
 
@@ -2311,7 +2454,8 @@ test("Issue #1951: a11y_judge covered_weakly verdict routes the job to needs_rev
           pillarId: "error-announcements",
           successCriterion: "WCAG 4.1.3 Status Messages",
           verdict: "covered_weakly",
-          rationale: "The case mentions screen readers but not specific announcements.",
+          rationale:
+            "The case mentions screen readers but not specific announcements.",
         },
       ],
     }),
@@ -2696,8 +2840,12 @@ test("Issue #2030: screen-scoped override only fires for cases on that screen", 
     complianceOverrides: overrides,
   });
 
-  const decisionForS1 = report.decisions.find((d) => d.testCaseId === "tc-on-s1");
-  const decisionForS2 = report.decisions.find((d) => d.testCaseId === "tc-on-s2");
+  const decisionForS1 = report.decisions.find(
+    (d) => d.testCaseId === "tc-on-s1",
+  );
+  const decisionForS2 = report.decisions.find(
+    (d) => d.testCaseId === "tc-on-s2",
+  );
   const s1Has = decisionForS1?.violations.some(
     (v) => v.rule === "policy:risk-tag-downgrade-detected",
   );
@@ -2795,8 +2943,7 @@ test("Issue #2116: per-step verdict produces mode=per_step + no fallback rule", 
   );
   assert.equal(
     report.jobLevelViolations.some(
-      (v) =>
-        v.rule === "policy:cross-modal-faithfulness:case-level-fallback",
+      (v) => v.rule === "policy:cross-modal-faithfulness:case-level-fallback",
     ),
     false,
     "per_step mode must not raise the fallback rule",
@@ -2819,14 +2966,10 @@ test("Issue #2116: legacy verdict (no stepVerdicts) raises a warning fallback ru
       // stepVerdicts intentionally omitted (legacy schema 1.0.0 producer)
     }),
   });
-  assert.equal(
-    report.faithfulnessEvaluation?.mode,
-    "case_level_fallback",
-  );
+  assert.equal(report.faithfulnessEvaluation?.mode, "case_level_fallback");
   assert.equal(report.faithfulnessEvaluation?.stepVerdictCount, 0);
   const fallback = report.jobLevelViolations.find(
-    (v) =>
-      v.rule === "policy:cross-modal-faithfulness:case-level-fallback",
+    (v) => v.rule === "policy:cross-modal-faithfulness:case-level-fallback",
   );
   assert.equal(fallback?.severity, "warning");
   assert.equal(
@@ -2856,13 +2999,9 @@ test("Issue #2116: requirePerStepFaithfulness=true escalates the fallback rule t
       verdict: "accept",
     }),
   });
-  assert.equal(
-    report.faithfulnessEvaluation?.requirePerStepFaithfulness,
-    true,
-  );
+  assert.equal(report.faithfulnessEvaluation?.requirePerStepFaithfulness, true);
   const fallback = report.jobLevelViolations.find(
-    (v) =>
-      v.rule === "policy:cross-modal-faithfulness:case-level-fallback",
+    (v) => v.rule === "policy:cross-modal-faithfulness:case-level-fallback",
   );
   assert.equal(fallback?.severity, "error");
   assert.equal(
@@ -2893,8 +3032,7 @@ test("Issue #2116: refused verdict records mode=missing without raising an extra
   assert.equal(report.faithfulnessEvaluation?.mode, "missing");
   assert.equal(
     report.jobLevelViolations.some(
-      (v) =>
-        v.rule === "policy:cross-modal-faithfulness:case-level-fallback",
+      (v) => v.rule === "policy:cross-modal-faithfulness:case-level-fallback",
     ),
     false,
     "missing mode must not raise the case-level-fallback rule",
@@ -2927,8 +3065,7 @@ test("Issue #2116: no faithfulness verdict at all preserves the pre-#2116 byte s
   );
   assert.equal(
     report.jobLevelViolations.some(
-      (v) =>
-        v.rule === "policy:cross-modal-faithfulness:case-level-fallback",
+      (v) => v.rule === "policy:cross-modal-faithfulness:case-level-fallback",
     ),
     false,
   );
@@ -2967,14 +3104,10 @@ test("Issue #2116: missing faithfulness verdict fails closed when visual sidecar
   });
   assert.equal(report.faithfulnessEvaluation?.mode, "missing");
   const missing = report.jobLevelViolations.find(
-    (v) =>
-      v.rule === "policy:cross-modal-faithfulness:evaluation-missing",
+    (v) => v.rule === "policy:cross-modal-faithfulness:evaluation-missing",
   );
   assert.equal(missing?.severity, "error");
-  assert.equal(
-    missing?.outcome,
-    "cross_modal_faithfulness_evaluation_missing",
-  );
+  assert.equal(missing?.outcome, "cross_modal_faithfulness_evaluation_missing");
   assert.equal(report.blocked, true);
 });
 
@@ -3000,8 +3133,7 @@ test("Issue #2116: case-level-fallback rule severity respects an operator policy
     ],
   });
   const fallback = report.jobLevelViolations.find(
-    (v) =>
-      v.rule === "policy:cross-modal-faithfulness:case-level-fallback",
+    (v) => v.rule === "policy:cross-modal-faithfulness:case-level-fallback",
   );
   assert.equal(
     fallback?.severity,
@@ -3048,8 +3180,7 @@ test("Issue #2116: policyOverrides cannot downgrade the missing faithfulness ver
     ],
   });
   const missing = report.jobLevelViolations.find(
-    (v) =>
-      v.rule === "policy:cross-modal-faithfulness:evaluation-missing",
+    (v) => v.rule === "policy:cross-modal-faithfulness:evaluation-missing",
   );
   assert.equal(
     missing?.severity,
