@@ -46,6 +46,9 @@ test("integration: mutation-testing config, docs, and workflows stay aligned", a
   const changesetsReleaseWorkflow = await readRepoFile(
     ".github/workflows/changesets-release.yml",
   );
+  const mutationNightlyWorkflow = await readRepoFile(
+    ".github/workflows/mutation-nightly.yml",
+  );
   const mutationSummaryScript = await readRepoFile(
     "scripts/print-mutation-report-summary.mjs",
   );
@@ -114,11 +117,7 @@ test("integration: mutation-testing config, docs, and workflows stay aligned", a
   assert.match(contributingDoc, /Current baseline mutation score:/i);
   assert.match(mutationSummaryScript, /"src\/job-engine\/paste-tree-diff\.ts"/);
 
-  for (const workflow of [
-    devQualityWorkflow,
-    releaseGateWorkflow,
-    changesetsReleaseWorkflow,
-  ]) {
+  for (const workflow of [devQualityWorkflow, mutationNightlyWorkflow]) {
     const mutationJobBlock = extractMutationTestingJobBlock(workflow);
     assert.match(workflow, /\n  mutation-testing:\n/);
     assert.doesNotMatch(mutationJobBlock, /continue-on-error:\s*true/);
@@ -133,11 +132,11 @@ test("integration: mutation-testing config, docs, and workflows stay aligned", a
     /\n  mutation-testing:\n    needs: \[setup\]/,
   );
   assert.match(
-    releaseGateWorkflow,
-    /needs: \[quality, ti-eval, performance-web, mutation-testing, fips-smoke\]/,
+    mutationNightlyWorkflow,
+    /ref: dev/,
   );
-  assert.match(
-    changesetsReleaseWorkflow,
-    /needs: \[quality-matrix, performance-web, mutation-testing\]/,
-  );
+  assert.doesNotMatch(releaseGateWorkflow, /\n  mutation-testing:\n/);
+  assert.doesNotMatch(releaseGateWorkflow, /pnpm run test:mutation/);
+  assert.doesNotMatch(changesetsReleaseWorkflow, /\n  mutation-testing:\n/);
+  assert.doesNotMatch(changesetsReleaseWorkflow, /pnpm run test:mutation/);
 });
