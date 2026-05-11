@@ -16,7 +16,7 @@ flowchart TB
 
   Ingest["Fetch Figma REST data or load local JSON"] --> S1
   Derive["Normalize deterministic design IR"] --> S2
-  Copy["Copy selected template\nDefault: template/react-tailwind-app\nRocket: template/react-mui-app\nReact 19 + MUI v7 + Vite 8"] --> S3
+  Copy["Copy selected template\nDefault: template/react-tailwind-app\nRocket: template/react-mui-app\nReact 19 + MUI v9 + Vite 8"] --> S3
   Generate["Emit deterministic application code,\nroutes, assets, reports, and mappings"] --> S4
   Validate["Run install when needed, lint, typecheck, build,\noptional generated-project tests, validate:ui, and perf:assert"] --> S5
   Export["Write repro app and job artifacts under .workspace-dev"] --> S6
@@ -35,7 +35,7 @@ flowchart TB
 - `POST /workspace/submit` accepts authenticated Figma REST input, `local_json`, `figma_paste`, `figma_plugin`, and `hybrid` mode. Inline paste/plugin payloads are normalized into temp `local_json` artifacts before the canonical pipeline starts.
 - `figma.source` consumes authenticated Figma REST input, `local_json`, and `hybrid` mode after submit-time normalization. In `hybrid`, REST fetch remains authoritative and optional MCP enrichment is merged in as artifact-backed hints for downstream derivation.
 - `ir.derive` and `codegen.generate` stay deterministic by design; hybrid mode enriches deterministic derivation with MCP metadata but does not switch the runtime into LLM generation.
-- `template.prepare` starts from the selected pipeline template: `default` uses `template/react-tailwind-app`; `rocket` uses the bundled React 19 + MUI v7 + Vite 8 seed in `template/react-mui-app`.
+- `template.prepare` starts from the selected pipeline template: `default` uses `template/react-tailwind-app`; `rocket` uses the bundled React 19 + MUI v9 + Vite 8 seed in `template/react-mui-app`.
 - `codegen.generate` emits the generated app theme artifacts under `src/theme/`: canonical `tokens.json`, CSS custom properties in `tokens.css`, and token coverage evidence in `token-report.json`. The `default` pipeline additionally emits `src/generated/layout-report.json` and `src/generated/semantic-component-report.json` for transparent layout and semantic fallback diagnostics.
 - `validate.project` is the release-quality gate for generated output and can optionally run generated-project unit tests, UI validation, and performance assertions. It also emits the deterministic `quality-passport.json` evidence file for both `default` and `rocket` jobs.
 - `git.pr` is opt-in and skipped for local-only runs and regeneration jobs.
