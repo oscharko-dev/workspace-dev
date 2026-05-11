@@ -92,7 +92,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          pnpm add --global --ignore-scripts npm@11
+          pnpm add --global --ignore-scripts npm@11.13.0
           hash -r
           npm --version
 
