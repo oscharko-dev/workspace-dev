@@ -31,6 +31,46 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [1.44.8] - 2026-05-11
+
+Customer-Markdown PDF output for **Issue #2238**.
+
+A `testfaelle.pdf` sibling is now emitted under
+`<outputRoot>/jobs/<jobId>/test-intelligence/customer-markdown/`
+alongside the existing `testfaelle.md` and per-case Markdown files.
+The PDF encoder is hand-rolled (zero runtime deps), byte-stable, and
+contains three structural sections: the combined `testfaelle.md`, a
+`JIRA_STORY.md` section sourced from a `customContextMarkdown`
+`## JIRA_STORY` heading (placeholder when absent), and a
+`Screen Shots der Maske` section that lists SHA-256 hash references
+for the captured screens. Raw screenshot bytes are not embedded — the
+existing `no raw screenshots` invariant from
+`eingabemasken-fixtures.test.ts` / `baseline-fixtures.test.ts`
+continues to hold.
+
+### Changed (Issue #2238 — customer-markdown PDF artefact)
+
+- `RunFigmaToQcTestCasesResult.customerMarkdownPaths` gains a required
+  `pdf: string` field pointing at the new `testfaelle.pdf` artefact
+  on disk. Minor bump under the "new optional field"-equivalent rule
+  because the field is part of an internal result object, not an
+  over-the-wire HTTP response shape; CLI consumers were updated in
+  the same PR.
+- `src/test-intelligence/customer-markdown-pdf.ts` (new): public
+  helpers `buildCustomerMarkdownPdf`,
+  `extractJiraStoryFromCustomContext`,
+  `buildJiraStorySectionBody`,
+  `buildScreenshotReferenceSectionBody`, plus the
+  `CustomerMarkdownPdfInput` / `CustomerMarkdownPdfSection` /
+  `ScreenshotReference` types.
+
+### Migration
+
+Consumers reading `RunFigmaToQcTestCasesResult.customerMarkdownPaths`
+will see a new required `pdf` string field; the file is written
+atomically before the result resolves, so the path is always live
+when the result is observed.
+
 ## [1.44.7] - 2026-05-11
 
 Test-intelligence production-runner hardening for **Issue #2228**.
