@@ -379,7 +379,20 @@ export interface RegionAttestation {
   readonly attestedBy:
     | "azure-instance-metadata"
     | "endpoint-cert-cn"
-    | "operator-pinned";
+    | "operator-pinned"
+    /**
+     * Issue #2187 — sovereign-cloud / air-gap deployment topologies
+     * (STACKIT, T-Systems Open Sovereign Cloud, OVHcloud sovereign,
+     * on-prem). These endpoints do not implement Azure IMDS and the
+     * harness has no network reach to TLS-probe the upstream, so the
+     * region claim is derived from the operator-signed sovereign-cloud
+     * attestation source (e.g. signed deployment manifest baked into
+     * the air-gapped image). Treated as a first-class attestation
+     * source — equivalent strength to {@link `azure-instance-metadata`}
+     * within its trust boundary — and is **not** flagged with
+     * `severity: "warning"`.
+     */
+    | "sovereign-cloud";
   /**
    * Additive audit signal: present only when the attestation fell back to an
    * operator-pinned region because no stronger runtime evidence was available.
@@ -1156,6 +1169,19 @@ export const EU_BANKING_DEFAULT_POLICY_PROFILE_ID =
 
 /** Version stamp for the built-in `eu-banking-default` policy profile. */
 export const EU_BANKING_DEFAULT_POLICY_PROFILE_VERSION = "1.0.0" as const;
+
+/**
+ * Issue #2187 — Built-in policy-profile identifier for the
+ * sovereign-cloud / air-gap deployment topology used by DE Sparkassen,
+ * Volksbanken, and on-prem-only insurers. Routes all model calls through
+ * the operator-configured sovereign-cloud LLM gateway and refuses any
+ * deployment outside the customer-approved hosting-region allow-list.
+ */
+export const EU_BANKING_SOVEREIGN_POLICY_PROFILE_ID =
+  "eu-banking-sovereign" as const;
+
+/** Version stamp for the built-in `eu-banking-sovereign` policy profile. */
+export const EU_BANKING_SOVEREIGN_POLICY_PROFILE_VERSION = "1.0.0" as const;
 
 /**
  * Allowed test-case validation issue codes (Issue #1364).

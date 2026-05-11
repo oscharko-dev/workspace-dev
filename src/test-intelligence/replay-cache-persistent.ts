@@ -16,6 +16,7 @@ import type {
   ReplayCacheKey,
   TenantScope,
 } from "../contracts/index.js";
+import { assertLocalFilesystemPath } from "./air-gap-guard.js";
 import { canonicalJson } from "./content-hash.js";
 import { validateGeneratedTestCaseList } from "./generated-test-case-schema.js";
 import type { LlmCircuitPersistentState } from "./llm-circuit-breaker.js";
@@ -92,6 +93,14 @@ export const createPersistentReplayCache = (
   rootDir: string,
   options: PersistentReplayCacheOptions,
 ): ReplayCache => {
+  // Issue #2187 — fail-closed guard for sovereign-cloud / air-gap
+  // deployments. Under `WORKSPACE_TEST_SPACE_AIR_GAP_MODE=1`, a cache
+  // root that points at a remote scheme (`s3://`, `https://`, `gs://`,
+  // …) is rejected at construction time so a misconfigured operator
+  // cannot silently exfiltrate replay-cache content out of the
+  // air-gapped boundary. Outside air-gap mode the assertion is a
+  // no-op so existing call sites are unaffected.
+  assertLocalFilesystemPath(rootDir, { subsystem: "persistent replay cache" });
   const {
     tenantScope,
     byteBudget = DEFAULT_PERSISTENT_REPLAY_CACHE_BYTE_BUDGET,

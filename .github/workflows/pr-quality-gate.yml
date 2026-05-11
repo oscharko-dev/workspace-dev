@@ -92,3 +92,6 @@ jobs:
         run: |
           pnpm run test:dast-smoke
           pnpm run test:load
+
+      - name: Sovereign-cloud / air-gap smoke (Issue #2187)
+        run: pnpm run test:ti-airgap-smoke

@@ -15,9 +15,12 @@
 import {
   EU_BANKING_DEFAULT_POLICY_PROFILE_ID,
   EU_BANKING_DEFAULT_POLICY_PROFILE_VERSION,
+  EU_BANKING_SOVEREIGN_POLICY_PROFILE_ID,
+  EU_BANKING_SOVEREIGN_POLICY_PROFILE_VERSION,
   SUPPORTED_REGION_ATTESTATION_HOSTING_REGIONS,
   type FinOpsWallClockBudgetPolicy,
   type JudgeRefusalPolicyConfig,
+  type RegionAttestationHostingRegion,
   type TechniqueCoverageMinimumPolicy,
   TIER_ELASTIC_EP_TIERS,
   type TestCasePolicyProfile,
@@ -290,4 +293,71 @@ export const cloneEuBankingDefaultProfile = (): TestCasePolicyProfile => {
     description: EU_BANKING_DEFAULT_POLICY_PROFILE.description,
     rules,
   };
+};
+
+/**
+ * Issue #2187 — description for the `eu-banking-sovereign` profile. The
+ * sovereign profile inherits every hard gate and rule from
+ * `eu-banking-default`; the difference is **topology**: all LLM calls
+ * resolve to an operator-configured sovereign-cloud / on-prem gateway,
+ * the harness refuses every non-allow-listed HTTP egress, and the Figma
+ * payload arrives pre-fetched from a `figma-export` run on a
+ * connected machine.
+ */
+export const EU_BANKING_SOVEREIGN_POLICY_PROFILE_DESCRIPTION: string =
+  "Sovereign-cloud / air-gap deployment profile for DE Sparkassen, Volksbanken, " +
+  "and on-prem-only insurers. Inherits the full EU banking compliance gate; all " +
+  "LLM calls route through a customer-configured sovereign-cloud gateway, public " +
+  "Azure / Figma / cloud-cache egress is refused, and the Figma payload is " +
+  "pre-fetched outside the air-gap.";
+
+/**
+ * Built-in `eu-banking-sovereign` policy profile (Issue #2187, deep-frozen).
+ *
+ * Identity (`id` + `version`) is distinct from `eu-banking-default` so
+ * audit-dossier signatures and policy-report fingerprints make the
+ * deployment topology explicit. The rule set is **byte-identical** to
+ * the default profile; sovereign-cloud customers narrow
+ * `allowedHostingRegions` via {@link cloneEuBankingSovereignProfile}
+ * to the regions covered by their attestation contract.
+ */
+export const EU_BANKING_SOVEREIGN_POLICY_PROFILE:
+  Readonly<TestCasePolicyProfile> = Object.freeze({
+    id: EU_BANKING_SOVEREIGN_POLICY_PROFILE_ID,
+    version: EU_BANKING_SOVEREIGN_POLICY_PROFILE_VERSION,
+    description: EU_BANKING_SOVEREIGN_POLICY_PROFILE_DESCRIPTION,
+    rules: EU_BANKING_DEFAULT_POLICY_PROFILE.rules,
+  });
+
+/**
+ * Return a deep-cloned, mutable copy of the built-in
+ * `eu-banking-sovereign` profile. The clone starts from a default-profile
+ * clone (so every rule is independently mutable), then overrides
+ * identity and description to match the sovereign profile.
+ *
+ * Optional `allowedHostingRegions` narrows the attested region allow-list
+ * to the customer's contracted set — e.g. `["eu-de-1"]` for STACKIT or
+ * `["eu-de-1", "eu-fr-1"]` for a STACKIT + OVH sovereign hybrid. When
+ * omitted the clone keeps the full EU regional list, which sovereign-
+ * cloud operators MUST tighten before running real workloads.
+ */
+export const cloneEuBankingSovereignProfile = (
+  options: {
+    readonly allowedHostingRegions?: readonly RegionAttestationHostingRegion[];
+  } = {},
+): TestCasePolicyProfile => {
+  const base = cloneEuBankingDefaultProfile();
+  base.id = EU_BANKING_SOVEREIGN_POLICY_PROFILE.id;
+  base.version = EU_BANKING_SOVEREIGN_POLICY_PROFILE.version;
+  base.description = EU_BANKING_SOVEREIGN_POLICY_PROFILE.description;
+  if (options.allowedHostingRegions !== undefined) {
+    if (options.allowedHostingRegions.length === 0) {
+      throw new RangeError(
+        "cloneEuBankingSovereignProfile: allowedHostingRegions must be non-empty; " +
+          "sovereign deployments require at least one attested hosting region.",
+      );
+    }
+    base.rules.allowedHostingRegions = [...options.allowedHostingRegions];
+  }
+  return base;
 };

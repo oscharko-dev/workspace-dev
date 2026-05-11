@@ -51,6 +51,7 @@
     "test:smoke:compile": "node scripts/check-source-compile-smoke.mjs",
     "test:scripts": "node --test \"scripts/*.test.mjs\" && pnpm run lint:job-engine-catch-logging && pnpm run lint:schema-names && pnpm run lint:playwright-webserver",
     "test:dast-smoke": "pnpm exec tsx --test src/server/dast-smoke.e2e.test.ts",
+    "test:ti-airgap-smoke": "node scripts/run-airgap-smoke.mjs",
     "test:load": "pnpm exec tsx --test src/server/load-smoke.e2e.test.ts",
     "test:ci": "pnpm run test",
     "test:flaky-retry": "node scripts/run-test-with-flaky-retry.mjs",
