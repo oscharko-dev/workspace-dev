@@ -300,6 +300,27 @@ test("resolveWallClockBudget applies the default elastic coefficients", () => {
   assert.equal(budget, 150_000 + 9 * 4_000 + 20_000 + 2 * 30_000 + 30_000);
 });
 
+test("Epic #2167 P0 scenario — T7l7 11-case 2-judge 1-adversarial visual run clears the observed 194 879 ms breach", () => {
+  // P0 multi-dataset benchmark (2026-05-11) captured a 194 879 ms observed
+  // wall-clock on the 11-case T7l7 / Test-View-01 dataset. The original
+  // coefficients resolved 136 800 ms, hard-failing G7_NO_FINOPS_BREACH. The
+  // W5-2 re-calibration (b9c31a45) bumps the resolved budget to 274 000 ms,
+  // which leaves a ~79 s margin over the observed run. If this number ever
+  // drops back under 200 000 ms a P0-class regression is reintroduced —
+  // this pin makes that fail visibly with the P0 scenario name.
+  const t7l7 = resolveWallClockBudget({
+    caseCount: 11,
+    judgePanelSize: 2,
+    adversarialRounds: 1,
+    visualSidecarEnabled: true,
+  });
+  assert.equal(t7l7, 150_000 + 11 * 4_000 + 20_000 + 30_000 + 30_000);
+  assert.ok(
+    t7l7 >= 200_000,
+    `Epic #2167 P0 regression guard: T7l7 elastic budget dropped to ${t7l7} ms (≥ 200 000 ms expected to clear observed 194 879 ms)`,
+  );
+});
+
 test("resolveWallClockBudget clamps to the configured hard ceiling", () => {
   const budget = resolveWallClockBudget({
     caseCount: 500,

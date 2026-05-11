@@ -215,6 +215,37 @@ test("classifier matches the issue-spec recommended_positive_path subset", () =>
   }
 });
 
+test("Epic #2167 P0 scenario — `initial → validated|error|terminal` skip-state edges are NOT mandatory", () => {
+  // P0 multi-dataset benchmark (2026-05-11) showed the previous classifier
+  // emitted 36–59 spurious `uncovered_field_lifecycle_transition` errors per
+  // fixture (LATyw / xr6Nf) because every `initial → X` edge was treated as
+  // `mandatory_negative_path`, including the skip-state edges that no
+  // production UI emits. The W5-1 follow-up (64415b3e) demoted these three
+  // edges to `state_transition_test_only`. If a future change ever
+  // re-promotes them to mandatory, the P0 over-fire returns — this pin
+  // names the scenario so the regression is unambiguous.
+  const skipStateEdges: ReadonlyArray<
+    [WorkflowFieldLifecycleState, WorkflowFieldLifecycleState]
+  > = [
+    ["initial", "validated"],
+    ["initial", "error"],
+    ["initial", "terminal"],
+  ];
+  for (const [from, to] of skipStateEdges) {
+    const tier = classifyFieldLifecycleTransitionPair(from, to);
+    assert.notEqual(
+      tier,
+      "mandatory_negative_path",
+      `Epic #2167 P0 regression guard: ${from}->${to} must not be mandatory_negative_path (re-introduces 36-59 spurious validation errors per fixture)`,
+    );
+    assert.equal(
+      tier,
+      "state_transition_test_only",
+      `${from}->${to} must remain state_transition_test_only after W5-1 tightening`,
+    );
+  }
+});
+
 test("classifier marks every outgoing edge from `terminal` as state_transition_test_only", () => {
   for (const to of ALLOWED_WORKFLOW_FIELD_LIFECYCLE_STATES) {
     assert.equal(

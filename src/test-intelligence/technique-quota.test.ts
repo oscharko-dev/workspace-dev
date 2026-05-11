@@ -138,6 +138,24 @@ test("tier-elastic formula: tier bands follow the 4/5/9/20 cutovers", () => {
   }
 });
 
+test("Epic #2167 P0 scenario — xr6Nf 32-field screen clears the documented quota miss-by-1", () => {
+  // P0 multi-dataset benchmark (2026-05-11) reported xr6Nf / Test-View-05
+  // (32 fields) failing the technique-coverage-minimum gate: the 0.85×
+  // tier required 28 EP cases while the generator produced 24 — a miss
+  // by 4. The W5-4 follow-up (b9c31a45) added a fields>=30 tier at 0.75×,
+  // lowering the requirement to 24, which matches the generator output.
+  // If a future regressor drops the fields>=30 tier OR raises its
+  // multiplier back above 0.75, this pin fires immediately with the P0
+  // scenario name attached.
+  const xr6Nf = computeTierElasticEquivalencePartitioningQuota(32);
+  assert.equal(
+    xr6Nf.quota,
+    24,
+    `Epic #2167 P0 regression guard: xr6Nf (32 fields) quota = ${xr6Nf.quota} — expected 24 to match the generator's 24-case output`,
+  );
+  assert.match(xr6Nf.formula, /ceil\(0\.75\*fields\)/);
+});
+
 test("Issue #2171: tier-elastic quotas accept caller-supplied tiers and keep the canonical tier table exposed", () => {
   const customPolicy: TechniqueCoverageMinimumPolicy = {
     mode: "tier-elastic",
