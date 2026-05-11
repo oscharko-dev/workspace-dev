@@ -31,6 +31,38 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [1.44.10] - 2026-05-11
+
+Review-feedback follow-up for **Issue #2238** (post-merge clean-up of
+PR #2243). No public contract surface change — this entry exists only
+because the same release touches modules listed under
+`RELEVANT_CONTRACT_FILE_PREFIXES`.
+
+### Changed (Issue #2238 — Mappe review-feedback follow-up)
+
+- `src/test-intelligence/customer-markdown-pdf-mappe.ts`: tighten the
+  PNG decoder with explicit bounds checks on every chunk header and
+  data slice; cap the cover title at two lines with a visible
+  ellipsis; refresh the `stripInlineMarkdown` docstring to describe
+  what the function actually does (it intentionally keeps
+  backticks); drop a useless local assignment in `layoutJiraStory`.
+- `src/test-intelligence/production-runner.ts`: pass only the
+  extracted Jira-story section to the Mappe renderer (no longer
+  bleed the whole `customContextMarkdown` body into the "Jira Story
+  zur Maske" page); register `customer-markdown/testfaelle.pdf` in
+  the evidence-artefact list so the PDF is covered by the Wave-1
+  evidence manifest, region-attestation pass and sealing chain
+  alongside the existing Markdown files.
+- Documentation: this changelog file marks 1.44.8's
+  `customer-markdown-pdf.ts` entry as "superseded in 1.44.9" and
+  states explicitly that the module is removed.
+
+### Migration
+
+None. The evidence-manifest scope widens to cover the existing PDF
+artefact, so consumers of the manifest get a strictly stronger
+guarantee.
+
 ## [1.44.9] - 2026-05-11
 
 Customer-Markdown PDF promoted to a presentation Mappe for **Issue #2238**.
