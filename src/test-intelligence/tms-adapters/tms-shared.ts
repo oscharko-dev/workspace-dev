@@ -440,3 +440,200 @@ export const resolvePrincipalId = (raw: string | undefined): string => {
   const trimmed = raw.trim();
   return trimmed.length > 0 ? trimmed : DEFAULT_TMS_PRINCIPAL_ID;
 };
+
+/**
+ * Maximum number of evidence rows a single `pullExecutions` envelope
+ * may carry. The orchestrator paginates by re-issuing the call with a
+ * later `since` cursor; the cap keeps a misbehaving TMS from blowing
+ * up the harness's heap.
+ */
+export const MAX_EXECUTION_EVIDENCE_ROWS_PER_PULL = 5_000 as const;
+
+/**
+ * Allowed `executionVerdict` values mirrored from the issue's contract
+ * so tests + adapters share the same source of truth.
+ */
+const PULL_EVIDENCE_EXECUTION_VERDICTS: ReadonlySet<string> = new Set([
+  "pass",
+  "fail",
+  "blocked",
+  "skipped",
+]);
+
+/** Allowed `reviewerVerdict` values mirrored from the issue's contract. */
+const PULL_EVIDENCE_REVIEWER_VERDICTS: ReadonlySet<string> = new Set([
+  "approved",
+  "rejected",
+  "revised",
+]);
+
+/**
+ * Inputs for {@link parseRawExecutionEvidenceEnvelope}.
+ *
+ * The envelope contract is intentionally narrow: every adapter, no
+ * matter the underlying TMS, surfaces the same JSON shape here so the
+ * orchestrator can verify + persist without an adapter-specific
+ * second pass.
+ */
+export interface ParseRawExecutionEvidenceEnvelopeInput {
+  readonly adapterId: TmsAdapterId;
+  readonly tenantId: string;
+  readonly body: unknown;
+  /**
+   * Floor on `executedAt`; rows older than this are dropped so the
+   * adapter cannot accidentally over-return after a `since` regression.
+   */
+  readonly sinceIso: string;
+}
+
+/** Outcome of parsing a `pullExecutions` envelope. */
+export interface ParseRawExecutionEvidenceEnvelopeResult {
+  readonly evidence: ReadonlyArray<{
+    readonly testCaseId: string;
+    readonly tenantId: string;
+    readonly tmsAdapterId: TmsAdapterId;
+    readonly tmsCaseId: string;
+    readonly executionVerdict: "pass" | "fail" | "blocked" | "skipped";
+    readonly reviewerVerdict?: "approved" | "rejected" | "revised";
+    readonly reviewerRationale?: string;
+    readonly executedAt: string;
+    readonly attestationSignatureHex: string;
+  }>;
+  /** Adapter rows the parser silently dropped (since-floor or duplicate). */
+  readonly droppedRowCount: number;
+}
+
+/**
+ * Parse a TMS plugin / webhook envelope into provider-neutral
+ * execution-evidence rows. The shape is rejected loudly on any
+ * structural deviation — a weak parser would let a misconfigured TMS
+ * smuggle bytes into the calibration corpus.
+ *
+ * Hard rejections:
+ *   - Envelope is not an object with an `evidence` array.
+ *   - More than {@link MAX_EXECUTION_EVIDENCE_ROWS_PER_PULL} rows.
+ *   - Row missing any required field, or carrying an unknown verdict.
+ *   - Row's `tenantId` does not match `input.tenantId`.
+ *   - Row's `tmsAdapterId` does not match `input.adapterId`.
+ *
+ * Silent drops (counted on the result so the report can surface them):
+ *   - `executedAt < sinceIso` — the TMS over-returned after the cursor.
+ *   - Duplicate `(tmsCaseId, attestationSignatureHex)` within the
+ *     same envelope — adapters MAY de-dupe on retry.
+ */
+export const parseRawExecutionEvidenceEnvelope = (
+  input: ParseRawExecutionEvidenceEnvelopeInput,
+): ParseRawExecutionEvidenceEnvelopeResult => {
+  if (typeof input.body !== "object" || input.body === null) {
+    throw new TypeError(
+      "parseRawExecutionEvidenceEnvelope: body must be a non-null object",
+    );
+  }
+  const root = input.body as Record<string, unknown>;
+  const rows = root["evidence"];
+  if (!Array.isArray(rows)) {
+    throw new TypeError(
+      "parseRawExecutionEvidenceEnvelope: body.evidence must be an array",
+    );
+  }
+  if (rows.length > MAX_EXECUTION_EVIDENCE_ROWS_PER_PULL) {
+    throw new RangeError(
+      `parseRawExecutionEvidenceEnvelope: at most ${MAX_EXECUTION_EVIDENCE_ROWS_PER_PULL} rows per pull (got ${rows.length})`,
+    );
+  }
+  const seen = new Set<string>();
+  const out: ParseRawExecutionEvidenceEnvelopeResult["evidence"][number][] = [];
+  let dropped = 0;
+  for (const raw of rows) {
+    if (typeof raw !== "object" || raw === null) {
+      throw new TypeError(
+        "parseRawExecutionEvidenceEnvelope: every evidence row must be an object",
+      );
+    }
+    const row = raw as Record<string, unknown>;
+    const testCaseId = requireRowString(row, "testCaseId");
+    const tenantId = requireRowString(row, "tenantId");
+    const tmsAdapterId = requireRowString(row, "tmsAdapterId");
+    const tmsCaseId = requireRowString(row, "tmsCaseId");
+    const executionVerdict = requireRowString(row, "executionVerdict");
+    const executedAt = requireRowString(row, "executedAt");
+    const attestationSignatureHex = requireRowString(
+      row,
+      "attestationSignatureHex",
+    );
+    if (tenantId !== input.tenantId) {
+      throw new TypeError(
+        `parseRawExecutionEvidenceEnvelope: row tenantId "${tenantId}" does not match adapter tenantId "${input.tenantId}"`,
+      );
+    }
+    if (tmsAdapterId !== input.adapterId) {
+      throw new TypeError(
+        `parseRawExecutionEvidenceEnvelope: row tmsAdapterId "${tmsAdapterId}" does not match adapter id "${input.adapterId}"`,
+      );
+    }
+    if (!PULL_EVIDENCE_EXECUTION_VERDICTS.has(executionVerdict)) {
+      throw new TypeError(
+        `parseRawExecutionEvidenceEnvelope: unknown executionVerdict "${executionVerdict}"`,
+      );
+    }
+    let reviewerVerdict: "approved" | "rejected" | "revised" | undefined;
+    if (row["reviewerVerdict"] !== undefined) {
+      const v = requireRowString(row, "reviewerVerdict");
+      if (!PULL_EVIDENCE_REVIEWER_VERDICTS.has(v)) {
+        throw new TypeError(
+          `parseRawExecutionEvidenceEnvelope: unknown reviewerVerdict "${v}"`,
+        );
+      }
+      reviewerVerdict = v as "approved" | "rejected" | "revised";
+    }
+    let reviewerRationale: string | undefined;
+    if (row["reviewerRationale"] !== undefined) {
+      reviewerRationale = requireRowString(row, "reviewerRationale");
+    }
+    if (executedAt < input.sinceIso) {
+      dropped += 1;
+      continue;
+    }
+    const dupKey = `${tmsCaseId}|${attestationSignatureHex}`;
+    if (seen.has(dupKey)) {
+      dropped += 1;
+      continue;
+    }
+    seen.add(dupKey);
+    out.push({
+      testCaseId,
+      tenantId,
+      tmsAdapterId: tmsAdapterId as TmsAdapterId,
+      tmsCaseId,
+      executionVerdict: executionVerdict as
+        | "pass"
+        | "fail"
+        | "blocked"
+        | "skipped",
+      ...(reviewerVerdict !== undefined ? { reviewerVerdict } : {}),
+      ...(reviewerRationale !== undefined ? { reviewerRationale } : {}),
+      executedAt,
+      attestationSignatureHex,
+    });
+  }
+  out.sort((a, b) => {
+    if (a.executedAt !== b.executedAt) {
+      return a.executedAt.localeCompare(b.executedAt);
+    }
+    return a.tmsCaseId.localeCompare(b.tmsCaseId);
+  });
+  return { evidence: out, droppedRowCount: dropped };
+};
+
+const requireRowString = (
+  row: Record<string, unknown>,
+  field: string,
+): string => {
+  const raw = row[field];
+  if (typeof raw !== "string" || raw.length === 0) {
+    throw new TypeError(
+      `parseRawExecutionEvidenceEnvelope: row.${field} must be a non-empty string`,
+    );
+  }
+  return raw;
+};

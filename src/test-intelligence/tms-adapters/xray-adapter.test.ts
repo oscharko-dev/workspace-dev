@@ -306,6 +306,82 @@ test("xray-adapter: pollSyncStatus returns issue state on 200", async () => {
   assert.equal(status.state, "Active");
 });
 
+test("xray-adapter: pullExecutions returns parsed envelope rows", async () => {
+  const fake = buildFakeHttp();
+  fake.pushResponse({ status: 200, headers: {}, body: { accountId: "1" } });
+  fake.pushResponse({
+    status: 200,
+    headers: {},
+    body: {
+      evidence: [
+        {
+          testCaseId: "TC-A",
+          tenantId: "t",
+          tmsAdapterId: "xray",
+          tmsCaseId: "JIRA-1",
+          executionVerdict: "pass",
+          executedAt: "2026-05-10T00:00:00.000Z",
+          attestationSignatureHex: "deadbeef".repeat(16),
+        },
+      ],
+    },
+  });
+  const adapter = createXrayAdapter({ http: fake.client, sleep: async () => {} });
+  const session = await adapter.connect({
+    endpointAlias: "xray-test",
+    projectId: "MOCK",
+    tenantId: "t",
+    credentials,
+  });
+  const result = await adapter.pullExecutions({
+    session,
+    sinceIso: "2026-04-01T00:00:00.000Z",
+  });
+  assert.equal(result.evidence.length, 1);
+  assert.equal(result.evidence[0]!.testCaseId, "TC-A");
+  // Verify the request used the expected path + query.
+  const lastReq = fake.requests[fake.requests.length - 1]!;
+  assert.equal(lastReq.method, "GET");
+  assert.match(lastReq.path, /\/rest\/raven\/2\.0\/api\/execution-evidence/);
+  assert.match(lastReq.path, /since=2026-04-01T00%3A00%3A00\.000Z/);
+});
+
+test("xray-adapter: pullExecutions rejects rows with foreign tenantId", async () => {
+  const fake = buildFakeHttp();
+  fake.pushResponse({ status: 200, headers: {}, body: { accountId: "1" } });
+  fake.pushResponse({
+    status: 200,
+    headers: {},
+    body: {
+      evidence: [
+        {
+          testCaseId: "TC-A",
+          tenantId: "OTHER",
+          tmsAdapterId: "xray",
+          tmsCaseId: "JIRA-1",
+          executionVerdict: "pass",
+          executedAt: "2026-05-10T00:00:00.000Z",
+          attestationSignatureHex: "deadbeef".repeat(16),
+        },
+      ],
+    },
+  });
+  const adapter = createXrayAdapter({ http: fake.client, sleep: async () => {} });
+  const session = await adapter.connect({
+    endpointAlias: "xray-test",
+    projectId: "MOCK",
+    tenantId: "t",
+    credentials,
+  });
+  await assert.rejects(
+    adapter.pullExecutions({
+      session,
+      sinceIso: "2026-04-01T00:00:00.000Z",
+    }),
+    /tenantId/,
+  );
+});
+
 test("xray-adapter: disconnect releases session credentials", async () => {
   const fake = buildFakeHttp();
   fake.pushResponse({ status: 200, headers: {}, body: { accountId: "1" } });

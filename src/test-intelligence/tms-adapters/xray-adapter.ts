@@ -46,8 +46,10 @@ import {
   type TmsHttpClient,
   type TmsHttpResponse,
   type TmsMappedCase,
+  type TmsPullExecutionsResult,
   type TmsPushAttemptResult,
   type TmsPushBatchResult,
+  type TmsRawExecutionEvidence,
   type TmsSyncStatus,
   type TmsValidateProjectResult,
   DEFAULT_TMS_PUSH_BATCH_SIZE,
@@ -57,6 +59,7 @@ import {
   classifyTmsHttpFailure,
   computeTmsIdempotencyKey,
   executeWithRetry,
+  parseRawExecutionEvidenceEnvelope,
   resolvePrincipalId,
   sanitizeTmsErrorDetail,
 } from "./tms-shared.js";
@@ -301,6 +304,36 @@ export const createXrayAdapter = (input: CreateXrayAdapterInput): TmsAdapter => 
           message: sanitizeTmsErrorDetail(err),
         };
       }
+    },
+    async pullExecutions(args: {
+      session: TmsAdapterSession;
+      sinceIso: string;
+    }): Promise<TmsPullExecutionsResult> {
+      const path =
+        `/rest/raven/2.0/api/execution-evidence?project=${encodeURIComponent(args.session.projectId)}` +
+        `&since=${encodeURIComponent(args.sinceIso)}`;
+      const response = await runWithRetry(input, async () => {
+        const r = await input.http.request({
+          endpointAlias: args.session.endpointAlias,
+          path,
+          method: "GET",
+          headers: { Accept: "application/json" },
+          credentials: rebuildCredentialsFromSession(args.session),
+          timeoutMs: DEFAULT_TMS_REQUEST_TIMEOUT_MS,
+        });
+        ensureOk(r, "pullExecutions rejected");
+        return r;
+      });
+      const parsed = parseRawExecutionEvidenceEnvelope({
+        adapterId: ADAPTER_ID,
+        tenantId: args.session.tenantId,
+        body: response.value.body,
+        sinceIso: args.sinceIso,
+      });
+      const evidence: TmsRawExecutionEvidence[] = parsed.evidence.map((row) => ({
+        ...row,
+      }));
+      return { evidence };
     },
     async disconnect(session: TmsAdapterSession): Promise<void> {
       SESSION_CREDENTIALS.delete(session);
