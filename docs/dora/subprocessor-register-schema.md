@@ -168,4 +168,4 @@ The `subprocessor-register.json` artifact is consumed by:
 - `src/test-intelligence/subprocessor-register.ts` — canonical TS
   source-of-truth, builder, and Markdown renderer.
 - `scripts/render-subprocessor-register.mts` — build-time Markdown
-  regenerator and CI dev-gate (`--check`).
+  regenerator and CI quality gate (`--check`).

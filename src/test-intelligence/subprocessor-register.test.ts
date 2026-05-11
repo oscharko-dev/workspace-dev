@@ -160,7 +160,7 @@ test("subprocessor-register: Markdown renderer is deterministic", () => {
 });
 
 test("subprocessor-register: on-disk Markdown matches the canonical TS source", async () => {
-  // Mirrors the CI dev-gate check; if this test fails, run
+  // Mirrors the CI quality-gate check; if this test fails, run
   // `pnpm run docs:render-subprocessor-register` to regenerate the
   // committed Markdown.
   const docPath = join(repoRoot, "docs", "dora", "subprocessor-register.md");

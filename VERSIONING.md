@@ -34,7 +34,7 @@
 ## Release Source Of Truth
 
 - npm and GitHub Releases are the authoritative sources for published package versions.
-- The checked-in `package.json` version in `dev`, `dev-gate`, or `main` can lag the latest published package version because `.github/workflows/changesets-release.yml` may apply a workflow-local version bump for publishing without committing that bump back to protected branches.
+- The checked-in `package.json` version in `dev` or `main` can lag the latest published package version because `.github/workflows/changesets-release.yml` may apply a workflow-local version bump for publishing without committing that bump back to protected branches.
 
 ## Related Documents
 

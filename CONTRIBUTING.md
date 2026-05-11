@@ -24,7 +24,7 @@ pnpm lint:boundaries
 4. If public contracts change (`src/contracts/`), add an entry to `CONTRACT_CHANGELOG.md`.
 5. Ensure `pnpm test`, `pnpm typecheck`, and `pnpm lint:boundaries` pass.
 6. Open a PR targeting `dev` with clear change rationale.
-7. Maintainers promote vetted changes through `dev -> dev-gate -> main`.
+7. Maintainers promote vetted changes through `dev -> main`.
 
 ## Template Dependency Maintenance
 

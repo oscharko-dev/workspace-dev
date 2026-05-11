@@ -34,7 +34,7 @@ maintainers decide when work is ready to merge or release.
 
 ## Release Authority Matrix
 
-This repository uses the documented branch flow `dev -> dev-gate -> main`.
+This repository uses the documented branch flow `dev -> main`.
 The approval counts below are repository governance policy. GitHub branch
 protections and rulesets may enforce the same controls or stricter controls over
 time, but this document defines the maintainer review requirement even when the
@@ -43,14 +43,13 @@ platform setting is less strict.
 | Surface | Who may approve or merge | Required approval count | Additional requirements |
 | --- | --- | --- | --- |
 | Pull request into `dev` | A listed maintainer | 1 maintainer approval | Relevant local verification complete and required CI green |
-| Promotion from `dev` to `dev-gate` | A listed maintainer | 1 maintainer approval | Source branch must be `dev`; quality-gate checks must pass |
-| Promotion from `dev-gate` to `main` | A listed maintainer | 1 maintainer approval | Source branch must be `dev-gate`; release checks must pass |
+| Promotion from `dev` to `main` | A listed maintainer | 1 maintainer approval | Source branch must be `dev`; release checks must pass |
 | npm release publish | Primary maintainer, or backup maintainer during succession handling | 1 acting release maintainer | Publish only from the approved GitHub Actions release workflow on `main` after all quality gates pass |
 
 Operational notes:
 
-- `dev-gate` only accepts merges from `dev`.
-- `main` only accepts merges from `dev-gate`.
+- `dev` accepts feature and maintenance pull requests.
+- `main` only accepts promotions from `dev`.
 - `CODEOWNERS` assigns repository ownership to `@oscharko-dev`; branch
   protections or rulesets may additionally require code-owner review.
 - The release path uses GitHub Actions with OIDC trusted publishing and npm
@@ -64,8 +63,8 @@ Operational notes:
 2. Submit a pull request against `dev`.
 3. Complete the relevant verification for the scope of the change.
 4. Obtain one maintainer approval.
-5. Merge to `dev`, then promote through `dev-gate` and `main` when the release
-   flow is ready and all required checks are green.
+5. Merge to `dev`, then promote `dev` to `main` when the release flow is ready
+   and all required checks are green.
 
 ### Breaking changes
 

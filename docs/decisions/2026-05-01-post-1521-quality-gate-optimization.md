@@ -8,10 +8,10 @@
 
 The CI quality-gate stack accumulated organically across 16 workflows and 38 custom guard scripts. Two formal audits conducted in 2026-05 identified concrete gaps:
 
-- The dev-quality-gate runs on the `dev-gate` branch (PRs land on `dev`), so PRs to `dev` only get eslint, codeql, dependency-review, and visual-benchmark. The full quality matrix runs only on the `dev-gate → dev` fast-forward path.
+- The dev-quality-gate now runs on the `dev` branch, with production promotion handled by `dev → main`.
 - A single 360-minute monolithic `quality` job in `dev-quality-gate.yml` serializes approximately 40 steps that could parallelize.
 - No `concurrency:` cancellation groups exist, so duplicate runs stack on PR updates.
-- Mutation testing (35–40 min) blocks every dev-gate run; could be PR-opt-in or scheduled.
+- Mutation testing (35–40 min) blocks the development quality gate; it can be PR-opt-in or scheduled.
 - `changesets-release.yml` duplicates `pnpm run release:quality-gates:publish-lifecycle` inline (lines 84–118) and has drifted (missing `perf:web:tailwind:*`).
 - npm publish uses provenance (SLSA L2); regulated customers need SLSA L3 and cosign keyless signing.
 - `eslint.yml` runs the same checks as `dev-quality-gate.yml` and `release-gate.yml`.
@@ -28,17 +28,16 @@ Adopt a 5-wave optimization across the CI/CD stack, repository hygiene, and supp
 
 ## Branching Flow
 
-The repository uses a deliberate 3-branch flow:
+The repository uses a deliberate 2-branch flow:
 
-- Feature branch → PR → `dev-gate` (full dev-quality-gate runs as a required check)
-- `dev-gate` → `dev` (fast-forward; gate already validated)
+- Feature branch → PR → `dev` (full dev-quality-gate runs as a required check)
 - `dev` → `main` (release-gate: full quality matrix on Node 22 and 24)
 
-All workflow `branches:` triggers in PR scope must respect this flow. It is intentional: it keeps a separation between in-flight integration (`dev`) and gate-passed integration (`dev-gate`) for the regulated-customer audit trail.
+All workflow `branches:` triggers in PR scope must respect this flow. It is intentional: it keeps a separation between development integration (`dev`) and production deployment (`main`) for the regulated-customer audit trail.
 
 ## Consequences
 
-- **PR feedback time**: p50 wall-time drops from approximately 90 minutes to approximately 30 minutes on the dev-gate path (Wave 1 job-split, paths-filter, mutation-off-dev).
+- **PR feedback time**: p50 wall-time drops from approximately 90 minutes to approximately 30 minutes on the dev quality-gate path (Wave 1 job-split, paths-filter, mutation-off-dev).
 - **Supply-chain trust**: Wave 2 satisfies DORA and EU-banking artifact-provenance requirements via Sigstore and SLSA L3.
 - **Operational complexity**: more workflow files; offset by the deletion of `eslint.yml` and the changesets deduplication.
 - **Reversibility**: every wave is one or more PR-revertable commits except Wave 3 (live GitHub-side state, reversible via `gh api -X DELETE`).

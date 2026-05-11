@@ -597,7 +597,7 @@ jobs:
           path: template/*/artifacts/performance
           if-no-files-found: ignore
 
-  dev-gate-summary:
+  dev-summary:
     needs:
       - setup
       - policy-guards
@@ -613,7 +613,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Aggregate dev-gate result
+      - name: Aggregate dev result
         env:
           SETUP: ${{ needs.setup.result }}
           POLICY_GUARDS: ${{ needs.policy-guards.result }}
@@ -627,7 +627,7 @@ jobs:
           fail=0
           echo "SETUP=${SETUP}"
           if [ "${SETUP}" != "success" ]; then
-            echo "::error::dev-gate aggregate: setup job did not succeed (result=${SETUP}); downstream skips are not safe"
+            echo "::error::dev aggregate: setup job did not succeed (result=${SETUP}); downstream skips are not safe"
             fail=1
           fi
           for name in POLICY_GUARDS TYPECHECK TEMPLATE_TESTS GOLDEN_AND_TI MUTATION_TESTING SECURITY_SMOKE; do
@@ -639,7 +639,7 @@ jobs:
             esac
           done
           if [ "$fail" -ne 0 ]; then
-            echo "::error::dev-gate aggregate: one or more required jobs failed or were cancelled"
+            echo "::error::dev aggregate: one or more required jobs failed or were cancelled"
             exit 1
           fi
-          echo "dev-gate aggregate: setup succeeded and all required jobs succeeded or were skipped"
+          echo "dev aggregate: setup succeeded and all required jobs succeeded or were skipped"

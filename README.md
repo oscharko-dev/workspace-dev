@@ -13,6 +13,7 @@ Autonomous local Workspace runtime for REST-based deterministic Figma-to-code ge
 
 ## Package and release channels
 
+- npm and GitHub Releases are the authoritative sources for published package versions.
 - npm distribution (authoritative): https://www.npmjs.com/package/workspace-dev
 - GitHub release notes and signed evidence assets (SBOM): https://github.com/oscharko-dev/workspace-dev/releases
 - GitHub Packages is intentionally not used for `workspace-dev` distribution.
@@ -42,9 +43,8 @@ Default runtime URL: `http://127.0.0.1:1983/workspace`
 ## Repository branch flow
 
 - `dev` is the active development branch.
-- `dev-gate` is the protected quality gate branch.
-- `main` is the release branch.
-- See [GOVERNANCE.md](GOVERNANCE.md) for the full `dev -> dev-gate -> main`
+- `main` is the protected deployment and release branch.
+- See [GOVERNANCE.md](GOVERNANCE.md) for the full `dev -> main`
   promotion policy and [`THREAT_MODEL.md`](THREAT_MODEL.md) for the trust
   boundaries that inform runtime and release controls.
 
