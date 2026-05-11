@@ -196,8 +196,14 @@ test("schema: drift guard — the hash is stable for the current contract", () =
   // resolver — new `tenant_bundle_resolved` audit-dossier artifact kind
   // and optional `customerBundle` summary on AuditDossierManifest).
   // Digest shifts in lockstep with the contract.
+  // Hash bumped by Issue #2185: TEST_INTELLIGENCE_CONTRACT_VERSION bumped
+  // 1.34.0 -> 1.35.0 (additive self-service customer-onboarding CLI —
+  // new `tenant-onboarding.ts` module exporting the provisioning + doctor
+  // flow plus the `test-intelligence onboard` CLI sub-command). Digest
+  // shifts in lockstep with the contract version that the generated
+  // schema embeds.
   const expected =
-    "331ef2e9715a46078debfd0bd2b253523c5be513b7020d15d8368d75256d087a";
+    "5bac26e16a5e0df3c32b418022b839f2f1b7de925fe98e8640b3e03592aaae18";
   const actual = computeGeneratedTestCaseListSchemaHash();
   if (actual !== expected) {
     assert.fail(
