@@ -26,6 +26,7 @@ jobs:
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: 22
+          registry-url: https://registry.npmjs.org/
           cache: pnpm
 
       - name: Set reproducible build metadata
@@ -86,6 +87,7 @@ jobs:
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: 22
+          registry-url: https://registry.npmjs.org/
           cache: pnpm
 
       - name: Upgrade npm for trusted publishing
@@ -130,23 +132,28 @@ jobs:
       - name: Generate SPDX SBOM
         run: node scripts/generate-spdx.mjs "${RELEASE_EVIDENCE_DIR}/sbom/workspace-dev.spdx.json"
 
-      - name: Configure npm publish auth mode
+      - name: Select npm publish auth mode
         id: npm_auth_mode
         shell: bash
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
 
-          TRUSTED_NPMRC="${RUNNER_TEMP}/npm-trusted-publisher.npmrc"
-          echo "registry=https://registry.npmjs.org/" > "${TRUSTED_NPMRC}"
-          echo "NPM_CONFIG_USERCONFIG=${TRUSTED_NPMRC}" >> "$GITHUB_ENV"
-          echo "auth_mode=trusted-publisher-oidc" >> "$GITHUB_OUTPUT"
+          if [[ -n "${NPM_TOKEN}" ]]; then
+            echo "Using repository NPM_TOKEN for npm publish because npm trusted publishing did not authenticate this workflow."
+            echo "auth_mode=npm-token" >> "$GITHUB_OUTPUT"
+          else
+            echo "No NPM_TOKEN secret available; using npm trusted publishing via GitHub OIDC."
+            echo "auth_mode=trusted-publisher-oidc" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Apply pending changesets and publish package
         shell: bash
         env:
-          NODE_AUTH_TOKEN: ""
-          NPM_TOKEN: ""
-          WORKSPACE_DEV_PUBLISH_AUTH_MODE: trusted-publisher-oidc
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          WORKSPACE_DEV_PUBLISH_AUTH_MODE: ${{ steps.npm_auth_mode.outputs.auth_mode }}
         run: |
           set -euo pipefail
 
