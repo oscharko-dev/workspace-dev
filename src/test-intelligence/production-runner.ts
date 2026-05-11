@@ -6086,13 +6086,18 @@ export const runFigmaToQcTestCases = async (
         label: `${file.screenId} — ${file.filename}`,
         pngBytes: file.bytes,
       })) ?? [];
+    // Only pass the *extracted* Jira-story section, not the whole
+    // `customContextMarkdown` body. The body is allowed to mix other
+    // operator-context content (rubrics, acceptance criteria, …)
+    // that does not belong in the "Jira Story zur Maske" page; when
+    // the dedicated heading is missing, the renderer's placeholder
+    // is the correct output.
     const pdfBytes = buildCustomerMarkdownMappe({
       title: customerLabel,
       subtitle: sourceLabel,
       generatedAt: input.generatedAt,
       jobId: input.jobId,
-      jiraStoryMarkdown:
-        jiraStoryFromContext ?? customContextMarkdown?.bodyMarkdown,
+      jiraStoryMarkdown: jiraStoryFromContext,
       testfaelleMarkdown: rendered.combinedMarkdown,
       screenshots: mappeScreenshots,
     });
@@ -6696,6 +6701,11 @@ export const runFigmaToQcTestCases = async (
         bytes: artifact.bytes,
         category: "export" as const,
       })),
+      {
+        filename: "customer-markdown/testfaelle.pdf",
+        bytes: pdfBytes,
+        category: "export" as const,
+      },
       ...(mutationReportBytes === undefined
         ? []
         : [

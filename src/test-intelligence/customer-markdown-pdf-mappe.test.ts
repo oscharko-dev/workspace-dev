@@ -134,3 +134,47 @@ test("decodePngToRgb decodes a minimal RGBA PNG to a packed RGB buffer", () => {
 test("decodePngToRgb rejects a non-PNG buffer", () => {
   assert.throws(() => decodePngToRgb(Buffer.from("not a png")));
 });
+
+test("decodePngToRgb rejects a PNG truncated mid-chunk with a deterministic error", () => {
+  const full = buildTinyPng();
+  // Drop the last 20 bytes so the IDAT chunk's declared length runs
+  // past the remaining buffer. The decoder must raise a controlled
+  // error rather than a Node-internal RangeError.
+  const truncated = full.subarray(0, full.length - 20);
+  assert.throws(() => decodePngToRgb(truncated), /decodePngToRgb: PNG chunk/u);
+});
+
+test("decodePngToRgb rejects a PNG with a truncated chunk header", () => {
+  // Signature plus only 4 bytes of the next chunk header — the
+  // decoder must not read past EOF.
+  const broken = Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    Buffer.from([0, 0, 0, 13]),
+  ]);
+  assert.throws(() => decodePngToRgb(broken), /decodePngToRgb: PNG chunk/u);
+});
+
+test("buildCustomerMarkdownMappe shows the placeholder when only the wider customContextMarkdown body is passed", () => {
+  // Regression test for the Copilot review point on
+  // production-runner.ts:6095: passing the whole customContextMarkdown
+  // through as `jiraStoryMarkdown` would have leaked unrelated
+  // operator context into the "Jira Story" page. The runner now
+  // narrows down to the extracted section only, and forwards
+  // `undefined` otherwise — which the renderer turns into the
+  // placeholder.
+  const pdf = buildCustomerMarkdownMappe(
+    fixedInput({ jiraStoryMarkdown: undefined }),
+  );
+  const bin = pdf.toString("binary");
+  assert.ok(bin.includes("Keine Jira-Story konfiguriert"));
+});
+
+test("buildCustomerMarkdownMappe truncates a multi-line cover title to two lines", () => {
+  const longTitle =
+    "Ein sehr langer Titel der definitiv über mehrere Zeilen läuft und nicht in zwei Zeilen passt — Teil zwei der Überlänge — Teil drei";
+  const pdf = buildCustomerMarkdownMappe(fixedInput({ title: longTitle }));
+  const bin = pdf.toString("binary");
+  // The ellipsis character maps to WinAnsi 0x85; check it landed on
+  // the second title line so the cap is visible to the reader.
+  assert.ok(bin.includes(String.fromCharCode(0x85)));
+});
