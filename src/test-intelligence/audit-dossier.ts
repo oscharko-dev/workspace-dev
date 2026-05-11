@@ -34,6 +34,7 @@ import {
   loadCalibrationRefitHistory,
   summarizeCalibrationRefitHistory,
 } from "./self-improving-calibration.js";
+import { TENANT_BUNDLE_RESOLVED_ARTIFACT_FILENAME } from "./tenant-bundle.js";
 
 const MODEL_CARD_SUFFIX = ".model-card.json";
 const DEFAULT_BENCHMARK_PROTOCOL_PATH =
@@ -560,6 +561,58 @@ const buildFormalVerificationSection = (
   };
 };
 
+const buildCustomerBundleSection = (
+  artifacts: ReadonlyMap<AuditDossierManifestArtifactKind, ResolvedArtifact>,
+): NonNullable<AuditDossierManifest["customerBundle"]> | undefined => {
+  const artifact = artifacts.get("tenant_bundle_resolved");
+  if (artifact === undefined) return undefined;
+  const root = artifact.json;
+  const bundle = isRecord(root["bundle"]) ? root["bundle"] : undefined;
+  if (bundle === undefined) return undefined;
+  const tenantId = coerceString(bundle["tenantId"]) ?? "unknown";
+  const bundleVersion = coerceString(bundle["bundleVersion"]) ?? "0.0.0";
+  const inheritsFromPolicyProfile =
+    coerceString(bundle["inheritsFromPolicyProfile"]) ?? "unknown";
+  const contentHash = coerceString(bundle["contentHash"]) ?? "";
+  const riskClassOverrideCount = Array.isArray(bundle["riskClassTaxonomy"])
+    ? bundle["riskClassTaxonomy"].length
+    : 0;
+  const complianceHouseStandardCount = Array.isArray(
+    bundle["complianceHouseStandards"],
+  )
+    ? bundle["complianceHouseStandards"].length
+    : 0;
+  const designSystemTokenCount = Array.isArray(bundle["designSystemTokens"])
+    ? bundle["designSystemTokens"].length
+    : 0;
+  const terminologyGlossaryCount = Array.isArray(bundle["terminologyGlossary"])
+    ? bundle["terminologyGlossary"].length
+    : 0;
+  const hasNamingConvention = isRecord(bundle["testCaseNamingConvention"]);
+  const hasCustomerEvalRubricRef = isRecord(bundle["customerEvalRubric"]);
+  const appliedOverridesRaw = Array.isArray(root["appliedOverrides"])
+    ? root["appliedOverrides"]
+    : [];
+  const appliedOverrides = appliedOverridesRaw
+    .map((value) => coerceString(value))
+    .filter((value): value is string => value !== undefined)
+    .sort((a, b) => a.localeCompare(b));
+  return {
+    filename: artifact.filename,
+    tenantId,
+    bundleVersion,
+    inheritsFromPolicyProfile,
+    contentHash,
+    riskClassOverrideCount,
+    complianceHouseStandardCount,
+    designSystemTokenCount,
+    terminologyGlossaryCount,
+    hasNamingConvention,
+    hasCustomerEvalRubricRef,
+    appliedOverrides,
+  };
+};
+
 const buildRegionAttestationTable = (
   artifacts: ReadonlyMap<AuditDossierManifestArtifactKind, ResolvedArtifact>,
 ): NonNullable<AuditDossierManifest["regionAttestations"]> => {
@@ -769,6 +822,33 @@ export const generateAuditDossier = async (
     });
   }
 
+  // Issue #2184 — tenant-bundle-resolved artifact. Optional: runs
+  // without `--tenant-bundle` keep the dossier shape stable.
+  const tenantBundleResolvedPath = join(
+    runDir,
+    TENANT_BUNDLE_RESOLVED_ARTIFACT_FILENAME,
+  );
+  const tenantBundleResolvedExists = await stat(tenantBundleResolvedPath)
+    .then(() => true)
+    .catch(() => false);
+  if (tenantBundleResolvedExists) {
+    const bytes = await readFile(tenantBundleResolvedPath);
+    const json = JSON.parse(bytes.toString("utf8")) as unknown;
+    if (!isRecord(json)) {
+      throw new Error(
+        `${TENANT_BUNDLE_RESOLVED_ARTIFACT_FILENAME} must contain a JSON object.`,
+      );
+    }
+    resolvedArtifacts.set("tenant_bundle_resolved", {
+      kind: "tenant_bundle_resolved",
+      filename: TENANT_BUNDLE_RESOLVED_ARTIFACT_FILENAME,
+      absolutePath: tenantBundleResolvedPath,
+      bytes,
+      json,
+      sha256: sha256Hex(bytes),
+    });
+  }
+
   const provenanceArtifact = resolvedArtifacts.get("provenance")!;
   const provenance = provenanceArtifact.json as unknown as ProvenanceDocument &
     Record<string, unknown>;
@@ -841,6 +921,10 @@ export const generateAuditDossier = async (
     ...(() => {
       const fv = buildFormalVerificationSection(resolvedArtifacts);
       return fv === undefined ? {} : { formalVerification: fv };
+    })(),
+    ...(() => {
+      const bundle = buildCustomerBundleSection(resolvedArtifacts);
+      return bundle === undefined ? {} : { customerBundle: bundle };
     })(),
     ...(await (async () => {
       const refitDir =

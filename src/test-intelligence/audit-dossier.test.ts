@@ -350,6 +350,79 @@ test("audit-dossier: embeds the self-improving calibration refit history when pr
   }
 });
 
+test("audit-dossier: embeds the resolved tenant bundle when present (Issue #2184)", async () => {
+  const tempDir = await mkdtemp(
+    path.join(os.tmpdir(), "audit-dossier-tenant-bundle-"),
+  );
+  const runDir = path.join(tempDir, "run");
+  await cp(acceptedRunDir, runDir, { recursive: true });
+  // Stage a minimal resolved-bundle artifact under the run directory.
+  // The dossier should detect it and emit the customerBundle summary.
+  const resolved = {
+    schemaVersion: "1.0.0",
+    bundle: {
+      schemaVersion: "1.0.0",
+      tenantId: "acme-bank",
+      bundleVersion: "1.0.0",
+      inheritsFromPolicyProfile: "eu-banking-default",
+      riskClassTaxonomy: [
+        {
+          riskCategory: "regulated_data",
+          customerLabel: "BAIT-Sensitive",
+          mode: "review_only",
+        },
+      ],
+      complianceHouseStandards: [
+        { clauseId: "HS-AB-001", description: "Anti-fraud trace required" },
+      ],
+      designSystemTokens: [],
+      terminologyGlossary: [
+        { term: "Buchung", definition: "Booking record", locale: "de" },
+      ],
+      testCaseNamingConvention: { id: "TC-{module}-{nnn}" },
+      contentHash: "a".repeat(64),
+    },
+    appliedOverrides: ["rules.reviewOnlyRiskCategories"],
+    certification:
+      "tenant bundle merged against base policy profile under hard allow-list and safety-floor invariants",
+  };
+  await writeFile(
+    path.join(runDir, "tenant-bundle-resolved.json"),
+    `${canonicalJson(resolved)}\n`,
+    "utf8",
+  );
+  const outDir = path.join(tempDir, "out");
+  try {
+    const result = await generateAuditDossier({
+      runDir,
+      outputDir: outDir,
+      signKeyPath: signingKeyPath,
+      ...fixedMetadata,
+    });
+    const customerBundle = result.manifest.customerBundle;
+    assert.notEqual(customerBundle, undefined);
+    assert.equal(customerBundle?.tenantId, "acme-bank");
+    assert.equal(customerBundle?.inheritsFromPolicyProfile, "eu-banking-default");
+    assert.equal(customerBundle?.riskClassOverrideCount, 1);
+    assert.equal(customerBundle?.complianceHouseStandardCount, 1);
+    assert.equal(customerBundle?.terminologyGlossaryCount, 1);
+    assert.equal(customerBundle?.hasNamingConvention, true);
+    assert.deepEqual(customerBundle?.appliedOverrides, [
+      "rules.reviewOnlyRiskCategories",
+    ]);
+    assert.ok(
+      result.manifest.sourceArtifacts.some(
+        (a) => a.filename === "tenant-bundle-resolved.json",
+      ),
+    );
+    // Bundle is the only customer-specific section the renderer adds —
+    // the PDF page count grows when the new heading is rendered.
+    assert.ok(result.manifest.bundle.pdfSha256.length > 0);
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("audit-dossier: manifest excludes raw prompts and screenshots", async () => {
   const manifest = JSON.parse(
     await readFile(`${bundlePrefix}.json`, "utf8"),

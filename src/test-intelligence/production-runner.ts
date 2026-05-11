@@ -110,6 +110,7 @@ import {
   type TestIntentSourceRef,
   type TestCaseLevel,
   type TestCasePolicyGateResult,
+  type TestCasePolicyProfile,
   type TestCasePolicyProfileRules,
   type TestCasePolicyReport,
   type TestCasePriority,
@@ -251,6 +252,19 @@ import {
   type CustomerProfileInput,
   type CustomerProfileIssue,
 } from "./customer-profile-input.js";
+import {
+  TENANT_BUNDLE_RESOLVED_ARTIFACT_FILENAME,
+  TenantBundleBaseProfileMismatchError,
+  TenantBundleSafetyFloorViolationError,
+  buildTenantBundleGlossaryEntries,
+  parseAndCanonicalizeTenantBundle,
+  resolveTenantBundle,
+  serializeResolvedTenantBundle,
+  type CanonicalTenantBundle,
+  type ResolvedTenantBundle,
+  type TenantBundleInput,
+  type TenantBundleIssue,
+} from "./tenant-bundle.js";
 import { computeSourceMixPlanHash } from "./source-mix-planner.js";
 import {
   CUSTOM_CONTEXT_MARKDOWN_SOURCE_ID,
@@ -476,6 +490,7 @@ export const PRODUCTION_RUNNER_FAILURE_CLASSES = [
   "FINOPS_BUDGET_INVALID",
   "CUSTOM_CONTEXT_MARKDOWN_INVALID",
   "CUSTOMER_PROFILE_INVALID",
+  "TENANT_BUNDLE_INVALID",
   "NEGATIVE_CASE_LIFT_BELOW_THRESHOLD",
 ] as const;
 
@@ -1174,6 +1189,26 @@ export interface RunFigmaToQcTestCasesInput {
    */
   customerProfile?: CustomerProfileInput;
   /**
+   * Optional tenant bundle (Issue #2184). When supplied the runner:
+   *  - Parses + canonicalizes the bundle (PII redaction, allow-list,
+   *    deterministic sort) before any LLM call.
+   *  - Asserts the bundle's `tenantId` matches the active `TenantScope`
+   *    (multi-tenant isolation, Issue #2176) — mismatch crashes the
+   *    run with `TenantIsolationViolation`.
+   *  - Resolves the bundle against the active policy profile, applying
+   *    additive overrides (e.g. extending `reviewOnlyRiskCategories`)
+   *    while honouring the hard safety-floor invariants.
+   *  - Persists `tenant-bundle-resolved.json` alongside the other
+   *    artifacts so audit replay can reconstruct the merge.
+   *  - Merges the bundle's `terminologyGlossary` into the
+   *    customer-profile glossary that already flows into the prompt
+   *    compiler's `[5] CustomerDomainContext` section.
+   *
+   * A malformed or policy-violating bundle fails the job fast with
+   * `TENANT_BUNDLE_INVALID`.
+   */
+  tenantBundle?: TenantBundleInput;
+  /**
    * Optional provenance for role deployment resolution. The runner uses
    * this when building `agent-participation.json` so summaries can
    * distinguish CLI overrides, env defaults, built-in defaults, and
@@ -1279,6 +1314,8 @@ export interface RunFigmaToQcTestCasesResult {
     adversarialCriticTrace?: string;
     logicJudgeCompiledPrompt?: string;
     customerEvalRubric?: string;
+    /** Issue #2184 — resolved tenant-bundle artifact path. */
+    tenantBundleResolved?: string;
     faithfulnessJudgeCompiledPrompt?: string;
     a11yJudgeVerdict?: string;
     untrustedContentNormalizationReport: string;
@@ -2889,7 +2926,9 @@ export const runFigmaToQcTestCases = async (
     input.policyProfileId.length > 0
       ? input.policyProfileId
       : EU_BANKING_DEFAULT_POLICY_PROFILE_ID;
-  const customerRubric =
+  let customerRubric:
+    | TestCasePolicyProfile
+    | { id: string; version: string; description: string } =
     policyProfileId === EU_BANKING_DEFAULT_POLICY_PROFILE_ID
       ? cloneEuBankingDefaultProfile()
       : {
@@ -2897,6 +2936,23 @@ export const runFigmaToQcTestCases = async (
           version: "runtime",
           description: `Policy profile ${policyProfileId}`,
         };
+  // Issue #2184 — resolve the optional tenant bundle against the active
+  // policy profile. The resolver is deep-clone safe; the merged profile
+  // replaces `customerRubric` so downstream gates pick up the additive
+  // overrides (e.g. extended `reviewOnlyRiskCategories`). The active
+  // `TenantScope` cross-check happens inside `assertTenantBundleScope`.
+  const canonicalTenantBundle = parseTenantBundleInput(input.tenantBundle);
+  const baseProfileForBundle =
+    canonicalTenantBundle !== undefined && "rules" in customerRubric
+      ? (customerRubric as TestCasePolicyProfile)
+      : undefined;
+  const resolvedTenantBundle = resolveTenantBundleAgainstProfile(
+    canonicalTenantBundle,
+    baseProfileForBundle,
+  );
+  if (resolvedTenantBundle !== undefined) {
+    customerRubric = resolvedTenantBundle.mergedPolicyProfile;
+  }
   const policyProfileRules =
     "rules" in customerRubric ? customerRubric.rules : undefined;
   const policyProfileHash = createHash("sha256")
@@ -3068,6 +3124,7 @@ export const runFigmaToQcTestCases = async (
   const compiledCustomContext = buildCompiledCustomContext(
     customContextMarkdown,
     canonicalCustomerProfile,
+    resolvedTenantBundle,
   );
   // Build a source-mix plan whenever we have either custom markdown context or
   // a customer profile with glossary / few-shot content, so the [5]
@@ -3078,7 +3135,11 @@ export const runFigmaToQcTestCases = async (
       (canonicalCustomerProfile.glossary.length > 0 ||
         canonicalCustomerProfile.fewShotExamples.length > 0 ||
         canonicalCustomerProfile.riskTaxonomyOverrides.length > 0 ||
-        canonicalCustomerProfile.policyOverrides.length > 0));
+        canonicalCustomerProfile.policyOverrides.length > 0)) ||
+    (resolvedTenantBundle !== undefined &&
+      (resolvedTenantBundle.bundle.terminologyGlossary.length > 0 ||
+        resolvedTenantBundle.bundle.riskClassTaxonomy.length > 0 ||
+        resolvedTenantBundle.bundle.testCaseNamingConvention !== undefined));
   const compiledSourceMixPlan = hasCustomDomainContext
     ? buildFigmaWithCustomMarkdownSourceMixPlan({
         figmaSourceContentHash,
@@ -5063,6 +5124,10 @@ export const runFigmaToQcTestCases = async (
     customerEvalRubric === undefined
       ? undefined
       : join(artifactDir, "customer-eval-rubric.json");
+  const tenantBundleResolvedPath =
+    resolvedTenantBundle === undefined
+      ? undefined
+      : join(artifactDir, TENANT_BUNDLE_RESOLVED_ARTIFACT_FILENAME);
   const logicJudgeCompiledPromptPath = join(
     artifactDir,
     LOGIC_JUDGE_COMPILED_PROMPT_ARTIFACT_FILENAME,
@@ -5308,6 +5373,12 @@ export const runFigmaToQcTestCases = async (
           markdownContentHash: customerEvalRubric.markdownContentHash,
           plainContentHash: customerEvalRubric.plainContentHash,
         });
+  const tenantBundleResolvedBytes =
+    resolvedTenantBundle === undefined
+      ? undefined
+      : new TextEncoder().encode(
+          serializeResolvedTenantBundle(resolvedTenantBundle),
+        );
   const logicJudgeCompiledPromptBytes = encodeCanonicalJson(
     logicJudgeResult.promptArtifact,
   );
@@ -5406,6 +5477,15 @@ export const runFigmaToQcTestCases = async (
       customerEvalRubricBytes === undefined
         ? []
         : [writeAtomicBytes(customerEvalRubricPath, customerEvalRubricBytes)]),
+      ...(tenantBundleResolvedPath === undefined ||
+      tenantBundleResolvedBytes === undefined
+        ? []
+        : [
+            writeAtomicBytes(
+              tenantBundleResolvedPath,
+              tenantBundleResolvedBytes,
+            ),
+          ]),
       writeAtomicBytes(
         logicJudgeCompiledPromptPath,
         logicJudgeCompiledPromptBytes,
@@ -6002,6 +6082,15 @@ export const runFigmaToQcTestCases = async (
             category: "intent" as const,
           },
         ]),
+    ...(tenantBundleResolvedBytes === undefined
+      ? []
+      : [
+          {
+            filename: TENANT_BUNDLE_RESOLVED_ARTIFACT_FILENAME,
+            bytes: tenantBundleResolvedBytes,
+            category: "intent" as const,
+          },
+        ]),
     {
       filename: LOGIC_JUDGE_COMPILED_PROMPT_ARTIFACT_FILENAME,
       bytes: logicJudgeCompiledPromptBytes,
@@ -6515,6 +6604,9 @@ export const runFigmaToQcTestCases = async (
       compiledPrompt: compiledPromptPath,
       ...(customerEvalRubricPath !== undefined
         ? { customerEvalRubric: customerEvalRubricPath }
+        : {}),
+      ...(tenantBundleResolvedPath !== undefined
+        ? { tenantBundleResolved: tenantBundleResolvedPath }
         : {}),
       coveragePlan: coveragePlanPath,
       workflowTopology: workflowTopologyPath,
@@ -8973,6 +9065,7 @@ const resolveCustomerEvalRubric = (
 const buildCompiledCustomContext = (
   markdown: ResolvedCustomContextMarkdown | undefined,
   profile: CanonicalCustomerProfile | undefined,
+  tenantBundle: ResolvedTenantBundle | undefined,
 ): CompiledPromptCustomContext | undefined => {
   const markdownSections: CompiledPromptCustomContext["markdownSections"] = [];
 
@@ -8994,10 +9087,83 @@ const buildCompiledCustomContext = (
     }
   }
 
+  if (tenantBundle !== undefined) {
+    const bundleMarkdown = renderTenantBundleAsMarkdown(tenantBundle);
+    if (bundleMarkdown !== undefined) {
+      markdownSections.push(bundleMarkdown);
+    }
+  }
+
   if (markdownSections.length === 0) {
     return undefined;
   }
   return { markdownSections, structuredAttributes: [] };
+};
+
+const TENANT_BUNDLE_SOURCE_ID = "tenant-bundle" as const;
+
+/**
+ * Render the prompt-relevant subset of a resolved tenant bundle as a
+ * deterministic Markdown section (Issue #2184). The terminology
+ * glossary is the primary customer-visible benefit: it teaches the
+ * generator the customer's preferred terms (e.g. "Buchung" instead of
+ * "Transaktion"). Risk-class taxonomy overrides surface the customer's
+ * naming for the wire categories. Naming convention is captured
+ * verbatim so the generator can echo the customer's case-id template.
+ */
+const renderTenantBundleAsMarkdown = (
+  bundle: ResolvedTenantBundle,
+): CompiledPromptCustomContext["markdownSections"][number] | undefined => {
+  const lines: string[] = [];
+  const glossary = buildTenantBundleGlossaryEntries(bundle.bundle);
+  if (glossary.length > 0) {
+    lines.push("## Customer Terminology");
+    for (const entry of glossary) {
+      lines.push(`- **${entry.term}**: ${entry.definition}`);
+    }
+    lines.push("");
+  }
+  if (bundle.bundle.riskClassTaxonomy.length > 0) {
+    lines.push("## Customer Risk-Class Labels");
+    for (const override of bundle.bundle.riskClassTaxonomy) {
+      const modeSuffix =
+        override.mode === "review_only" ? " (escalates to review)" : "";
+      lines.push(
+        `- ${override.riskCategory} → ${override.customerLabel}${modeSuffix}`,
+      );
+    }
+    lines.push("");
+  }
+  if (bundle.bundle.testCaseNamingConvention !== undefined) {
+    const conv = bundle.bundle.testCaseNamingConvention;
+    lines.push("## Test-Case Naming Convention");
+    lines.push(`- id: ${conv.id}`);
+    if (conv.template !== undefined) lines.push(`- template: ${conv.template}`);
+    if (conv.description !== undefined)
+      lines.push(`- description: ${conv.description}`);
+    lines.push("");
+  }
+  if (lines.length === 0) return undefined;
+  const bodyMarkdown = lines.join("\n").trimEnd();
+  const bodyPlain = bodyMarkdown
+    .replaceAll(/\*\*/g, "")
+    .replaceAll(/^#+ /gmu, "")
+    .replaceAll(/^- /gmu, "")
+    .replaceAll(/\s+\n/g, "\n");
+  const markdownHash = createHash("sha256")
+    .update(bodyMarkdown, "utf8")
+    .digest("hex");
+  const plainHash = createHash("sha256")
+    .update(bodyPlain, "utf8")
+    .digest("hex");
+  return {
+    sourceId: TENANT_BUNDLE_SOURCE_ID,
+    entryId: bundle.bundle.contentHash,
+    bodyMarkdown,
+    bodyPlain,
+    markdownContentHash: markdownHash,
+    plainContentHash: plainHash,
+  };
 };
 
 const CUSTOMER_PROFILE_SOURCE_ID = "customer-profile" as const;
@@ -9126,6 +9292,56 @@ const resolveCustomerProfile = (
     });
   }
   return result.profile;
+};
+
+/**
+ * Parse and canonicalize the optional tenant-bundle input (Issue #2184).
+ * Throws {@link ProductionRunnerError} with `TENANT_BUNDLE_INVALID` on
+ * any schema, allow-list, or canonicalization failure.
+ */
+const parseTenantBundleInput = (
+  raw: TenantBundleInput | undefined,
+): CanonicalTenantBundle | undefined => {
+  if (raw === undefined) return undefined;
+  const result = parseAndCanonicalizeTenantBundle(JSON.stringify(raw));
+  if (!result.ok) {
+    const msgs = result.issues
+      .map((i: TenantBundleIssue) => `${i.path}: ${i.message}`)
+      .join("; ");
+    throw new ProductionRunnerError({
+      failureClass: "TENANT_BUNDLE_INVALID",
+      message: `tenantBundle rejected: ${msgs}`,
+      retryable: false,
+    });
+  }
+  return result.bundle;
+};
+
+/**
+ * Resolve a parsed tenant bundle against the active policy profile
+ * (deep-clone safe) and translate any safety-floor / base-profile
+ * mismatch into a {@link ProductionRunnerError}.
+ */
+const resolveTenantBundleAgainstProfile = (
+  bundle: CanonicalTenantBundle | undefined,
+  baseProfile: TestCasePolicyProfile | undefined,
+): ResolvedTenantBundle | undefined => {
+  if (bundle === undefined || baseProfile === undefined) return undefined;
+  try {
+    return resolveTenantBundle({ bundle, baseProfile });
+  } catch (err) {
+    if (
+      err instanceof TenantBundleBaseProfileMismatchError ||
+      err instanceof TenantBundleSafetyFloorViolationError
+    ) {
+      throw new ProductionRunnerError({
+        failureClass: "TENANT_BUNDLE_INVALID",
+        message: `tenantBundle rejected: ${err.message}`,
+        retryable: false,
+      });
+    }
+    throw err;
+  }
 };
 
 const PRODUCTION_RUNNER_FIGMA_PRIMARY_SOURCE_ID =

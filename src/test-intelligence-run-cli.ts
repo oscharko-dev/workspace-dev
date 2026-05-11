@@ -67,6 +67,7 @@ import type {
 } from "./contracts/index.js";
 import {
   MAX_CUSTOMER_PROFILE_BYTES,
+  MAX_TENANT_BUNDLE_BYTES,
   MAX_FIGMA_PAYLOAD_BYTES,
   MAX_FIGMA_PAYLOAD_BYTES_CEILING,
   PRODUCTION_RUNNER_HARNESS_MODES,
@@ -74,6 +75,7 @@ import {
   ProductionRunnerError,
   generateAuditDossier,
   parseAndCanonicalizeCustomerProfile,
+  parseAndCanonicalizeTenantBundle,
   runFigmaToQcTestCases,
   resolveAuditDossierDefaults,
   validateFinOpsBudgetEnvelope,
@@ -85,6 +87,7 @@ import {
   type SealVerificationReport,
   type AgentHarnessTestDepth,
   type CustomerProfileInput,
+  type TenantBundleInput,
   type FigmaRestNode,
   type ProductionRunnerHarnessConfig,
   type ProductionRunnerHarnessMode,
@@ -431,6 +434,17 @@ export interface TestIntelligenceRunOptions {
    */
   customerProfilePath: string | undefined;
   /**
+   * Path to an optional JSON file (Issue #2184) conforming to the
+   * `TenantBundleInput` schema (BYO-rubric / BYO-guidelines). The CLI
+   * enforces a hard 256 KiB size cap and rejects the file with exit
+   * code 1 if the JSON is invalid, contains unknown top-level fields,
+   * or violates the resolver's hard safety floors. When supplied, the
+   * runner emits `tenant-bundle-resolved.json` alongside the other
+   * artifacts so the audit dossier and replay paths can reconstruct
+   * the effective merged config without re-reading the source file.
+   */
+  tenantBundlePath?: string | undefined;
+  /**
    * Optional dedicated deployment for the accessibility-judge role
    * (Issue #1996). When unset, the runner keeps the deterministic-only
    * accessibility path unless an env default is present.
@@ -600,6 +614,7 @@ export const parseTestIntelligenceRunArgs = (
   let customerEvalMarkdownPath: string | undefined;
   let showConfidence = false;
   let customerProfilePath: string | undefined;
+  let tenantBundlePath: string | undefined;
   let diversityPasses: 1 | 2 | 3 = 1;
   let complianceFrameworks: readonly ComplianceFrameworkId[] | undefined;
   let coverageBaselineArchetype: string | undefined;
@@ -1066,6 +1081,23 @@ export const parseTestIntelligenceRunArgs = (
       continue;
     }
 
+    if (arg === "--tenant-bundle") {
+      const value = next?.trim();
+      if (!value) {
+        throw new TestIntelligenceRunOperatorError(
+          "--tenant-bundle requires a non-empty file path",
+        );
+      }
+      if (tenantBundlePath !== undefined) {
+        throw new TestIntelligenceRunOperatorError(
+          "--tenant-bundle may be specified at most once",
+        );
+      }
+      tenantBundlePath = value;
+      index += 1;
+      continue;
+    }
+
     if (arg === "--coverage-baseline-archetype") {
       const value = next?.trim();
       if (!value) {
@@ -1192,6 +1224,7 @@ export const parseTestIntelligenceRunArgs = (
       : {}),
     ...(showConfidence ? { showConfidence: true } : {}),
     customerProfilePath,
+    ...(tenantBundlePath !== undefined ? { tenantBundlePath } : {}),
     a11yJudgeDeployment,
     diversityPasses,
     coverageBaseline: {
@@ -2025,6 +2058,14 @@ export interface TestIntelligenceRunRuntime {
    * inject a deterministic loader to avoid touching the disk.
    */
   loadCustomerProfileFile?: (filePath: string) => Promise<string>;
+  /**
+   * Override the loader for `--tenant-bundle` files (Issue #2184). Same
+   * I/O discipline as `--customer-profile`: 256 KiB hard cap enforced
+   * by `stat` before read; rejects non-files and oversize inputs with
+   * `TestIntelligenceRunOperatorError`. Tests inject a deterministic
+   * loader to avoid touching the disk.
+   */
+  loadTenantBundleFile?: (filePath: string) => Promise<string>;
   /** Wall-clock provider for deterministic job ids in tests. */
   now?: () => number;
   /**
@@ -3285,6 +3326,43 @@ const defaultLoadCustomerProfileFile = async (
   return readFile(filePath, "utf8");
 };
 
+/**
+ * Default `--tenant-bundle` loader (Issue #2184). Same I/O discipline
+ * as the customer-profile loader: stats the file first to enforce the
+ * {@link MAX_TENANT_BUNDLE_BYTES} hard cap before any bytes land in
+ * the Node Buffer pool.
+ */
+const defaultLoadTenantBundleFile = async (
+  filePath: string,
+): Promise<string> => {
+  let stats: Awaited<ReturnType<typeof stat>>;
+  try {
+    stats = await stat(filePath);
+  } catch (err) {
+    if (
+      typeof err === "object" &&
+      err !== null &&
+      (err as { code?: string }).code === "ENOENT"
+    ) {
+      throw new TestIntelligenceRunOperatorError(
+        `--tenant-bundle file not found: ${filePath}`,
+      );
+    }
+    throw err;
+  }
+  if (!stats.isFile()) {
+    throw new TestIntelligenceRunOperatorError(
+      `--tenant-bundle path is not a regular file: ${filePath}`,
+    );
+  }
+  if (stats.size > MAX_TENANT_BUNDLE_BYTES) {
+    throw new TestIntelligenceRunOperatorError(
+      `--tenant-bundle file exceeds ${MAX_TENANT_BUNDLE_BYTES} bytes (got ${stats.size}); shrink the bundle`,
+    );
+  }
+  return readFile(filePath, "utf8");
+};
+
 interface ResolvedSource {
   source: ProductionRunnerSource;
   customerLabel?: string;
@@ -3699,6 +3777,8 @@ export const runTestIntelligenceCommand = async (
     defaultLoadCustomerEvalMarkdownFile;
   const loadCustomerProfileFile =
     runtime.loadCustomerProfileFile ?? defaultLoadCustomerProfileFile;
+  const loadTenantBundleFile =
+    runtime.loadTenantBundleFile ?? defaultLoadTenantBundleFile;
 
   const nowMs = now();
   const jobId = `ti-cli-${nowMs}`;
@@ -3888,6 +3968,39 @@ export const runTestIntelligenceCommand = async (
     customerProfileInput = JSON.parse(rawJson) as CustomerProfileInput;
   }
 
+  // Load `--tenant-bundle` (Issue #2184). Same discipline: 256 KiB cap
+  // enforced before read, JSON parsed immediately, schema validated.
+  // The runner re-canonicalizes through its own pipeline, so we forward
+  // the raw parsed object here and let the runner reject any drift.
+  let tenantBundleInput: TenantBundleInput | undefined;
+  let tenantBundleRawBytes = 0;
+  if (options.tenantBundlePath !== undefined) {
+    const absolutePath = resolve(options.tenantBundlePath);
+    let rawJson: string;
+    try {
+      rawJson = await loadTenantBundleFile(absolutePath);
+    } catch (err) {
+      if (err instanceof TestIntelligenceRunOperatorError) {
+        sink.stderr(`error: ${err.message}\n`);
+        return 1;
+      }
+      sink.stderr(
+        `error: failed to read --tenant-bundle file: ${sanitizeErrorMessage({ error: err, fallback: "filesystem failure" })}\n`,
+      );
+      return 1;
+    }
+    tenantBundleRawBytes = Buffer.byteLength(rawJson, "utf8");
+    const bundleParse = parseAndCanonicalizeTenantBundle(rawJson);
+    if (!bundleParse.ok) {
+      const msgs = bundleParse.issues
+        .map((i) => `${i.path}: ${i.message}`)
+        .join("; ");
+      sink.stderr(`error: --tenant-bundle file is invalid: ${msgs}\n`);
+      return 1;
+    }
+    tenantBundleInput = JSON.parse(rawJson) as TenantBundleInput;
+  }
+
   const runtimeMode =
     options.mode === "offline_eval" ? "deterministic_llm" : options.mode;
   if (options.mode === "offline_eval") {
@@ -3940,6 +4053,7 @@ export const runTestIntelligenceCommand = async (
         `  custom md ctx : ${customContextMarkdownBody !== undefined ? `loaded (${Buffer.byteLength(customContextMarkdownBody, "utf8")} bytes)` : "(none)"}`,
         `  customer eval : ${customerEvalMarkdownBody !== undefined ? `loaded (${Buffer.byteLength(customerEvalMarkdownBody, "utf8")} bytes)` : "(none)"}`,
         `  customer prof : ${customerProfileInput !== undefined ? `loaded (${customerProfileRawBytes} bytes)` : "(none)"}`,
+        `  tenant bundle : ${tenantBundleInput !== undefined ? `loaded (${tenantBundleRawBytes} bytes)` : "(none)"}`,
         "",
       ].join("\n"),
     );
@@ -4048,6 +4162,9 @@ export const runTestIntelligenceCommand = async (
     ...(options.showConfidence === true ? { showConfidence: true } : {}),
     ...(customerProfileInput !== undefined
       ? { customerProfile: customerProfileInput }
+      : {}),
+    ...(tenantBundleInput !== undefined
+      ? { tenantBundle: tenantBundleInput }
       : {}),
     ...(options.diversityPasses > 1
       ? {

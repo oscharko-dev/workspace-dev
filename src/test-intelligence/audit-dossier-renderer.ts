@@ -185,6 +185,32 @@ const buildPdfLines = (manifest: AuditDossierManifest): PdfLine[] => {
     lines.push({ text: "", font: "regular", size: BODY_FONT_SIZE });
   }
 
+  if (manifest.customerBundle !== undefined) {
+    const cb = manifest.customerBundle;
+    pushHeading(lines, "Customer-Specific Configuration");
+    pushWrapped(
+      lines,
+      `${cb.filename}: tenant=${cb.tenantId} version=${cb.bundleVersion} inherits=${cb.inheritsFromPolicyProfile} contentHash=${cb.contentHash}`,
+    );
+    pushWrapped(
+      lines,
+      `terminology=${cb.terminologyGlossaryCount} risk-class-labels=${cb.riskClassOverrideCount} house-standards=${cb.complianceHouseStandardCount} design-tokens=${cb.designSystemTokenCount}`,
+    );
+    pushWrapped(
+      lines,
+      `naming-convention=${cb.hasNamingConvention ? "yes" : "no"} customer-eval-rubric-ref=${cb.hasCustomerEvalRubricRef ? "yes" : "no"}`,
+    );
+    if (cb.appliedOverrides.length > 0) {
+      pushWrapped(
+        lines,
+        `applied-overrides: ${cb.appliedOverrides.join(", ")}`,
+      );
+    } else {
+      pushWrapped(lines, "applied-overrides: (none — additive surfaces only)");
+    }
+    lines.push({ text: "", font: "regular", size: BODY_FONT_SIZE });
+  }
+
   if (manifest.selfImprovingCalibrationRefitHistory !== undefined) {
     const refit = manifest.selfImprovingCalibrationRefitHistory;
     pushHeading(lines, "Self-Improving Calibration Refit History");
