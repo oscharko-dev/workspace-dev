@@ -1046,7 +1046,7 @@ export interface RunFigmaToQcTestCasesInput {
   llm: ProductionRunnerLlmConfig;
   /**
    * Optional override for the maximum Figma REST payload accepted by the
-   * runner. Defaults to {@link MAX_FIGMA_PAYLOAD_BYTES} (10 MiB) which is
+   * runner. Defaults to {@link MAX_FIGMA_PAYLOAD_BYTES} (128 MiB) which is
    * defensive enough for synthetic fixtures and the live-E2E lane but too
    * tight for real Banking-scale design files (the customer's Test-View-03
    * frame ships ~28 MiB of REST JSON on its own). Operators with vetted
@@ -7133,7 +7133,7 @@ const resolveFigmaPayloadCap = (override: number | undefined): number => {
   if (override > MAX_FIGMA_PAYLOAD_BYTES_CEILING) {
     throw new ProductionRunnerError({
       failureClass: "FIGMA_URL_REJECTED",
-      message: `maxFigmaPayloadBytes ${override} exceeds the security hard ceiling of ${MAX_FIGMA_PAYLOAD_BYTES_CEILING} bytes (64 MiB).`,
+      message: `maxFigmaPayloadBytes ${override} exceeds the security hard ceiling of ${MAX_FIGMA_PAYLOAD_BYTES_CEILING} bytes (128 MiB).`,
       retryable: false,
     });
   }

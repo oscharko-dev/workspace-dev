@@ -583,7 +583,9 @@ test("parseTestIntelligenceRunArgs: visual and a11y deployment flags override en
 
 test("parseTestIntelligenceRunArgs: --require-multi-agent-topology and env WORKSPACE_TEST_SPACE_REQUIRE_MULTI_AGENT_TOPOLOGY=1 hydrate strict mode (Issue #1993)", (t) => {
   if (!issue1993TopologyPreflightSupported) {
-    t.skip("Issue #1993 topology strict-mode support is not present in this CLI");
+    t.skip(
+      "Issue #1993 topology strict-mode support is not present in this CLI",
+    );
     return;
   }
 
@@ -663,12 +665,10 @@ test("parseTestIntelligenceDoctorArgs: env defaults flow into doctor options", (
     WORKSPACE_TEST_SPACE_LOGIC_JUDGE_DEPLOYMENT: "gpt-oss-120b",
     WORKSPACE_TEST_SPACE_COVERAGE_PLANNER_DEPLOYMENT: "phi-4-mini-instruct",
     WORKSPACE_TEST_SPACE_RISK_RANKER_DEPLOYMENT: "phi-4",
-    WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT:
-      "llama-4-maverick-vision",
+    WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT: "llama-4-maverick-vision",
     WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT:
       "phi-4-multimodal-instruct",
-    WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT:
-      "phi-4-multimodal-instruct",
+    WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT: "phi-4-multimodal-instruct",
   });
   assert.equal(options.modelDeployment, "mistral-large-3");
   assert.equal(options.logicJudgeDeployment, "gpt-oss-120b");
@@ -735,18 +735,21 @@ test("parseTestIntelligenceDoctorArgs: CLI overrides doctor deployment defaults"
 
 test("runTestIntelligenceDoctorCommand: intended topology exits 0 with only ok statuses", async () => {
   const { sink, stdout, stderr } = collectingSink();
-  const exitCode = await runTestIntelligenceDoctorCommand(baseDoctorOptions(), sink, {
-    env: {
-      WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT:
-        "llama-4-maverick-vision",
-      WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT:
-        "phi-4-multimodal-instruct",
-      WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT:
-        "phi-4-multimodal-instruct",
-      WORKSPACE_TEST_SPACE_MODEL_ENDPOINT: "https://aoai.example/openai/v1",
-      WORKSPACE_TEST_SPACE_LLM_API_KEY: "secret-key",
+  const exitCode = await runTestIntelligenceDoctorCommand(
+    baseDoctorOptions(),
+    sink,
+    {
+      env: {
+        WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT:
+          "llama-4-maverick-vision",
+        WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT:
+          "phi-4-multimodal-instruct",
+        WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT: "phi-4-multimodal-instruct",
+        WORKSPACE_TEST_SPACE_MODEL_ENDPOINT: "https://aoai.example/openai/v1",
+        WORKSPACE_TEST_SPACE_LLM_API_KEY: "secret-key",
+      },
     },
-  });
+  );
 
   assert.equal(exitCode, 0);
   assert.equal(stderr.join(""), "");
@@ -958,17 +961,12 @@ test("parseTestIntelligenceRunArgs: --harness-max-repair-iterations rejects non-
 // --max-figma-payload-bytes (Issue #2172)
 // ---------------------------------------------------------------------------
 
-const FIGMA_PAYLOAD_CEILING_BYTES = 64 * 1024 * 1024;
-const FIGMA_PAYLOAD_DEFAULT_BYTES = 10 * 1024 * 1024;
+const FIGMA_PAYLOAD_CEILING_BYTES = 128 * 1024 * 1024;
+const FIGMA_PAYLOAD_DEFAULT_BYTES = 128 * 1024 * 1024;
 
 test("parseTestIntelligenceRunArgs: --max-figma-payload-bytes is undefined when omitted (soft default)", () => {
   const opts = parseTestIntelligenceRunArgs(
-    [
-      "--figma-url",
-      "https://figma.com/design/abc",
-      "--output",
-      "/tmp/x",
-    ],
+    ["--figma-url", "https://figma.com/design/abc", "--output", "/tmp/x"],
     {},
   );
   assert.equal(opts.maxFigmaPayloadBytes, undefined);
@@ -1004,7 +1002,7 @@ test("parseTestIntelligenceRunArgs: --max-figma-payload-bytes accepts a 32 MiB t
   assert.equal(opts.maxFigmaPayloadBytes, 33554432);
 });
 
-test("parseTestIntelligenceRunArgs: --max-figma-payload-bytes accepts the 64 MiB ceiling exactly", () => {
+test("parseTestIntelligenceRunArgs: --max-figma-payload-bytes accepts the 128 MiB ceiling exactly", () => {
   const opts = parseTestIntelligenceRunArgs(
     [
       "--figma-url",
@@ -1036,7 +1034,7 @@ test("parseTestIntelligenceRunArgs: --max-figma-payload-bytes rejects 1 byte abo
     (err: unknown) =>
       err instanceof TestIntelligenceRunOperatorError &&
       /security hard ceiling/u.test(err.message) &&
-      /67108864/u.test(err.message),
+      new RegExp(String(FIGMA_PAYLOAD_CEILING_BYTES)).test(err.message),
   );
 });
 
@@ -1065,12 +1063,7 @@ test("parseTestIntelligenceRunArgs: WORKSPACE_TEST_SPACE_MAX_FIGMA_PAYLOAD_BYTES
   assert.throws(
     () =>
       parseTestIntelligenceRunArgs(
-        [
-          "--figma-url",
-          "https://figma.com/design/abc",
-          "--output",
-          "/tmp/x",
-        ],
+        ["--figma-url", "https://figma.com/design/abc", "--output", "/tmp/x"],
         {
           WORKSPACE_TEST_SPACE_MAX_FIGMA_PAYLOAD_BYTES: String(
             FIGMA_PAYLOAD_CEILING_BYTES + 1,
@@ -1085,12 +1078,7 @@ test("parseTestIntelligenceRunArgs: WORKSPACE_TEST_SPACE_MAX_FIGMA_PAYLOAD_BYTES
 
 test("parseTestIntelligenceRunArgs: WORKSPACE_TEST_SPACE_MAX_FIGMA_PAYLOAD_BYTES env override at ceiling is accepted", () => {
   const opts = parseTestIntelligenceRunArgs(
-    [
-      "--figma-url",
-      "https://figma.com/design/abc",
-      "--output",
-      "/tmp/x",
-    ],
+    ["--figma-url", "https://figma.com/design/abc", "--output", "/tmp/x"],
     {
       WORKSPACE_TEST_SPACE_MAX_FIGMA_PAYLOAD_BYTES: String(
         FIGMA_PAYLOAD_CEILING_BYTES,
@@ -1596,7 +1584,7 @@ test("runTestIntelligenceCommand: deterministic_llm blocked + --allow-policy-blo
       ({}) as unknown as ReturnType<
         Required<
           Parameters<typeof runTestIntelligenceCommand>[2]
-      >["buildLlmClient"]
+        >["buildLlmClient"]
       >,
     loadFigmaJsonFile: async () => ({
       fileKey: "abc",
@@ -1959,10 +1947,7 @@ test("buildLiveVisualSidecarBundle: CLI deployment overrides beat env defaults (
   );
 
   assert.equal(bundle.visualPrimary.deployment, "llama-4-maverick-vision");
-  assert.equal(
-    bundle.visualFallback.deployment,
-    "phi-4-multimodal-instruct",
-  );
+  assert.equal(bundle.visualFallback.deployment, "phi-4-multimodal-instruct");
   assert.equal(bundle.a11yJudge?.deployment, "phi-4-multimodal-instruct");
 });
 
@@ -2235,7 +2220,9 @@ test("runTestIntelligenceCommand: legacy behavior stays unchanged when strict to
       },
       buildLlmClient: () =>
         ({}) as unknown as ReturnType<
-          Required<Parameters<typeof runTestIntelligenceCommand>[2]>["buildLlmClient"]
+          Required<
+            Parameters<typeof runTestIntelligenceCommand>[2]
+          >["buildLlmClient"]
         >,
       loadFigmaJsonFile: async () => ({
         fileKey: "abc",
@@ -2278,9 +2265,7 @@ test("runTestIntelligenceCommand: strict preflight writes sanitized topology rep
   );
   const { sink, stderr, stdout } = collectingSink();
   let capturedRiskRanker: unknown;
-  let capturedRoleConfigurationSources:
-    | Record<string, string>
-    | undefined;
+  let capturedRoleConfigurationSources: Record<string, string> | undefined;
   const exitCode = await runTestIntelligenceCommand(
     {
       ...baseOptions(),
@@ -3092,7 +3077,10 @@ test("runTestIntelligenceCommand: --tenant-bundle schema error surfaces all issu
     ...baseOptions(),
     tenantBundlePath: "/bad/bundle.json",
   };
-  const invalidJson = JSON.stringify({ tenantId: "BAD ID", bundleVersion: "x" });
+  const invalidJson = JSON.stringify({
+    tenantId: "BAD ID",
+    bundleVersion: "x",
+  });
   const exitCode = await runTestIntelligenceCommand(options, sink, {
     env: GATE_ON,
     loadTenantBundleFile: async () => invalidJson,
@@ -3337,11 +3325,7 @@ test("parseTestIntelligenceRunArgs: --coverage-baseline-update without --coverag
   assert.throws(
     () =>
       parseTestIntelligenceRunArgs(
-        [
-          "--figma-json-file",
-          "/tmp/x.json",
-          "--coverage-baseline-update",
-        ],
+        ["--figma-json-file", "/tmp/x.json", "--coverage-baseline-update"],
         {},
       ),
     /requires --coverage-baseline-archetype/,
@@ -3418,7 +3402,9 @@ test("runTestIntelligenceAuditVerifyCommand: returns 0 for the fixture bundle", 
 });
 
 test("runTestIntelligenceAuditVerifyCommand: invalid manifest shape returns exit 2 instead of throwing", async () => {
-  const tempDir = await mkdtemp(path.join(os.tmpdir(), "ti-audit-cli-invalid-"));
+  const tempDir = await mkdtemp(
+    path.join(os.tmpdir(), "ti-audit-cli-invalid-"),
+  );
   const { sink, stdout, stderr } = collectingSink();
   try {
     const bundlePath = path.join(tempDir, "bundle.json");
@@ -3717,9 +3703,8 @@ test("extractSealBundleArchive: refuses tar archives that contain symlinks", asy
       `tar -czf ${JSON.stringify(archive)} -C ${JSON.stringify(stage)} .`,
       { stdio: "ignore" },
     );
-    const { extractSealBundleArchive } = await import(
-      "./test-intelligence-run-cli.js"
-    );
+    const { extractSealBundleArchive } =
+      await import("./test-intelligence-run-cli.js");
     let thrown: unknown;
     try {
       const ex = await extractSealBundleArchive(archive);
