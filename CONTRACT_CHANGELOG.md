@@ -1249,6 +1249,12 @@ removed or renamed.
 
 ## [4.66.0] - 2026-05-10
 
+### Documentation-only addendum (Issue #2128 — DP budget TypeDoc link hygiene)
+
+- Replaced unresolved TypeDoc inline links in the Issue #2128 DP budget
+  comments with plain code references. Runtime contracts, exported
+  symbols, schema versions, and migration semantics are unchanged.
+
 ### Added (Issue #2181 — formal-verification pilot)
 
 - New test-intelligence runtime constants exported from

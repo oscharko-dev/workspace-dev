@@ -6646,7 +6646,7 @@ export const DP_BUDGET_DEFAULT_PER_TOKEN_EPSILON = 1e-4 as const;
 export const DP_BUDGET_DEFAULT_DELTA_PER_JOB = 1e-6 as const;
 
 /**
- * Issue #2128 — closed list of decisions {@link applyDpCharge} can return.
+ * Issue #2128 — closed list of decisions `applyDpCharge` can return.
  * Adding a member is an additive minor bump.
  */
 export const ALLOWED_DP_BUDGET_DECISIONS = [
@@ -6689,11 +6689,11 @@ export interface TrainingInfluenceDpBudgetConfig {
 
 /**
  * Issue #2128 — durable per-tenant accounting state. The harness reads
- * this before each job, calls {@link applyDpCharge}, and persists the
+ * this before each job, calls `applyDpCharge`, and persists the
  * returned `newState` for the next job. `cycleId` is opaque to the
  * accountant — operators advance it on their preferred cadence (per
  * day, per quarter, per audit window) by calling
- * {@link resetTenantDpBudgetCycle}.
+ * `resetTenantDpBudgetCycle`.
  */
 export interface TenantDpBudgetState {
   readonly schemaVersion: typeof DP_BUDGET_CONSUMED_MANIFEST_SCHEMA_VERSION;
