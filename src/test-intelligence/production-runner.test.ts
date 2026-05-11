@@ -842,13 +842,19 @@ test("Issue #1992: runFigmaToQcTestCases records degraded_success when the visua
       generation: { diversityPasses: 1 },
     });
 
-    assert.equal(result.blocked, true);
-    assert.equal(result.runQuality.artifact.status, "blocked_failure");
+    // Epic #2167 Q1 follow-up (2026-05-11): the W5-1 (screen, trigger)
+    // aggregation removes the validator over-fire that previously made
+    // this scenario `blocked_failure` even on a successful visual-sidecar
+    // fallback. The test's intent (visual sidecar timeout → fallback
+    // recovery surfaces as `degraded_success`) is unchanged; the
+    // `blocked_failure` assertion was capturing the over-fire bug.
+    assert.equal(result.blocked, false);
+    assert.equal(result.runQuality.artifact.status, "degraded_success");
     assert.equal(result.runQuality.artifact.repairState, "none");
     const runQuality = JSON.parse(
       await readFile(result.artifactPaths.runQuality, "utf8"),
     ) as RunQualityArtifact;
-    assert.equal(runQuality.status, "blocked_failure");
+    assert.equal(runQuality.status, "degraded_success");
     assert.equal(
       runQuality.attemptSummaries.find(
         (entry) => entry.stage === "visual_sidecar",
@@ -2688,8 +2694,15 @@ test("runFigmaToQcTestCases runs both judges, persists their artifacts, and keep
     assert.equal(judgeConsensusOnDisk.verdict, "accept");
     assert.equal(logicJudgeOnDisk.verdict, "accept");
     assert.equal(faithfulnessJudgeOnDisk.verdict, "accept");
-    assert.equal(result.runQuality.artifact.status, "blocked_failure");
-    assert.equal(runQualityOnDisk.status, "blocked_failure");
+    // Epic #2167 Q1 follow-up (2026-05-11): the W5-1 (screen, trigger)
+    // aggregation eliminates the field-lifecycle-validator over-fire
+    // that previously turned this happy path into `blocked_failure` via
+    // 30-50 spurious `uncovered_field_lifecycle_transition` errors. With
+    // the over-fire fixed and judges accepting, the run is now genuinely
+    // `clean_success` — matching the test name ("keeps the job
+    // unblocked on the happy path").
+    assert.equal(result.runQuality.artifact.status, "clean_success");
+    assert.equal(runQualityOnDisk.status, "clean_success");
     assert.equal(runQualityOnDisk.repairState, "none");
     assert.equal(
       path.basename(result.artifactPaths.runQuality),
@@ -3946,8 +3959,13 @@ test("Issue #1992: fallback-recovered visual sidecar runs surface degraded_succe
     const visualSummary = result.runQuality.artifact.attemptSummaries.find(
       (summary) => summary.stage === "visual_sidecar",
     );
-    assert.equal(result.blocked, true);
-    assert.equal(result.runQuality.artifact.status, "blocked_failure");
+    // Epic #2167 Q1 follow-up (2026-05-11): the W5-1 (screen, trigger)
+    // aggregation removes the validator over-fire that previously
+    // turned this fallback-recovery scenario into `blocked_failure`.
+    // The test name ("...surface degraded_success WITHOUT BLOCKING
+    // output") matches the corrected post-fix behaviour.
+    assert.equal(result.blocked, false);
+    assert.equal(result.runQuality.artifact.status, "degraded_success");
     assert.equal(visualSummary?.finalOutcome, "degraded");
     assert.equal(visualSummary?.attempts, 2);
   } finally {
