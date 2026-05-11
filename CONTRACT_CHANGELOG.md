@@ -31,6 +31,32 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [1.44.4] - 2026-05-11
+
+Test-only addendum to **Issue #2167** Epic close-out: three scenario-named
+regression pins in `finops-budget.test.ts`, `technique-quota.test.ts`, and
+`field-lifecycle-transition-tier.test.ts` that guard the W5-1 / W5-2 / W5-4
+coefficients against silently regressing to their pre-fix values. No
+runtime behaviour changes; the test pins exist so a future contributor who
+flips a coefficient back gets a failure named after the production scenario
+(T7l7 / xr6Nf / LATyw) rather than an abstract value-pin. AC #2 / AC #3
+close-out continues to depend on a benchmark re-run against current `dev`
+(tracked under Issue #2224).
+
+### Added (Issue #2167 — P0-scenario regression guards, tests only)
+
+- `src/test-intelligence/finops-budget.test.ts` — pin: T7l7 11-case
+  2-judge 1-adversarial visual run resolves wall-clock ≥ 200 000 ms.
+- `src/test-intelligence/technique-quota.test.ts` — pin: xr6Nf 32-field
+  screen resolves EP quota to exactly 24 via the fields≥30 / 0.75× tier.
+- `src/test-intelligence/field-lifecycle-transition-tier.test.ts` — pin:
+  `initial → validated|error|terminal` skip-state edges remain
+  `state_transition_test_only` (never `mandatory_negative_path`).
+
+### Migration
+
+None. Test-only addition.
+
 ## [1.44.3] - 2026-05-11
 
 Test-intelligence behavioural bump for **Issue #2167** (Epic closeout —
@@ -47,18 +73,16 @@ flipping any test red.
 
 ### Added (Issue #2167 — runner-hardening follow-up)
 
-- `src/test-intelligence/production-runner.ts`:
-    - `PRODUCTION_RUNNER_FAILURE_CLASSES` gains
-      `"HUMAN_REVIEW_CONFIG_INVALID"`. Raised before any FS I/O when
-      `humanReview.rootDir` is not a non-empty / non-whitespace string,
-      or when `humanReview.slaMs` is not a positive, finite, safe
-      integer ≤ 30 days. `retryable === false`.
-    - `enqueueHumanReview` / `getHumanReviewQueueItem` /
-      `buildHumanReviewLog` are now wrapped in a `try`/`catch` that
-      rethrows as `ProductionRunnerError{ failureClass: "PERSIST_FAILED",
+- `src/test-intelligence/production-runner.ts`: - `PRODUCTION_RUNNER_FAILURE_CLASSES` gains
+  `"HUMAN_REVIEW_CONFIG_INVALID"`. Raised before any FS I/O when
+  `humanReview.rootDir` is not a non-empty / non-whitespace string,
+  or when `humanReview.slaMs` is not a positive, finite, safe
+  integer ≤ 30 days. `retryable === false`. - `enqueueHumanReview` / `getHumanReviewQueueItem` /
+  `buildHumanReviewLog` are now wrapped in a `try`/`catch` that
+  rethrows as `ProductionRunnerError{ failureClass: "PERSIST_FAILED",
 retryable: false, cause: err }`, so the request handler maps a
-      human-review I/O failure to the same envelope as every other
-      artifact-write failure.
+  human-review I/O failure to the same envelope as every other
+  artifact-write failure.
 
 ### Migration
 
