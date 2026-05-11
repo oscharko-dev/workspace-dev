@@ -27,7 +27,7 @@ test("integration: published docs and release workflow stay aligned on versionin
   assert.match(readmeDoc, /npm and GitHub Releases are the authoritative sources for published package versions/i);
 
   assert.match(versioningDoc, /npm and GitHub Releases are the authoritative sources for published package versions/i);
-  assert.match(versioningDoc, /checked-in `package\.json` version in `dev`, `dev-gate`, or `main` can lag the latest published package version/i);
+  assert.match(versioningDoc, /checked-in `package\.json` version in `dev` or `main` can lag the latest published package version/i);
   assert.match(versioningDoc, /`CHANGELOG\.md` tracks package release history\./);
   assert.match(versioningDoc, /`CONTRACT_CHANGELOG\.md` tracks public contract history and contract bump rules\./);
 

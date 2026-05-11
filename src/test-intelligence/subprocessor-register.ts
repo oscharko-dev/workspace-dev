@@ -11,7 +11,7 @@
  *
  * The register is the **source of truth**: the on-disk Markdown at
  * `docs/dora/subprocessor-register.md` is regenerated from this module
- * by `scripts/render-subprocessor-register.mjs` and a CI dev-gate
+ * by `scripts/render-subprocessor-register.mjs` and a CI quality gate
  * (`scripts/check-subprocessor-register.mjs`) fails the build if drift
  * is detected. Hand-edits to the Markdown are rejected.
  *
@@ -416,7 +416,7 @@ export const SUBPROCESSOR_REGISTER_DOC_LAST_REVIEWED =
  * artifact. Deterministic: identical input produces identical output.
  *
  * The output is the **only** acceptable content of
- * `docs/dora/subprocessor-register.md`; the dev-gate
+ * `docs/dora/subprocessor-register.md`; the quality gate
  * (`scripts/check-subprocessor-register.mjs`) refuses any drift.
  */
 export const renderSubprocessorRegisterMarkdown = (

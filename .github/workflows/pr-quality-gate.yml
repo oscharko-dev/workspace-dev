@@ -13,8 +13,8 @@ permissions:
   contents: read
 
 jobs:
-  dev-gate-summary:
-    name: dev-gate-summary
+  dev-summary:
+    name: dev-summary
     runs-on: ubuntu-22.04
     timeout-minutes: 45
     permissions:

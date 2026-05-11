@@ -204,7 +204,7 @@ test("docs: mode lock docs stay aligned with runtime constraints", async () => {
   }
   assert.match(contributingDoc, /feature branch from `dev`/);
   assert.match(contributingDoc, /PR targeting `dev`/);
-  assert.match(contributingDoc, /dev -> dev-gate -> main/);
+  assert.match(contributingDoc, /dev -> main/);
   assert.match(contributingDoc, /\[GOVERNANCE\.md\]\(GOVERNANCE\.md\)/);
   assert.match(contributingDoc, /## Adding new validated fields/);
   assert.match(contributingDoc, /allowedKeys/);
@@ -227,8 +227,7 @@ test("docs: mode lock docs stay aligned with runtime constraints", async () => {
   assert.match(packProfileContract, /"GOVERNANCE\.md"/);
   assert.match(readmeDoc, /## Repository branch flow/i);
   assert.match(readmeDoc, /`dev` is the active development branch/i);
-  assert.match(readmeDoc, /`dev-gate` is the protected quality gate branch/i);
-  assert.match(readmeDoc, /`main` is the release branch/i);
+  assert.match(readmeDoc, /`main` is the protected deployment and release branch/i);
   assert.match(readmeDoc, /\[GOVERNANCE\.md\]\(GOVERNANCE\.md\)/);
   assert.match(readmeDoc, /`THREAT_MODEL\.md`/);
   assert.match(

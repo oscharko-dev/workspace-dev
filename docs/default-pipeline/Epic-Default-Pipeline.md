@@ -41,7 +41,7 @@ Die folgenden Punkte wurden aus den öffentlich zugänglichen Projektartefakten 
 WorkspaceDev ist laut README ein **autonomous local Workspace runtime** für deterministische Figma-to-Code-Generierung über REST, lokale JSON-Dateien oder Inline-Paste/Plugin-Payloads. Das Paket läuft direkt als Dev-Dependency im Kundenprojekt und benötigt nicht den vollständigen Workspace-Backend-Stack.  
 Quelle: [WorkspaceDev README](https://github.com/oscharko-dev/workspace-dev/blob/dev/README.md)
 
-Das Repository beschreibt als aktive Branch-Struktur: `dev` für Feature-Entwicklung, `dev-gate` als geschützte Quality-Gate-Branch und `main` als Release-Branch.  
+Das Repository beschreibt als aktive Branch-Struktur: `dev` für Feature-Entwicklung und `main` als geschützte Deployment-/Release-Branch.
 Quelle: [WorkspaceDev README](https://github.com/oscharko-dev/workspace-dev/blob/dev/README.md)
 
 Die aktuelle Pipeline ist laut `PIPELINE.md` eine deterministische lokale Figma-to-Code-Pipeline mit sieben Stages:
