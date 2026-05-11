@@ -85,6 +85,7 @@ jobs:
   performance-web:
     runs-on: ubuntu-latest
     continue-on-error: true
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
@@ -108,18 +109,24 @@ jobs:
         run: pnpm --dir template/react-mui-app run build
 
       - name: Capture web performance baseline (warn-only)
+        timeout-minutes: 12
         env:
           FIGMAPIPE_PERF_ARTIFACT_DIR: template/react-mui-app/artifacts/performance
           FIGMAPIPE_PERF_BASELINE_PATH: template/react-mui-app/artifacts/performance/perf-baseline.json
+          FIGMAPIPE_PERF_LIGHTHOUSE_MAX_ATTEMPTS: "1"
+          FIGMAPIPE_PERF_LIGHTHOUSE_TIMEOUT_MS: "60000"
           FIGMAPIPE_PERF_ROUTES_JSON: '["/","/overview","/checkout"]'
           FIGMAPIPE_PERF_PROFILES_JSON: '["mobile","desktop"]'
           FIGMAPIPE_PERF_STRICT: "false"
         run: pnpm --dir template/react-mui-app run perf:baseline
 
       - name: Assert web performance budgets and regression (warn-only)
+        timeout-minutes: 12
         env:
           FIGMAPIPE_PERF_ARTIFACT_DIR: template/react-mui-app/artifacts/performance
           FIGMAPIPE_PERF_BASELINE_PATH: template/react-mui-app/artifacts/performance/perf-baseline.json
+          FIGMAPIPE_PERF_LIGHTHOUSE_MAX_ATTEMPTS: "1"
+          FIGMAPIPE_PERF_LIGHTHOUSE_TIMEOUT_MS: "60000"
           FIGMAPIPE_PERF_ROUTES_JSON: '["/","/overview","/checkout"]'
           FIGMAPIPE_PERF_PROFILES_JSON: '["mobile","desktop"]'
           FIGMAPIPE_PERF_STRICT: "false"
@@ -167,7 +174,14 @@ jobs:
           if-no-files-found: ignore
 
   release:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: >-
+      ${{
+        always() &&
+        github.event_name == 'push' &&
+        github.ref == 'refs/heads/main' &&
+        needs.quality-matrix.result == 'success' &&
+        needs.mutation-testing.result == 'success'
+      }}
     runs-on: ubuntu-latest
     needs: [quality-matrix, performance-web, mutation-testing]
     steps:
