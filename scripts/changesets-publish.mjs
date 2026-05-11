@@ -61,6 +61,10 @@ const resolvePublishEnv = () => {
     // failures in CI while adding no additional release confidence.
     publishEnv.npm_config_ignore_scripts = "true";
     publishEnv.NPM_CONFIG_IGNORE_SCRIPTS = "true";
+    publishEnv.npm_config_access = "public";
+    publishEnv.NPM_CONFIG_ACCESS = "public";
+    publishEnv.npm_config_provenance = "true";
+    publishEnv.NPM_CONFIG_PROVENANCE = "true";
   }
 
   return publishEnv;
@@ -105,9 +109,6 @@ const main = async () => {
   await run("pnpm", [
     "changeset",
     "publish",
-    "--access",
-    "public",
-    "--provenance",
     "--tag",
     npmTag
   ], resolvePublishEnv());
