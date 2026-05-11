@@ -72,14 +72,21 @@ const S: FieldLifecycleTransitionTier = "state_transition_test_only";
  */
 export const FIELD_LIFECYCLE_TRANSITION_TIER_TABLE: ReadonlyArray<FieldLifecycleTransitionTierRow> =
   [
-    // Entry transitions out of `initial` are mandatory — every field must
-    // be entered at least once or no negative-path coverage is possible.
+    // Entry transitions: Wave-A audit follow-up (2026-05-11) — the
+    // previous classifier treated ALL `initial → X` edges as mandatory.
+    // P0 multi-dataset benchmark showed this over-fires (30-60 errors
+    // per run on LATyw/xr6Nf even after the tier-split) because the
+    // `initial → validated/error/terminal` "skip-state" transitions are
+    // unusual in practice (no realistic UI hops a field straight from
+    // empty to validated/error/terminal without passing through
+    // in_progress first). The tightened classification keeps the entry
+    // requirement enforceable but only on the realistic entry edge.
     { from: "initial", to: "initial", tier: S },
-    { from: "initial", to: "focused", tier: M },
-    { from: "initial", to: "in_progress", tier: M },
-    { from: "initial", to: "validated", tier: M },
-    { from: "initial", to: "error", tier: M },
-    { from: "initial", to: "terminal", tier: M },
+    { from: "initial", to: "focused", tier: R }, // was M — positive-path entry, demoted to recommended
+    { from: "initial", to: "in_progress", tier: M }, // unchanged — the realistic entry edge
+    { from: "initial", to: "validated", tier: S }, // was M — skip-state, only for state-transition test
+    { from: "initial", to: "error", tier: S }, // was M — skip-state, only for state-transition test
+    { from: "initial", to: "terminal", tier: S }, // was M — skip-state, only for state-transition test
 
     // From `focused`: typing into the field is the recommended positive
     // completion; everything else is a state-transition-test artifact

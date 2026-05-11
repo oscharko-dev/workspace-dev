@@ -400,21 +400,24 @@ test("field lifecycle transitions require step anchors and mandatory-tier covera
       (issue) => issue.code === "missing_field_lifecycle_transition",
     ),
   );
-  // Issue #2168 — only the three mandatory_negative_path transitions
-  // (initial→focused entry, in_progress→validated, in_progress→error) MUST
-  // still produce blocking errors.
+  // Wave-A audit follow-up (2026-05-11): only the two realistic
+  // validation-outcome transitions (in_progress→validated and
+  // in_progress→error) MUST produce blocking errors. The legacy
+  // initial→focused entry transition is demoted to recommended because
+  // P0 multi-dataset benchmarks showed it over-firing on real
+  // generator output that anchors via initial→in_progress instead.
   const errorTransitionIssues = report.issues.filter(
     (issue) => issue.code === "uncovered_field_lifecycle_transition",
   );
-  assert.equal(errorTransitionIssues.length, 3);
+  assert.equal(errorTransitionIssues.length, 2);
   assert.ok(errorTransitionIssues.every((issue) => issue.severity === "error"));
-  // The two recommended_positive_path transitions (focused→in_progress and
-  // validated→terminal) must surface as warnings, not errors.
+  // The three recommended_positive_path transitions (initial→focused,
+  // focused→in_progress, validated→terminal) must surface as warnings.
   const recommendedIssues = report.issues.filter(
     (issue) =>
       issue.code === "uncovered_field_lifecycle_transition_recommended",
   );
-  assert.equal(recommendedIssues.length, 2);
+  assert.equal(recommendedIssues.length, 3);
   assert.ok(recommendedIssues.every((issue) => issue.severity === "warning"));
 });
 
@@ -534,9 +537,7 @@ test("Issue #2168: state_transition_test_only transitions are silent unless a st
   });
   assert.equal(silentReport.blocked, false);
   assert.equal(
-    silentReport.issues.some((issue) =>
-      issue.message.includes("FLT-iban0099"),
-    ),
+    silentReport.issues.some((issue) => issue.message.includes("FLT-iban0099")),
     false,
     "state_transition_test_only transition must stay silent when no state_transition case is present",
   );
@@ -1015,7 +1016,7 @@ test("label-only unresolved validation references downgrade to clarification war
       {
         index: 1,
         action:
-          "Verifiziert, dass das Label \"Höhe des Kaufpreises (Netto)\" sichtbar ist.",
+          'Verifiziert, dass das Label "Höhe des Kaufpreises (Netto)" sichtbar ist.',
         expected: "Das Label ist sichtbar.",
       },
     ],
@@ -1106,10 +1107,7 @@ test("truncated repair instruction audit metadata surfaces as a warning", () => 
   );
   assert.ok(warning);
   assert.equal(warning.severity, "warning");
-  assert.equal(
-    warning.path,
-    "$.testCases[0].audit.truncatedInstructionCount",
-  );
+  assert.equal(warning.path, "$.testCases[0].audit.truncatedInstructionCount");
 });
 
 test("report carries deterministic shape stamps", () => {
