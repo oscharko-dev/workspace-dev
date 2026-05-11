@@ -485,17 +485,19 @@ export const PROMPT_MAX_FIELDS_PER_SCREEN = 60 as const;
 export const PROMPT_MAX_ACTIONS_PER_SCREEN = 30 as const;
 export const PROMPT_MAX_VALIDATIONS_PER_SCREEN = 30 as const;
 export const PROMPT_MAX_NAVIGATION_PER_SCREEN = 30 as const;
-export const MAX_FIGMA_PAYLOAD_BYTES: number = 10 * 1024 * 1024;
+export const MAX_FIGMA_PAYLOAD_BYTES: number = 128 * 1024 * 1024;
 
 /**
  * Hard ceiling for the {@link maxFigmaPayloadBytes} override (Issue #2172).
  * Operator-supplied caps above this value are rejected at both the CLI parse
  * site and the programmatic `resolveFigmaPayloadCap` validator (defense in
  * depth) to bound peak heap pressure when ingesting tier-1 banking masks.
- * Streaming larger payloads is tracked as a follow-up; until then 64 MiB is
- * the audited safe ceiling.
+ * Streaming larger payloads is tracked as a follow-up; until then 128 MiB is
+ * the audited safe ceiling — bumped from 64 MiB on 2026-05-11 after the
+ * larger end-to-end test fixtures (Test-View-03 etc.) exceeded the prior
+ * default.
  */
-export const MAX_FIGMA_PAYLOAD_BYTES_CEILING: number = 64 * 1024 * 1024;
+export const MAX_FIGMA_PAYLOAD_BYTES_CEILING: number = 128 * 1024 * 1024;
 
 /**
  * Stable failure-class enum surfaced to callers (request handler maps
