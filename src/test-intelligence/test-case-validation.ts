@@ -28,6 +28,8 @@ import {
   type TestCaseValidationIssueCode,
   type TestCaseValidationReport,
   type TestCaseValidationSeverity,
+  type WorkflowFieldLifecycleState,
+  type WorkflowFieldLifecycleTrigger,
   type WorkflowTopology,
 } from "../contracts/index.js";
 import {
@@ -420,6 +422,24 @@ const validateStepsSemantics = (
  *   `state_transition_test_only` transitions ONLY when the run carries
  *   at least one `technique === "state_transition"` test case;
  *   otherwise the transition is silently ignored.
+ *
+ * Epic #2167 Q0 follow-up (2026-05-11): mandatory tier coverage is
+ * aggregated at the `(screenId, trigger)` level rather than per
+ * `(field, transition)`. The previous per-instance check demanded one
+ * anchored test step for every (field × mandatory transition) pair,
+ * which is mathematically impossible on multi-section banking masks —
+ * a 31-field xr6Nf screen would need 62 anchored steps for full
+ * mandatory coverage while the generator's bounded test-case quota
+ * produces 20-25 steps. The ISO 29119 interpretation is that a
+ * validation pipeline is shared screen-level infrastructure: one test
+ * step exercising `validation_pass` on any field of the screen
+ * exercises the pipeline for all similar fields. The
+ * `(screen, trigger)` aggregation matches that semantic.
+ *
+ * The `recommended_positive_path` and `state_transition_test_only`
+ * tiers stay per-transition (they fire as warnings, so over-firing
+ * does not block the run, and per-transition granularity keeps the
+ * audit trail granular for non-mandatory paths).
  */
 const validateFieldLifecycleCoverage = (
   list: GeneratedTestCaseList,
@@ -431,7 +451,10 @@ const validateFieldLifecycleCoverage = (
     return;
   }
   const allTransitions = lifecycles.flatMap((lifecycle) =>
-    lifecycle.transitions.map((transition) => transition),
+    lifecycle.transitions.map((transition) => ({
+      transition,
+      fieldId: lifecycle.fieldId,
+    })),
   );
   if (allTransitions.length === 0) {
     return;
@@ -447,21 +470,61 @@ const validateFieldLifecycleCoverage = (
   const hasStateTransitionTestCase = list.testCases.some(
     (testCase) => testCase.technique === "state_transition",
   );
-  for (const transition of allTransitions) {
+  // Mandatory tier: aggregate by (screenId, trigger). One uncovered
+  // group → one error, not one per (field × transition) pair.
+  type MandatoryGroupKey = string;
+  type MandatoryGroup = {
+    readonly screenId: string;
+    readonly trigger: WorkflowFieldLifecycleTrigger;
+    readonly from: WorkflowFieldLifecycleState;
+    readonly to: WorkflowFieldLifecycleState;
+    readonly transitionIds: string[];
+  };
+  const mandatoryGroups = new Map<MandatoryGroupKey, MandatoryGroup>();
+  for (const { transition, fieldId } of allTransitions) {
+    const tier = classifyFieldLifecycleTransition(transition);
+    if (tier !== "mandatory_negative_path") continue;
+    const screenId = extractScreenIdFromFieldId(fieldId);
+    const key = `${screenId}::${transition.trigger}::${transition.from}::${transition.to}`;
+    const existing = mandatoryGroups.get(key);
+    if (existing === undefined) {
+      mandatoryGroups.set(key, {
+        screenId,
+        trigger: transition.trigger,
+        from: transition.from,
+        to: transition.to,
+        transitionIds: [transition.transitionId],
+      });
+    } else {
+      existing.transitionIds.push(transition.transitionId);
+    }
+  }
+  for (const group of mandatoryGroups.values()) {
+    const covered = group.transitionIds.some((id) =>
+      coveredTransitionIds.has(id),
+    );
+    if (covered) continue;
+    const transitionCount = group.transitionIds.length;
+    pushIssue(issues, {
+      path: "$.testCases",
+      code: "uncovered_field_lifecycle_transition",
+      severity: "error",
+      message:
+        `workflowTopology.fieldLifecycles screen "${group.screenId}" ` +
+        `mandatory_negative_path trigger "${group.trigger}" ` +
+        `(${group.from} → ${group.to}) has no anchored test case step ` +
+        `across ${transitionCount} field-lifecycle transition${transitionCount === 1 ? "" : "s"}: ` +
+        `${group.transitionIds.slice(0, 3).join(", ")}${transitionCount > 3 ? `, +${transitionCount - 3} more` : ""}`,
+    });
+  }
+  // Recommended-tier + state-transition tier stay per-transition
+  // (warnings only, granular audit trail).
+  for (const { transition } of allTransitions) {
     if (coveredTransitionIds.has(transition.transitionId)) {
       continue;
     }
     const tier = classifyFieldLifecycleTransition(transition);
     if (tier === "mandatory_negative_path") {
-      pushIssue(issues, {
-        path: "$.testCases",
-        code: "uncovered_field_lifecycle_transition",
-        severity: "error",
-        message:
-          `workflowTopology.fieldLifecycles transition "${transition.transitionId}" ` +
-          `(${transition.from} → ${transition.to}, trigger ${transition.trigger}) ` +
-          `is mandatory_negative_path and has no anchored test case step`,
-      });
       continue;
     }
     if (tier === "recommended_positive_path") {
@@ -490,6 +553,20 @@ const validateFieldLifecycleCoverage = (
         `(required because the run carries a state_transition technique case)`,
     });
   }
+};
+
+/**
+ * Extract the screen identifier from a {@link WorkflowFieldLifecycle.fieldId}.
+ *
+ * Convention (`action-topology-agent.ts`): `<screenId>::field::<nodeId>`.
+ * Falls back to the whole fieldId when the separator is missing, so legacy
+ * fixtures and non-Figma topologies degrade to per-field grouping (the
+ * pre-Q0 behaviour) instead of crashing.
+ */
+const extractScreenIdFromFieldId = (fieldId: string): string => {
+  const separator = "::field::";
+  const index = fieldId.indexOf(separator);
+  return index > 0 ? fieldId.slice(0, index) : fieldId;
 };
 
 const validateExpectedResults = (
