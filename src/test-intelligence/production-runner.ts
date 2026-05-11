@@ -51,6 +51,8 @@ import {
   EU_BANKING_DEFAULT_POLICY_PROFILE_ID,
   FAITHFULNESS_JUDGE_COMPILED_PROMPT_ARTIFACT_FILENAME,
   FAITHFULNESS_TIER_REPORT_ARTIFACT_FILENAME,
+  HUMAN_REVIEW_LOG_ARTIFACT_FILENAME,
+  HUMAN_REVIEW_QUEUE_ITEM_SCHEMA_VERSION,
   TECHNIQUE_QUOTA_REPORT_ARTIFACT_FILENAME,
   FAITHFULNESS_VERDICT_ARTIFACT_FILENAME,
   GENERATED_TESTCASES_ARTIFACT_FILENAME,
@@ -96,6 +98,7 @@ import {
   type GeneratedTestCaseFigmaTrace,
   type GeneratedTestCaseList,
   type GeneratedTestCaseStep,
+  type HumanReviewQueueItem,
   type LlmGatewayErrorClass,
   type LlmGenerationRequest,
   type LlmGenerationResult,
@@ -218,6 +221,11 @@ import type {
   ProductionRunnerEvent,
   ProductionRunnerEventSink,
 } from "./production-runner-events.js";
+import {
+  buildHumanReviewLog,
+  computeHumanReviewItemId,
+  enqueueHumanReview,
+} from "./human-review-queue.js";
 
 export type {
   ProductionRunnerEvent,
@@ -1347,6 +1355,21 @@ export interface RunFigmaToQcTestCasesInput {
      */
     readonly region?: string;
   };
+  /**
+   * Optional human-review queue configuration (Issue #2179).
+   *
+   * When the judge panel escalates to `needs_review`, the runner writes one
+   * job-level queue item under this root and emits a per-run
+   * `human-review-log.json` artifact so the audit dossier can replay the
+   * oversight trail from run artifacts alone.
+   *
+   * Omit `rootDir` to use
+   * `<outputRoot>/test-intelligence/human-review`. `slaMs` defaults to 24h.
+   */
+  humanReview?: {
+    readonly rootDir?: string;
+    readonly slaMs?: number;
+  };
 }
 
 export interface RunFigmaToQcTestCasesResult {
@@ -1405,6 +1428,7 @@ export interface RunFigmaToQcTestCasesResult {
      */
     carbonFootprintReport?: string;
     reviewEvents?: string;
+    humanReviewLog?: string;
     reviewState?: string;
     selfConsistencyReport?: string;
     /** Path to the per-step harness artifact when `harness.mode !== "off"`. */
@@ -5316,6 +5340,94 @@ export const runFigmaToQcTestCases = async (
     const confidenceSummary = summarizeCaseConfidenceDistribution(
       calibratedGeneratedTestCases,
     );
+    let humanReviewLogBytes: Buffer | undefined;
+    let humanReviewLogPath: string | undefined;
+    if (judgeConsensusDisposition.disposition === "needs_review") {
+      const reviewQueueRoot =
+        input.humanReview?.rootDir ??
+        join(input.outputRoot, "test-intelligence", "human-review");
+      const slaDeadlineAt = new Date(
+        Date.parse(input.generatedAt) +
+          (input.humanReview?.slaMs ?? 24 * 60 * 60 * 1000),
+      ).toISOString();
+      const disagreementJudges = judgeConsensusResult.panel.map((entry) => {
+        return {
+          judgeId: entry.judgeId,
+          family: entry.family ?? "openai",
+          modelId: entry.modelId ?? `${entry.judgeId}-unspecified`,
+          promptVersion: entry.promptVersion ?? `${entry.judgeId}-unspecified`,
+          region: entry.region ?? "global",
+          verdict: entry.verdict,
+        };
+      });
+      const voteCounts = countJudgeVotes(judgeConsensusResult);
+      const maxVoteCount = Math.max(
+        voteCounts.accept,
+        voteCounts.repair,
+        voteCounts.reject,
+      );
+      const disagreementSnapshot = {
+        decision:
+          judgeConsensusResult.agreementShape === "split"
+            ? "split_decision"
+            : judgeConsensusResult.agreementShape === "majority" ||
+                judgeConsensusResult.agreementShape === "vetoed"
+              ? "majority_decision"
+              : judgeConsensusResult.verdict === "accept"
+                ? "unanimous_accept"
+                : judgeConsensusResult.verdict === "reject"
+                  ? "unanimous_reject"
+                  : "unanimous_repair",
+        escalation: "human_review_required",
+        disagreementRate:
+          judgeConsensusResult.panel.length === 0
+            ? 0
+            : (judgeConsensusResult.panel.length - maxVoteCount) /
+              judgeConsensusResult.panel.length,
+        judges: disagreementJudges.sort((left, right) =>
+          left.judgeId.localeCompare(right.judgeId),
+        ),
+      } as const;
+      const humanReviewQueueItem = {
+        schemaVersion: HUMAN_REVIEW_QUEUE_ITEM_SCHEMA_VERSION,
+        contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+        itemId: computeHumanReviewItemId({
+          tenantId: tenantScope.tenantId,
+          runId: input.jobId,
+          testCaseId: JOB_LEVEL_TEST_CASE_ID,
+        }),
+        tenantId: tenantScope.tenantId,
+        profileId: validation.policy.policyProfileId,
+        runId: input.jobId,
+        testCaseId: JOB_LEVEL_TEST_CASE_ID,
+        judgeDisagreement: disagreementSnapshot,
+        proposedDecision: "needs_review",
+        enqueuedAt: input.generatedAt,
+        slaDeadlineAt,
+      } satisfies HumanReviewQueueItem;
+      await enqueueHumanReview(reviewQueueRoot, humanReviewQueueItem);
+      const humanReviewLog = await buildHumanReviewLog({
+        rootDir: reviewQueueRoot,
+        tenantId: humanReviewQueueItem.tenantId,
+        jobId: input.jobId,
+        generatedAt: input.generatedAt,
+        nowIso: input.generatedAt,
+      });
+      if (
+        humanReviewLog.items.length > 0 ||
+        humanReviewLog.verdicts.length > 0 ||
+        humanReviewLog.slaBreaches.length > 0
+      ) {
+        humanReviewLogBytes = Buffer.from(
+          `${canonicalJson(humanReviewLog)}\n`,
+          "utf8",
+        );
+        humanReviewLogPath = join(
+          artifactDir,
+          HUMAN_REVIEW_LOG_ARTIFACT_FILENAME,
+        );
+      }
+    }
     // Issue #2068 — per-run technique-quota report. Built upstream by the
     // validation pipeline when a CoveragePlan is supplied so reviewers
     // can audit the tier-elastic quota path even when the gate passes.
@@ -5718,6 +5830,9 @@ export const runFigmaToQcTestCases = async (
                 techniqueQuotaReportBytes,
               ),
             ]),
+        ...(humanReviewLogPath === undefined || humanReviewLogBytes === undefined
+          ? []
+          : [writeAtomicBytes(humanReviewLogPath, humanReviewLogBytes)]),
         ...(a11yJudgeVerdictPath === undefined ||
         a11yJudgeVerdictBytes === undefined
           ? []
@@ -6308,6 +6423,15 @@ export const runFigmaToQcTestCases = async (
         bytes: runQualityBytes,
         category: "manifest" as const,
       },
+      ...(humanReviewLogBytes === undefined
+        ? []
+        : [
+            {
+              filename: HUMAN_REVIEW_LOG_ARTIFACT_FILENAME,
+              bytes: humanReviewLogBytes,
+              category: "manifest" as const,
+            },
+          ]),
       ...(selfConsistencyWritten === undefined
         ? []
         : [
@@ -6867,6 +6991,9 @@ export const runFigmaToQcTestCases = async (
         finopsTimeSeriesStore: finopsTimeSeriesStorePath,
         ...(carbonFootprintArtifactPath !== undefined
           ? { carbonFootprintReport: carbonFootprintArtifactPath }
+          : {}),
+        ...(humanReviewLogPath !== undefined
+          ? { humanReviewLog: humanReviewLogPath }
           : {}),
         reviewEvents: join(
           artifactDir,
