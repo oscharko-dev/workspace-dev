@@ -4640,6 +4640,8 @@ Usage:
   workspace-dev test-intelligence review <list|get|decide> [options]
   workspace-dev test-intelligence calibration-refit [options]
   workspace-dev test-intelligence tms-push --run-dir <path> --tms <id> --project <id>
+  workspace-dev test-intelligence onboard --tenant-id <id> --legal-name <name> --policy-profile <id> --output-root <dir>
+  workspace-dev test-intelligence onboard --doctor --tenant-id <id> --output-root <dir>
 
 Run "workspace-dev test-intelligence run --help" for the live-run flags.
 Run "workspace-dev test-intelligence doctor --help" for the topology doctor flags.
@@ -4650,4 +4652,5 @@ Run "workspace-dev test-intelligence verify-seal --help" for self-contained seal
 Run "workspace-dev test-intelligence review --help" for the human-oversight queue (Issue #2179).
 Run "workspace-dev test-intelligence calibration-refit --help" for the self-improving calibration loop (Issue #2182).
 Run "workspace-dev test-intelligence tms-push --help" for the production-grade TMS adapters (Issue #2183).
+Run "workspace-dev test-intelligence onboard --help" for the self-service customer onboarding CLI (Issue #2185).
 `;
