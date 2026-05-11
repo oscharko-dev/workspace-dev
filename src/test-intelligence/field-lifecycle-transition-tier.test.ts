@@ -42,7 +42,9 @@ const ZERO_HASH =
   "0000000000000000000000000000000000000000000000000000000000000000";
 const GENERATED_AT = "2026-04-25T10:00:00.000Z";
 
-const buildIntent = (fieldIds: ReadonlyArray<string>): BusinessTestIntentIr => ({
+const buildIntent = (
+  fieldIds: ReadonlyArray<string>,
+): BusinessTestIntentIr => ({
   version: "1.0.0",
   source: { kind: "figma_local_json", contentHash: ZERO_HASH },
   screens: [
@@ -169,16 +171,15 @@ test("classifier table is exhaustive over the canonical 6-state lifecycle", () =
 });
 
 test("classifier matches the issue-spec mandatory_negative_path subset", () => {
-  // Per issue #2168: entry transitions, validation_pass and validation_fail
-  // are mandatory.
+  // Wave-A audit follow-up (2026-05-11): the mandatory subset is now the
+  // realistic entry edge (`initial → in_progress`) plus the two
+  // validation outcomes (`in_progress → validated/error`). The previous
+  // 7-pair classifier was over-firing on skip-state entries
+  // (`initial → validated/error/terminal`) that no production UI emits.
   const mandatoryPairs: ReadonlyArray<
     [WorkflowFieldLifecycleState, WorkflowFieldLifecycleState]
   > = [
-    ["initial", "focused"],
     ["initial", "in_progress"],
-    ["initial", "validated"],
-    ["initial", "error"],
-    ["initial", "terminal"],
     ["in_progress", "validated"],
     ["in_progress", "error"],
   ];
@@ -195,6 +196,7 @@ test("classifier matches the issue-spec recommended_positive_path subset", () =>
   const recommendedPairs: ReadonlyArray<
     [WorkflowFieldLifecycleState, WorkflowFieldLifecycleState]
   > = [
+    ["initial", "focused"], // Wave-A audit: demoted from mandatory
     ["focused", "in_progress"],
     ["focused", "validated"],
     ["focused", "error"],
@@ -247,9 +249,9 @@ const triggerArb = fc.constantFrom<WorkflowFieldLifecycleTrigger>(
   ...ALLOWED_WORKFLOW_FIELD_LIFECYCLE_TRIGGERS,
 );
 
-const transitionArb = (transitionId: string): fc.Arbitrary<
-  WorkflowFieldLifecycleTransition
-> =>
+const transitionArb = (
+  transitionId: string,
+): fc.Arbitrary<WorkflowFieldLifecycleTransition> =>
   fc.record({
     transitionId: fc.constant(transitionId),
     from: stateArb,
@@ -269,8 +271,9 @@ const lifecycleArb = (
     )
     .chain((rawIds) => {
       const ids = Array.from(new Set(rawIds));
-      return fc.tuple(...ids.map((id) => transitionArb(id))).map(
-        (transitions) => ({
+      return fc
+        .tuple(...ids.map((id) => transitionArb(id)))
+        .map((transitions) => ({
           fieldId: `s-payment::field::n-f${String(fieldIndex)}`,
           states: [
             "initial",
@@ -281,8 +284,7 @@ const lifecycleArb = (
             "terminal",
           ],
           transitions,
-        }),
-      );
+        }));
     });
 
 test("Issue #2168 property: only mandatory-tier transitions can produce severity:error", () => {
