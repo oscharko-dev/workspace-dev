@@ -31,6 +31,47 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [1.44.2] - 2026-05-11
+
+Test-intelligence behavioural bump for **Issue #2167** (Epic closeout /
+human-review production wiring). The human-oversight queue + decision
+surface from #2179 already existed as a standalone module and UI/API
+surface, but the production runner still did not emit the job-level
+queue item or the per-run `human-review-log.json` artifact when judge
+consensus escalated a run to `needs_review`. This release wires that
+oversight trail into the runner itself, makes the queue persistence
+replay-safe for repeated executions of the same logical job, and exposes
+the emitted log path on the runner result so downstream audit tooling can
+discover it from the canonical artifact manifest.
+
+### Added (Issue #2167 — production-runner human-review wiring)
+
+- `src/test-intelligence/production-runner.ts`:
+    - `RunFigmaToQcTestCasesInput.humanReview?` — optional runner config
+      block with:
+        - `rootDir?: string` — override for the human-review queue root
+          (defaults to `<outputRoot>/test-intelligence/human-review`).
+        - `slaMs?: number` — optional SLA override for newly-enqueued
+          review items (defaults to 24 hours).
+    - `RunFigmaToQcTestCasesResult.artifactPaths.humanReviewLog?` —
+      optional path to `<runDir>/human-review-log.json` when the runner
+      emitted the per-run oversight log.
+    - When `judgeConsensusDisposition === "needs_review"`, the runner now:
+        - persists a job-level `HumanReviewQueueItem` keyed by
+          `(tenantId, runId, "$job")`,
+        - reuses an existing queue item when the same logical job is
+          replayed,
+        - writes `human-review-log.json` into the run artifacts, and
+        - seals that log into the production-runner evidence manifest.
+
+### Migration
+
+None. The new `humanReview` input block and `artifactPaths.humanReviewLog`
+output are both optional. Existing callers keep their previous behaviour
+unless a run escalates to `needs_review`, in which case one additional
+artifact (`human-review-log.json`) may appear in the emitted manifest and
+artifact-path map.
+
 ## [1.44.1] - 2026-05-11
 
 Test-intelligence behavioural bump for **Issue #2168** (Tier-1 BaFin/EIOPA
