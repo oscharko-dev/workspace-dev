@@ -78,7 +78,7 @@ const buildModel = (): TestDesignModel => ({
 const buildEmptyAnchorCase = (): GeneratedTestCase => ({
   id: "tc-anchor-1",
   sourceJobId: JOB_ID,
-  contractVersion: "1.35.0",
+  contractVersion: "1.36.0",
   schemaVersion: "1.3.0",
   promptTemplateVersion: "1.7.1",
   title: "Submit loan",
@@ -107,7 +107,7 @@ const buildEmptyAnchorCase = (): GeneratedTestCase => ({
   audit: {
     jobId: JOB_ID,
     generatedAt: GENERATED_AT,
-    contractVersion: "1.35.0",
+    contractVersion: "1.36.0",
     schemaVersion: "1.3.0",
     promptTemplateVersion: "1.7.1",
     redactionPolicyVersion: "1.0.0",
