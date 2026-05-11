@@ -88,7 +88,7 @@ Persisted multimodal accessibility-judge verdict artifact.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.29.0"`
+> `readonly` **contractVersion**: `"1.39.0"`
 
 ##### criteria
 
@@ -367,7 +367,7 @@ Persisted, canonical-JSON, per-job repair-iteration log.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.29.0"`
+> `readonly` **contractVersion**: `"1.39.0"`
 
 ##### generatedAt
 
@@ -809,11 +809,215 @@ signed payload; the PDF is a human-readable rendering of this surface.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.29.0"`
+> `readonly` **contractVersion**: `"1.39.0"`
+
+##### customerBundle?
+
+> `readonly` `optional` **customerBundle?**: `object`
+
+Customer-specific configuration (Issue #2184). Populated only when
+the audit-dossier generator finds `tenant-bundle-resolved.json`
+under the run directory. Legacy runs that do not load a tenant
+bundle keep the dossier shape stable.
+
+###### appliedOverrides
+
+> `readonly` **appliedOverrides**: readonly `string`[]
+
+###### bundleVersion
+
+> `readonly` **bundleVersion**: `string`
+
+###### complianceHouseStandardCount
+
+> `readonly` **complianceHouseStandardCount**: `number`
+
+###### contentHash
+
+> `readonly` **contentHash**: `string`
+
+###### designSystemTokenCount
+
+> `readonly` **designSystemTokenCount**: `number`
+
+###### filename
+
+> `readonly` **filename**: `string`
+
+###### hasCustomerEvalRubricRef
+
+> `readonly` **hasCustomerEvalRubricRef**: `boolean`
+
+###### hasNamingConvention
+
+> `readonly` **hasNamingConvention**: `boolean`
+
+###### inheritsFromPolicyProfile
+
+> `readonly` **inheritsFromPolicyProfile**: `string`
+
+###### riskClassOverrideCount
+
+> `readonly` **riskClassOverrideCount**: `number`
+
+###### tenantId
+
+> `readonly` **tenantId**: `string`
+
+###### terminologyGlossaryCount
+
+> `readonly` **terminologyGlossaryCount**: `number`
+
+##### executionEvidenceLoop?
+
+> `readonly` `optional` **executionEvidenceLoop?**: `object`
+
+Test-execution evidence loop summary (Issue #2186, W8-4). Optional
+and additive: populated only when the dossier generator finds at
+least one persisted execution-evidence record under the per-tenant
+calibration corpus directory passed via
+`executionEvidenceCorpusDir`. Tenants that have not yet ingested
+TMS execution evidence keep the dossier shape stable.
+
+###### distinctSigningKeyFingerprints
+
+> `readonly` **distinctSigningKeyFingerprints**: readonly `string`[]
+
+###### earliestExecutedAt
+
+> `readonly` **earliestExecutedAt**: `string`
+
+###### latestExecutedAt
+
+> `readonly` **latestExecutedAt**: `string`
+
+###### reviewerConflictCounts
+
+> `readonly` **reviewerConflictCounts**: `object`
+
+###### reviewerConflictCounts.execution\_fail\_reviewer\_approved
+
+> `readonly` **execution\_fail\_reviewer\_approved**: `number`
+
+###### reviewerConflictCounts.execution\_pass\_reviewer\_rejected
+
+> `readonly` **execution\_pass\_reviewer\_rejected**: `number`
+
+###### tmsAdapterCounts
+
+> `readonly` **tmsAdapterCounts**: `Readonly`\<`Partial`\<`Record`\<`string`, `number`\>\>\>
+
+###### totalEvidence
+
+> `readonly` **totalEvidence**: `number`
+
+###### verdictCounts
+
+> `readonly` **verdictCounts**: `object`
+
+###### verdictCounts.blocked
+
+> `readonly` **blocked**: `number`
+
+###### verdictCounts.fail
+
+> `readonly` **fail**: `number`
+
+###### verdictCounts.pass
+
+> `readonly` **pass**: `number`
+
+###### verdictCounts.skipped
+
+> `readonly` **skipped**: `number`
+
+##### formalVerification?
+
+> `readonly` `optional` **formalVerification?**: `object`
+
+###### failCount
+
+> `readonly` **failCount**: `number`
+
+###### filename
+
+> `readonly` **filename**: `string`
+
+###### formulaCount
+
+> `readonly` **formulaCount**: `number`
+
+###### passCount
+
+> `readonly` **passCount**: `number`
+
+###### specCount
+
+> `readonly` **specCount**: `number`
+
+###### specs
+
+> `readonly` **specs**: readonly `object`[]
+
+###### verdict
+
+> `readonly` **verdict**: `"fail"` \| `"pass"`
 
 ##### generatedAt
 
 > `readonly` **generatedAt**: `string`
+
+##### localeCalibrationHealth?
+
+> `readonly` `optional` **localeCalibrationHealth?**: `object`
+
+Per-locale calibration health table (Issue #2188, W8-6).
+
+Optional and additive. Populated only when the dossier generator
+finds at least one per-locale Platt-curve fixture under
+`fixtures/test-intelligence/locale-calibration/<locale>/`.
+Reflects the `G13_LOCALE_CALIBRATION_HEALTHY` gate per locale so
+the audit-dossier renders a one-row-per-locale health summary
+alongside the existing self-improving-calibration refit history.
+
+Legacy runs that do not ship per-locale fixtures keep the dossier
+shape stable.
+
+###### failedLocales
+
+> `readonly` **failedLocales**: readonly `string`[]
+
+###### gateCode
+
+> `readonly` **gateCode**: `"G13_LOCALE_CALIBRATION_HEALTHY"`
+
+###### localeCount
+
+> `readonly` **localeCount**: `number`
+
+###### passedCount
+
+> `readonly` **passedCount**: `number`
+
+###### rows
+
+> `readonly` **rows**: readonly `object`[]
+
+###### thresholds
+
+> `readonly` **thresholds**: `object`
+
+###### thresholds.eceCeiling
+
+> `readonly` **eceCeiling**: `number`
+
+###### thresholds.kappaFloor
+
+> `readonly` **kappaFloor**: `number`
+
+###### thresholds.minimumSampleCount
+
+> `readonly` **minimumSampleCount**: `number`
 
 ##### provenance
 
@@ -854,6 +1058,38 @@ signed payload; the PDF is a human-readable rendering of this surface.
 ##### schemaVersion
 
 > `readonly` **schemaVersion**: `"1.0.0"`
+
+##### selfImprovingCalibrationRefitHistory?
+
+> `readonly` `optional` **selfImprovingCalibrationRefitHistory?**: `object`
+
+Self-improving judge-calibration refit history (Issue #2182).
+
+Optional and additive. Populated only when the audit-dossier
+generator finds at least one production curve OR proposal in
+`fixtures/test-intelligence/calibration-curves/`. Legacy runs that
+do not consume the calibration-curves fixtures keep the dossier
+shape stable.
+
+###### productionCurveCount
+
+> `readonly` **productionCurveCount**: `number`
+
+###### proposalCount
+
+> `readonly` **proposalCount**: `number`
+
+###### ratifiedCount
+
+> `readonly` **ratifiedCount**: `number`
+
+###### rolledBackCount
+
+> `readonly` **rolledBackCount**: `number`
+
+###### rows
+
+> `readonly` **rows**: readonly `object`[]
 
 ##### signing
 
@@ -983,7 +1219,7 @@ never raw prompts, screenshots, secrets, or PII-bearing payloads.
 
 ##### kind
 
-> `readonly` **kind**: `"model_card"` \| `"provenance"` \| `"compliance_coverage"` \| `"compliance_annotations"` \| `"judge_calibration"` \| `"locale_calibration"` \| `"inter_rater_agreement"` \| `"drift_baseline"` \| `"incident_log"` \| `"subprocessor_register"` \| `"region_attestations"` \| `"finops_budget"` \| `"faithfulness_tier"` \| `"self_consistency"` \| `"evidence_seal"` \| `"policy_report"` \| `"human_review_log"`
+> `readonly` **kind**: `"model_card"` \| `"provenance"` \| `"compliance_coverage"` \| `"compliance_annotations"` \| `"judge_calibration"` \| `"locale_calibration"` \| `"inter_rater_agreement"` \| `"drift_baseline"` \| `"incident_log"` \| `"subprocessor_register"` \| `"region_attestations"` \| `"finops_budget"` \| `"faithfulness_tier"` \| `"self_consistency"` \| `"evidence_seal"` \| `"policy_report"` \| `"human_review_log"` \| `"formal_verification_report"` \| `"tenant_bundle_resolved"`
 
 ##### sha256
 
@@ -1015,7 +1251,7 @@ One regulator/article row in the human-readable evidence table.
 
 ##### artifactKinds
 
-> `readonly` **artifactKinds**: readonly (`"model_card"` \| `"provenance"` \| `"compliance_coverage"` \| `"compliance_annotations"` \| `"judge_calibration"` \| `"locale_calibration"` \| `"inter_rater_agreement"` \| `"drift_baseline"` \| `"incident_log"` \| `"subprocessor_register"` \| `"region_attestations"` \| `"finops_budget"` \| `"faithfulness_tier"` \| `"self_consistency"` \| `"evidence_seal"` \| `"policy_report"` \| `"human_review_log"`)[]
+> `readonly` **artifactKinds**: readonly (`"model_card"` \| `"provenance"` \| `"compliance_coverage"` \| `"compliance_annotations"` \| `"judge_calibration"` \| `"locale_calibration"` \| `"inter_rater_agreement"` \| `"drift_baseline"` \| `"incident_log"` \| `"subprocessor_register"` \| `"region_attestations"` \| `"finops_budget"` \| `"faithfulness_tier"` \| `"self_consistency"` \| `"evidence_seal"` \| `"policy_report"` \| `"human_review_log"` \| `"formal_verification_report"` \| `"tenant_bundle_resolved"`)[]
 
 ##### notes
 
@@ -1227,7 +1463,7 @@ input set is byte-identical and the entries are sorted before write.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.29.0"`
+> `readonly` **contractVersion**: `"1.39.0"`
 
 ##### diffArtifactBasename?
 
@@ -1279,7 +1515,7 @@ Persisted case-merger artifact (Issue #1937).
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.29.0"`
+> `readonly` **contractVersion**: `"1.39.0"`
 
 ##### entries
 
@@ -1397,6 +1633,55 @@ of either side's `coveredFieldIds` / `coveredActionIds`.
 
 ***
 
+### CausalCoverageSummary
+
+Compact causal-coverage summary embedded into
+`policy-report.json#causalCoverage` (Issue #2180). Mirrors the
+top-level KPI fields from `causal-validation-report.json` so
+downstream consumers can read the headline ratio without parsing the
+full report. All fields are deterministic and round-trip stable.
+
+#### Properties
+
+##### artifactFilename
+
+> `readonly` **artifactFilename**: `"causal-validation-report.json"`
+
+Stable artifact filename auditors should consult for the full report.
+
+##### causalCoverageRatio
+
+> `readonly` **causalCoverageRatio**: `number`
+
+Causal-coverage ratio in `[0, 1]`, rounded to six digits to match
+the canonical-JSON contract. Defined as
+`(pairsGenerated - pairsViolated) / pairsGenerated`, i.e. the
+share of evaluated counterfactual pairs that satisfy their
+declared hypothesis. `0` when no pairs were generated.
+
+##### hypothesesEvaluated
+
+> `readonly` **hypothesesEvaluated**: `number`
+
+Number of distinct causal hypotheses evaluated for the run.
+
+##### pairsGenerated
+
+> `readonly` **pairsGenerated**: `number`
+
+Total counterfactual pairs generated across every hypothesis.
+
+##### pairsViolated
+
+> `readonly` **pairsViolated**: `number`
+
+Pairs whose embedded causal assertion was violated by the
+generated suite. A non-zero count signals a SUT-side bug surfaced
+by the counterfactual layer (the harness produced a pair that
+contradicts the declared hypothesis), not a harness fault.
+
+***
+
 ### CompactBoundaryLogEntry
 
 One persisted line in `compact-boundary-log.jsonl`. Carries only
@@ -1414,7 +1699,7 @@ Total bytes of cleared tool result blocks at the boundary.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.29.0"`
+> `readonly` **contractVersion**: `"1.39.0"`
 
 ##### jobId
 
@@ -1458,7 +1743,7 @@ Persisted, fully-redacted artifact form of a compiled prompt.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.29.0"`
+> **contractVersion**: `"1.39.0"`
 
 ##### hashes
 
@@ -2523,6 +2808,133 @@ Contributing sources (Issue #1431). Optional, additive.
 
 ***
 
+### DpBudgetCharge
+
+Issue #2128 — estimated per-job charge produced by
+`estimateJobDpCharge`. The values are deterministic functions of the
+inputs; two byte-identical jobs estimate to byte-identical charges.
+
+#### Properties
+
+##### delta
+
+> `readonly` **delta**: `number`
+
+##### deltaPerJob
+
+> `readonly` **deltaPerJob**: `number`
+
+##### epsilon
+
+> `readonly` **epsilon**: `number`
+
+##### inputTokens
+
+> `readonly` **inputTokens**: `number`
+
+##### perTokenEpsilon
+
+> `readonly` **perTokenEpsilon**: `number`
+
+***
+
+### DpBudgetConsumedManifest
+
+Issue #2128 — per-job manifest carrying `dpBudgetConsumed` for audit.
+Persisted as `dp-budget-consumed.json` next to the other harness
+artifacts. The [HarnessArtifactManifest](#harnessartifactmanifest) pins its sha256 + size
+so the evidence-verify route reproduces the audit trail offline.
+
+#### Properties
+
+##### contractVersion
+
+> `readonly` **contractVersion**: `"1.39.0"`
+
+##### cycleId
+
+> `readonly` **cycleId**: `string`
+
+##### cycleTotals
+
+> `readonly` **cycleTotals**: `object`
+
+Running cycle totals AFTER this job's charge was applied.
+
+###### deltaBudget
+
+> `readonly` **deltaBudget**: `number`
+
+###### deltaConsumed
+
+> `readonly` **deltaConsumed**: `number`
+
+###### epsilonBudget
+
+> `readonly` **epsilonBudget**: `number`
+
+###### epsilonConsumed
+
+> `readonly` **epsilonConsumed**: `number`
+
+###### jobsCharged
+
+> `readonly` **jobsCharged**: `number`
+
+##### decision
+
+> `readonly` **decision**: `"accepted"` \| `"rejected_budget_exhausted"` \| `"skipped_disabled"`
+
+##### dpBudgetConsumed
+
+> `readonly` **dpBudgetConsumed**: `object`
+
+Charge applied to the tenant budget by this job.
+
+###### delta
+
+> `readonly` **delta**: `number`
+
+###### epsilon
+
+> `readonly` **epsilon**: `number`
+
+###### inputTokens
+
+> `readonly` **inputTokens**: `number`
+
+##### generatedAt
+
+> `readonly` **generatedAt**: `string`
+
+##### jobId
+
+> `readonly` **jobId**: `string`
+
+##### parameters
+
+> `readonly` **parameters**: `object`
+
+Parameters that produced the estimate, for replay.
+
+###### deltaPerJob
+
+> `readonly` **deltaPerJob**: `number`
+
+###### perTokenEpsilon
+
+> `readonly` **perTokenEpsilon**: `number`
+
+##### schemaVersion
+
+> `readonly` **schemaVersion**: `"1.0.0"`
+
+##### tenantId
+
+> `readonly` **tenantId**: `string`
+
+***
+
 ### DryRunFolderResolution
 
 Outcome of attempting to resolve a target folder under `dry_run`.
@@ -2735,7 +3147,7 @@ Aggregate dry-run report artifact.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.29.0"`
+> **contractVersion**: `"1.39.0"`
 
 ##### credentialsIncluded
 
@@ -3126,7 +3538,7 @@ Sorted by filename for deterministic emission.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.29.0"`
+> **contractVersion**: `"1.39.0"`
 
 ##### exportedTestCaseCount
 
@@ -3303,7 +3715,7 @@ Threshold the aggregate is compared against (profile-scoped).
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.29.0"`
+> `readonly` **contractVersion**: `"1.39.0"`
 
 ##### entries
 
@@ -3437,7 +3849,7 @@ Persisted screenshot-vs-cases faithfulness verdict artifact.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.29.0"`
+> `readonly` **contractVersion**: `"1.39.0"`
 
 ##### fallbackReason
 
@@ -3710,7 +4122,7 @@ Aggregate counters across the `bySource` map.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.29.0"`
+> **contractVersion**: `"1.39.0"`
 
 ##### currencyLabel?
 
@@ -4503,7 +4915,7 @@ Optional auditable raw inputs used to derive `confidence`.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.29.0"`
+> **contractVersion**: `"1.39.0"`
 
 ##### expectedResults
 
@@ -4621,7 +5033,7 @@ Whether the artifact came from a replay-cache hit.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.29.0"`
+> **contractVersion**: `"1.39.0"`
 
 ##### generatedAt
 
@@ -4896,7 +5308,7 @@ referenced files and recomputing each row.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.29.0"`
+> `readonly` **contractVersion**: `"1.39.0"`
 
 ##### digest
 
@@ -4932,7 +5344,7 @@ One row of [HarnessArtifactManifest.entries](#entries-2).
 
 ##### filename
 
-> `readonly` **filename**: `"self-verify-rubric.json"` \| `"test-design-model.json"` \| `"judge-panel-verdicts.json"` \| `"genealogy.json"` \| `"agent-iterations.json"` \| `"cache-break-events.jsonl"` \| `"compact-boundary-log.jsonl"` \| `"migrations.log.jsonl"` \| `"library-coverage-report.json"` \| `"agent-findings.json"` \| `"coverage-plan.json"` \| `"ir-mutation-coverage-strength.json"` \| `"workflow-topology.json"`
+> `readonly` **filename**: `"self-verify-rubric.json"` \| `"test-design-model.json"` \| `"judge-panel-verdicts.json"` \| `"genealogy.json"` \| `"agent-iterations.json"` \| `"cache-break-events.jsonl"` \| `"compact-boundary-log.jsonl"` \| `"migrations.log.jsonl"` \| `"library-coverage-report.json"` \| `"agent-findings.json"` \| `"coverage-plan.json"` \| `"dp-budget-consumed.json"` \| `"ir-mutation-coverage-strength.json"` \| `"workflow-topology.json"`
 
 Basename of the artifact, relative to the per-job runDir.
 
@@ -5042,7 +5454,7 @@ the human-oversight chain.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.29.0"`
+> `readonly` **contractVersion**: `"1.39.0"`
 
 ##### generatedAt
 
@@ -5104,7 +5516,7 @@ Hard invariants:
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.29.0"`
+> `readonly` **contractVersion**: `"1.39.0"`
 
 ##### enqueuedAt
 
@@ -5184,7 +5596,7 @@ persisting the decision into the run record.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.29.0"`
+> `readonly` **contractVersion**: `"1.39.0"`
 
 ##### decidedAt
 
@@ -5287,7 +5699,7 @@ Persisted incident-handling envelope written per job. The order of
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.29.0"`
+> `readonly` **contractVersion**: `"1.39.0"`
 
 ##### events
 
@@ -5426,7 +5838,7 @@ Hard-invariant intent-delta report artifact (Issue #1373).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.29.0"`
+> **contractVersion**: `"1.39.0"`
 
 ##### currentIntentHash
 
@@ -5740,7 +6152,7 @@ Aggregate `jira-created-subtasks.json` artifact (Issue #1482).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.29.0"`
+> **contractVersion**: `"1.39.0"`
 
 ##### credentialsIncluded
 
@@ -6376,7 +6788,7 @@ Audit metadata for the run.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.29.0"`
+> **contractVersion**: `"1.39.0"`
 
 ##### createdCount
 
@@ -6616,7 +7028,7 @@ Persisted production-runner judge-consensus artifact.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.29.0"`
+> `readonly` **contractVersion**: `"1.39.0"`
 
 ##### crossFamily?
 
@@ -6843,7 +7255,7 @@ the disagreement-rate trending consumes (B.10).
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.29.0"`
+> `readonly` **contractVersion**: `"1.39.0"`
 
 ##### costByFamily
 
@@ -7116,7 +7528,7 @@ Persisted logic-judge verdict artifact.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.29.0"`
+> `readonly` **contractVersion**: `"1.39.0"`
 
 ##### findings
 
@@ -7617,7 +8029,7 @@ Per-release primitive-map status report.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.29.0"`
+> `readonly` **contractVersion**: `"1.39.0"`
 
 ##### counts
 
@@ -8981,7 +9393,7 @@ catalog class appears exactly once.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.29.0"`
+> `readonly` **contractVersion**: `"1.39.0"`
 
 ##### generatedAt
 
@@ -9250,7 +9662,7 @@ Per-candidate scores, ordered by descending score then id.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.29.0"`
+> `readonly` **contractVersion**: `"1.39.0"`
 
 ##### datasetId
 
@@ -9483,7 +9895,7 @@ Aggregate `qc-created-entities.json` artifact (Issue #1372).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.29.0"`
+> **contractVersion**: `"1.39.0"`
 
 ##### entities
 
@@ -9573,7 +9985,7 @@ Aggregate QC mapping preview artifact.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.29.0"`
+> **contractVersion**: `"1.39.0"`
 
 ##### entries
 
@@ -9966,7 +10378,7 @@ One cryptographic per-artifact EU data-residency attestation.
 
 ##### attestedBy
 
-> `readonly` **attestedBy**: `"azure-instance-metadata"` \| `"endpoint-cert-cn"` \| `"operator-pinned"`
+> `readonly` **attestedBy**: `"azure-instance-metadata"` \| `"endpoint-cert-cn"` \| `"operator-pinned"` \| `"sovereign-cloud"`
 
 ##### deploymentId
 
@@ -10025,7 +10437,7 @@ Machine-readable report of every artifact-level region attestation.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.29.0"`
+> `readonly` **contractVersion**: `"1.39.0"`
 
 ##### distinctRegions
 
@@ -10344,7 +10756,7 @@ Gate 9 — context budget regression (Issue #1802).
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.29.0"`
+> `readonly` **contractVersion**: `"1.39.0"`
 
 ##### libraryCoverageStatusCompleteness
 
@@ -10435,7 +10847,7 @@ The release pipeline fails when any verdict has `passed === false`.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.29.0"`
+> `readonly` **contractVersion**: `"1.39.0"`
 
 ##### mutationKillRate
 
@@ -10589,7 +11001,7 @@ gate passed.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.29.0"`
+> `readonly` **contractVersion**: `"1.39.0"`
 
 ##### gates
 
@@ -10868,7 +11280,7 @@ ISO-8601 UTC timestamp at the moment of persistence.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.29.0"`
+> **contractVersion**: `"1.39.0"`
 
 ##### fromState?
 
@@ -10936,7 +11348,7 @@ Number of cases currently in `approved` (or `exported`/`transferred`) state.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.29.0"`
+> **contractVersion**: `"1.39.0"`
 
 ##### fourEyesPolicy?
 
@@ -11162,7 +11574,7 @@ Persisted production-runner run-quality artifact.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.29.0"`
+> `readonly` **contractVersion**: `"1.39.0"`
 
 ##### degradedReasons
 
@@ -11322,7 +11734,7 @@ Persisted self-consistency voting artifact (Issue #2070).
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.29.0"`
+> `readonly` **contractVersion**: `"1.39.0"`
 
 ##### generatedAt
 
@@ -11658,7 +12070,7 @@ Sorted by `testCaseId` for byte stability. Empty when `refusal` is set.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.29.0"`
+> **contractVersion**: `"1.39.0"`
 
 ##### gatewayRelease
 
@@ -11751,7 +12163,7 @@ Changelog-approved signed migration bundle for banking-profile runs.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"4.64.0"`
+> `readonly` **contractVersion**: `"4.66.0"`
 
 ##### entries
 
@@ -12138,7 +12550,7 @@ the planner published a fixed `12` minCount. Entries are sorted by
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.29.0"`
+> `readonly` **contractVersion**: `"1.39.0"`
 
 ##### deficitCount
 
@@ -12247,6 +12659,59 @@ Effective minimum the policy gate enforces this run.
 
 ***
 
+### TenantDpBudgetState
+
+Issue #2128 — durable per-tenant accounting state. The harness reads
+this before each job, calls `applyDpCharge`, and persists the
+returned `newState` for the next job. `cycleId` is opaque to the
+accountant — operators advance it on their preferred cadence (per
+day, per quarter, per audit window) by calling
+`resetTenantDpBudgetCycle`.
+
+#### Properties
+
+##### contractVersion
+
+> `readonly` **contractVersion**: `"1.39.0"`
+
+##### cycleId
+
+> `readonly` **cycleId**: `string`
+
+##### cycleStartedAt
+
+> `readonly` **cycleStartedAt**: `string`
+
+##### deltaBudget
+
+> `readonly` **deltaBudget**: `number`
+
+##### deltaConsumed
+
+> `readonly` **deltaConsumed**: `number`
+
+##### epsilonBudget
+
+> `readonly` **epsilonBudget**: `number`
+
+##### epsilonConsumed
+
+> `readonly` **epsilonConsumed**: `number`
+
+##### jobsCharged
+
+> `readonly` **jobsCharged**: `number`
+
+##### schemaVersion
+
+> `readonly` **schemaVersion**: `"1.0.0"`
+
+##### tenantId
+
+> `readonly` **tenantId**: `string`
+
+***
+
 ### TenantScope
 
 Multi-tenant scope (Issue #1944).
@@ -12345,7 +12810,7 @@ Avg assumptions per case.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.29.0"`
+> **contractVersion**: `"1.39.0"`
 
 ##### duplicatePairs
 
@@ -12498,7 +12963,7 @@ Aggregate dedupe report artifact (Issue #1373).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.29.0"`
+> **contractVersion**: `"1.39.0"`
 
 ##### embeddingProvider
 
@@ -12608,7 +13073,7 @@ Aggregate test-case delta report (always paired with `IntentDeltaReport`).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.29.0"`
+> **contractVersion**: `"1.39.0"`
 
 ##### generatedAt
 
@@ -13084,6 +13549,26 @@ back to `tier-elastic` so small-screen masks with `<= 8` fields
 stop tripping the closeout-blocking 12-EP floor that was the
 original closeout child #2026.
 
+##### trainingInfluenceDpBudget?
+
+> `optional` **trainingInfluenceDpBudget?**: [`TrainingInfluenceDpBudgetConfig`](#traininginfluencedpbudgetconfig)
+
+Issue #2128 — opt-in training-influence DP budget configuration. When
+omitted or `.enabled === false` (the secure default), the accountant
+is inactive.
+
+This field is the policy-profile-side declaration of the budget. The
+runtime helpers in `src/test-intelligence/training-influence-dp-budget.ts`
+(`applyDpCharge`, `buildDpBudgetConsumedManifest`, ...) are the
+call-site API operators wire into their gateway adapter to charge each
+job, block on cap exhaustion, and emit the per-job
+`dp-budget-consumed.json` artifact for audit replay. The harness
+itself does not call these helpers — this is a library surface, not
+an automatically-applied gate.
+
+NOT a cryptographic DP guarantee — this is an accounting layer that
+supports operator decision-making. See the ADR for the model.
+
 ***
 
 ### TestCasePolicyProvenanceSummary
@@ -13130,6 +13615,19 @@ Whether ANY case was blocked (downstream export gate).
 
 > **blockedCount**: `number`
 
+##### causalCoverage?
+
+> `optional` **causalCoverage?**: [`CausalCoverageSummary`](#causalcoveragesummary)
+
+Optional causal-coverage KPI summary (Issue #2180). Surfaces the
+top-level `causalCoverage` ratio alongside hypothesis evaluation
+counts so downstream auditors can answer "what share of declared
+causal hypotheses did the suite satisfy?" without re-running the
+framework. The block is omitted when the causal-validation
+framework was not run for this job (default for fast iterative
+runs), so the byte shape stays stable for runs that pre-date the
+framework.
+
 ##### confidenceMean?
 
 > `optional` **confidenceMean?**: `number`
@@ -13156,7 +13654,7 @@ Mean calibrated per-case confidence across every generated case.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.29.0"`
+> **contractVersion**: `"1.39.0"`
 
 ##### decisions
 
@@ -13343,7 +13841,7 @@ Whether the report blocks downstream review/export (any error => true).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.29.0"`
+> **contractVersion**: `"1.39.0"`
 
 ##### errorCount
 
@@ -13827,6 +14325,190 @@ Stable identifier per envelope, e.g. `"src.0"`, `"src.1"`.
 
 ***
 
+### TmsPushReportArtifact
+
+Aggregate `tms-push-report.json` artifact (Issue #2183).
+
+One file per push operation written under the run dir. The artifact is
+the round-trip evidence that an operator hands an auditor: every
+approved+mapped case appears exactly once with a verdict and (for
+pushed cases) the TMS-assigned id.
+
+#### Properties
+
+##### adapterId
+
+> `readonly` **adapterId**: `"xray"` \| `"qtest"` \| `"alm"` \| `"polarion"`
+
+Adapter discriminator used by the run.
+
+##### adapterVersion
+
+> `readonly` **adapterVersion**: `string`
+
+Adapter implementation version stamped at compile time.
+
+##### contractVersion
+
+> `readonly` **contractVersion**: `"1.39.0"`
+
+##### credentialsIncluded
+
+> `readonly` **credentialsIncluded**: `false`
+
+Hard invariant: the adapter never embeds credentials.
+
+##### dryRun
+
+> `readonly` **dryRun**: `boolean`
+
+Whether the push was a `--dry-run` (no actual TMS writes performed).
+
+##### entries
+
+> `readonly` **entries**: readonly [`TmsPushReportEntry`](#tmspushreportentry)[]
+
+Per-case results, sorted by `testCaseId`.
+
+##### failedCount
+
+> `readonly` **failedCount**: `number`
+
+Number of entries with verdict `failed`.
+
+##### generatedAt
+
+> `readonly` **generatedAt**: `string`
+
+ISO-8601 UTC timestamp at which the push run completed.
+
+##### pushedCount
+
+> `readonly` **pushedCount**: `number`
+
+Number of entries with verdict `pushed`.
+
+##### rawScreenshotsIncluded
+
+> `readonly` **rawScreenshotsIncluded**: `false`
+
+Hard invariant: the adapter never embeds raw screenshots.
+
+##### refusalCodes
+
+> `readonly` **refusalCodes**: readonly (`"no_mapped_test_cases"` \| `"credentials_missing"` \| `"credentials_invalid"` \| `"project_validation_failed"` \| `"mapping_preview_missing"` \| `"mapping_preview_unreadable"` \| `"adapter_unsupported"` \| `"connect_failed"`)[]
+
+Sorted, deduplicated refusal codes that fired.
+
+##### refused
+
+> `readonly` **refused**: `boolean`
+
+Whether the pipeline refused to perform any write.
+
+##### runId
+
+> `readonly` **runId**: `string`
+
+Run identifier from the source `run-dir`; empty when not derivable.
+
+##### schemaVersion
+
+> `readonly` **schemaVersion**: `"1.0.0"`
+
+##### skippedDuplicateCount
+
+> `readonly` **skippedDuplicateCount**: `number`
+
+Number of entries with verdict `skipped-dup`.
+
+##### tenantId
+
+> `readonly` **tenantId**: `string`
+
+Stable tenant id used in idempotency keys.
+
+##### tmsEndpointAlias
+
+> `readonly` **tmsEndpointAlias**: `string`
+
+Symbolic alias for the TMS endpoint (never the resolved URL).
+Mirrors `QcMappingProfile.baseUrlAlias`.
+
+##### tmsProjectId
+
+> `readonly` **tmsProjectId**: `string`
+
+Project id inside the TMS (e.g. Jira project key, ALM project name).
+
+##### transferUrlIncluded
+
+> `readonly` **transferUrlIncluded**: `false`
+
+Hard invariant: the adapter never echoes resolved URLs.
+
+***
+
+### TmsPushReportEntry
+
+Single per-case row in `tms-push-report.json`.
+
+#### Properties
+
+##### attemptCount
+
+> **attemptCount**: `number`
+
+Number of HTTP attempts performed for this case (1 + retries).
+
+##### idempotencyKey
+
+> **idempotencyKey**: `string`
+
+Idempotency key derived from `(tenantId, runId, testCaseId)`.
+
+##### recordedAt
+
+> **recordedAt**: `string`
+
+ISO-8601 UTC timestamp at which the verdict was recorded.
+
+##### testCaseId
+
+> **testCaseId**: `string`
+
+Stable provider-neutral id from `qc-mapping-preview.json`.
+
+##### tmsErrorCode
+
+> **tmsErrorCode**: `string`
+
+Sanitised TMS error code preserved on `failed` (e.g. ALM
+`qccore.entity.not-found`, Xray `JIRA-401`). Empty for non-failures.
+
+##### tmsErrorMessage
+
+> **tmsErrorMessage**: `string`
+
+Length-bounded, redacted TMS error message preserved on `failed`.
+Never carries URLs, tokens, or raw response bodies. Empty for
+non-failures.
+
+##### tmsTestCaseId
+
+> **tmsTestCaseId**: `string`
+
+Round-trip evidence: the TMS-assigned id when the verdict is
+`pushed` or `skipped-dup`. Empty string for `failed`.
+
+##### verdict
+
+> **verdict**: `"failed"` \| `"pushed"` \| `"skipped-dup"`
+
+Push verdict; one of `ALLOWED_TMS_PUSH_VERDICTS`.
+
+***
+
 ### TraceabilityMatrix
 
 Aggregate traceability-matrix artifact (Issue #1373).
@@ -13835,7 +14517,7 @@ Aggregate traceability-matrix artifact (Issue #1373).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.29.0"`
+> **contractVersion**: `"1.39.0"`
 
 ##### exportProfile?
 
@@ -14159,6 +14841,53 @@ Sorted, deduplicated outcome codes that fired on the screen.
 
 ***
 
+### TrainingInfluenceDpBudgetConfig
+
+Issue #2128 — operator-controlled training-influence DP budget policy.
+Opt-in: when the policy profile omits `trainingInfluenceDpBudget` (the
+default) the gate is fully inactive and no manifest is written.
+
+The numbers in this config are NOT cryptographic differential-privacy
+guarantees — they are an operator-facing accounting layer that bounds
+how much input content a tenant may contribute to provider gateways
+inside a single cycle. See the ADR for the mathematical model.
+
+#### Properties
+
+##### deltaPerJob?
+
+> `readonly` `optional` **deltaPerJob?**: `number`
+
+Delta contribution charged per job (constant, independent of token
+count). Default [DP\_BUDGET\_DEFAULT\_DELTA\_PER\_JOB](#dp_budget_default_delta_per_job).
+
+##### enabled
+
+> `readonly` **enabled**: `boolean`
+
+Master switch. When `false`, the gate is inactive.
+
+##### perTokenEpsilon?
+
+> `readonly` `optional` **perTokenEpsilon?**: `number`
+
+Epsilon contribution charged per input token. Default
+[DP\_BUDGET\_DEFAULT\_PER\_TOKEN\_EPSILON](#dp_budget_default_per_token_epsilon).
+
+##### tenantDeltaBudget
+
+> `readonly` **tenantDeltaBudget**: `number`
+
+Tenant-level delta cap across all jobs in the current cycle.
+
+##### tenantEpsilonBudget
+
+> `readonly` **tenantEpsilonBudget**: `number`
+
+Tenant-level epsilon cap across all jobs in the current cycle.
+
+***
+
 ### TransferAuditMetadata
 
 Audit metadata describing the operator/principal that authorised the run.
@@ -14329,7 +15058,7 @@ Audit metadata for the run.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.29.0"`
+> **contractVersion**: `"1.39.0"`
 
 ##### createdCount
 
@@ -14704,7 +15433,7 @@ can be debugged from the artifact alone.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.29.0"`
+> **contractVersion**: `"1.39.0"`
 
 ##### deployment
 
@@ -14826,7 +15555,7 @@ screenshot bytes.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.29.0"`
+> **contractVersion**: `"1.39.0"`
 
 ##### generatedAt
 
@@ -14988,7 +15717,7 @@ Whether any record carries a non-`ok`/non-`fallback_used` outcome that blocks ge
 
 ##### contractVersion
 
-> **contractVersion**: `"1.29.0"`
+> **contractVersion**: `"1.39.0"`
 
 ##### generatedAt
 
@@ -15265,7 +15994,7 @@ Active signing mode; mirrored from the run input for auditability.
 
 ##### testIntelligenceContractVersion
 
-> **testIntelligenceContractVersion**: `"1.29.0"`
+> **testIntelligenceContractVersion**: `"1.39.0"`
 
 ##### visualSidecar?
 
@@ -15694,7 +16423,7 @@ and timestamps are caller-provided.
 
 ##### testIntelligenceContractVersion
 
-> **testIntelligenceContractVersion**: `"1.29.0"`
+> **testIntelligenceContractVersion**: `"1.39.0"`
 
 ##### thresholds
 
@@ -16009,7 +16738,7 @@ identity into the replay artifact (Issue #2113).
 
 ##### testIntelligenceContractVersion
 
-> **testIntelligenceContractVersion**: `"1.29.0"`
+> **testIntelligenceContractVersion**: `"1.39.0"`
 
 Test-intelligence subsurface contract version.
 
@@ -17242,7 +17971,7 @@ Submit response for accepted jobs.
 
 ###### Inherited from
 
-[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`jobId`](#jobid-73)
+[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`jobId`](#jobid-74)
 
 ##### pasteDeltaSummary?
 
@@ -20956,6 +21685,14 @@ Stable reason-code union for deterministic coverage requirements.
 
 ***
 
+### DpBudgetDecision
+
+> **DpBudgetDecision** = *typeof* [`ALLOWED_DP_BUDGET_DECISIONS`](#allowed_dp_budget_decisions)\[`number`\]
+
+Discriminated alias for [ALLOWED\_DP\_BUDGET\_DECISIONS](#allowed_dp_budget_decisions).
+
+***
+
 ### DryRunFolderResolutionState
 
 > **DryRunFolderResolutionState** = *typeof* [`ALLOWED_DRY_RUN_FOLDER_RESOLUTION_STATES`](#allowed_dry_run_folder_resolution_states)\[`number`\]
@@ -21843,12 +22580,18 @@ A single Azure / Mistral / operator-defined hosting region.
 
 ### SupportedLocale
 
-> **SupportedLocale** = `"DE-DE"` \| `"DE-AT"` \| `"DE-CH"` \| `"EN-IE"` \| `"FR-FR"` \| `"IT-IT"`
+> **SupportedLocale** = `"DE-DE"` \| `"DE-AT"` \| `"DE-CH"` \| `"EN-IE"` \| `"FR-FR"` \| `"IT-IT"` \| `"PL-PL"` \| `"ES-ES"` \| `"NL-NL"` \| `"CS-CZ"` \| `"HU-HU"`
 
-The six EU-banking locales supported by per-locale Platt-curve calibration
-(Issue #2117).  Referenced by `BusinessTestIntentScreen.locale` so that
-consumers can correlate per-screen locale with the per-locale calibration
-curves without importing from the test-intelligence submodule.
+EU-banking locales supported by per-locale Platt-curve calibration.
+
+Initial six locales were added in Issue #2117
+(DE-DE / DE-AT / DE-CH / EN-IE / FR-FR / IT-IT).  Issue #2188 extended
+the corpus with five additional locales (PL-PL, ES-ES, NL-NL, CS-CZ,
+HU-HU) driven by concrete EU-banking customer pipeline demand.
+
+Referenced by `BusinessTestIntentScreen.locale` so that consumers can
+correlate per-screen locale with the per-locale calibration curves
+without importing from the test-intelligence submodule.
 
 ***
 
@@ -22003,6 +22746,30 @@ Discriminated source-kind alias derived from [ALLOWED\_TEST\_INTENT\_SOURCE\_KIN
 > **TestIntentSourceMixKind** = *typeof* [`ALLOWED_TEST_INTENT_SOURCE_MIX_KINDS`](#allowed_test_intent_source_mix_kinds)\[`number`\]
 
 Discriminated union of all supported source-mix kinds (Issue #1441).
+
+***
+
+### TmsAdapterId
+
+> **TmsAdapterId** = *typeof* [`ALLOWED_TMS_ADAPTER_IDS`](#allowed_tms_adapter_ids)\[`number`\]
+
+***
+
+### TmsAuthKind
+
+> **TmsAuthKind** = *typeof* [`ALLOWED_TMS_AUTH_KINDS`](#allowed_tms_auth_kinds)\[`number`\]
+
+***
+
+### TmsPushRefusalCode
+
+> **TmsPushRefusalCode** = *typeof* [`ALLOWED_TMS_PUSH_REFUSAL_CODES`](#allowed_tms_push_refusal_codes)\[`number`\]
+
+***
+
+### TmsPushVerdict
+
+> **TmsPushVerdict** = *typeof* [`ALLOWED_TMS_PUSH_VERDICTS`](#allowed_tms_push_verdicts)\[`number`\]
 
 ***
 
@@ -22734,7 +23501,7 @@ artifact does not introduce a second outcome surface.
 
 ### ALLOWED\_AUDIT\_DOSSIER\_ARTIFACT\_KINDS
 
-> `const` **ALLOWED\_AUDIT\_DOSSIER\_ARTIFACT\_KINDS**: readonly \[`"model_card"`, `"provenance"`, `"compliance_coverage"`, `"compliance_annotations"`, `"judge_calibration"`, `"locale_calibration"`, `"inter_rater_agreement"`, `"drift_baseline"`, `"incident_log"`, `"subprocessor_register"`, `"region_attestations"`, `"finops_budget"`, `"faithfulness_tier"`, `"self_consistency"`, `"evidence_seal"`, `"policy_report"`, `"human_review_log"`\]
+> `const` **ALLOWED\_AUDIT\_DOSSIER\_ARTIFACT\_KINDS**: readonly \[`"model_card"`, `"provenance"`, `"compliance_coverage"`, `"compliance_annotations"`, `"judge_calibration"`, `"locale_calibration"`, `"inter_rater_agreement"`, `"drift_baseline"`, `"incident_log"`, `"subprocessor_register"`, `"region_attestations"`, `"finops_budget"`, `"faithfulness_tier"`, `"self_consistency"`, `"evidence_seal"`, `"policy_report"`, `"human_review_log"`, `"formal_verification_report"`, `"tenant_bundle_resolved"`\]
 
 Closed list of source-artifact roles tracked by the dossier manifest.
 
@@ -22882,6 +23649,15 @@ dedupe report.
 
 ***
 
+### ALLOWED\_DP\_BUDGET\_DECISIONS
+
+> `const` **ALLOWED\_DP\_BUDGET\_DECISIONS**: readonly \[`"accepted"`, `"rejected_budget_exhausted"`, `"skipped_disabled"`\]
+
+Issue #2128 — closed list of decisions `applyDpCharge` can return.
+Adding a member is an additive minor bump.
+
+***
+
 ### ALLOWED\_DRY\_RUN\_FOLDER\_RESOLUTION\_STATES
 
 > `const` **ALLOWED\_DRY\_RUN\_FOLDER\_RESOLUTION\_STATES**: readonly \[`"resolved"`, `"missing"`, `"simulated"`, `"invalid_path"`\]
@@ -22994,7 +23770,7 @@ Persisted polarity labels for generated test cases (Issue #2030).
 
 ### ALLOWED\_HARNESS\_ARTIFACT\_FILENAMES
 
-> `const` **ALLOWED\_HARNESS\_ARTIFACT\_FILENAMES**: readonly \[`"agent-findings.json"`, `"agent-iterations.json"`, `"cache-break-events.jsonl"`, `"compact-boundary-log.jsonl"`, `"coverage-plan.json"`, `"genealogy.json"`, `"ir-mutation-coverage-strength.json"`, `"judge-panel-verdicts.json"`, `"library-coverage-report.json"`, `"migrations.log.jsonl"`, `"self-verify-rubric.json"`, `"test-design-model.json"`, `"workflow-topology.json"`\]
+> `const` **ALLOWED\_HARNESS\_ARTIFACT\_FILENAMES**: readonly \[`"agent-findings.json"`, `"agent-iterations.json"`, `"cache-break-events.jsonl"`, `"compact-boundary-log.jsonl"`, `"coverage-plan.json"`, `"dp-budget-consumed.json"`, `"genealogy.json"`, `"ir-mutation-coverage-strength.json"`, `"judge-panel-verdicts.json"`, `"library-coverage-report.json"`, `"migrations.log.jsonl"`, `"self-verify-rubric.json"`, `"test-design-model.json"`, `"workflow-topology.json"`\]
 
 Closed runtime list of canonical-JSON harness artifact filenames the
 manifest may reference. Adding a member is an additive minor bump.
@@ -23814,6 +24590,49 @@ The planner rejects any combination not listed here with
 
 ***
 
+### ALLOWED\_TMS\_ADAPTER\_IDS
+
+> `const` **ALLOWED\_TMS\_ADAPTER\_IDS**: readonly \[`"alm"`, `"polarion"`, `"qtest"`, `"xray"`\]
+
+TMS adapter discriminator for the four enterprise TMS systems shipped
+in Wave 8 (Issue #2183). The order is canonical for sort-based
+registry rendering; new adapters extend the array.
+
+***
+
+### ALLOWED\_TMS\_AUTH\_KINDS
+
+> `const` **ALLOWED\_TMS\_AUTH\_KINDS**: readonly \[`"pat"`, `"oauth2"`, `"bearer"`\]
+
+Authentication kinds accepted by the TMS adapter contract. Issue #2183
+requires PAT (Personal Access Token), OAuth 2.0 bearer, and generic
+Bearer token. Each adapter advertises which kind(s) it supports.
+
+***
+
+### ALLOWED\_TMS\_PUSH\_REFUSAL\_CODES
+
+> `const` **ALLOWED\_TMS\_PUSH\_REFUSAL\_CODES**: readonly \[`"credentials_missing"`, `"credentials_invalid"`, `"project_validation_failed"`, `"mapping_preview_missing"`, `"mapping_preview_unreadable"`, `"no_mapped_test_cases"`, `"adapter_unsupported"`, `"connect_failed"`\]
+
+Allowed reasons the push pipeline may refuse to perform any write.
+Evaluated in fail-closed order; every fired refusal is recorded so
+operators can address them all in one cycle.
+
+***
+
+### ALLOWED\_TMS\_PUSH\_VERDICTS
+
+> `const` **ALLOWED\_TMS\_PUSH\_VERDICTS**: readonly \[`"pushed"`, `"skipped-dup"`, `"failed"`\]
+
+Per-case push verdict surfaced on the persisted `tms-push-report.json`.
+
+  - `pushed` — the adapter created a fresh test case in the TMS.
+  - `skipped-dup` — idempotency lookup found a prior write under the
+    same `(tenantId, runId, testCaseId)` key. No write performed.
+  - `failed` — adapter or transport error after all retry attempts.
+
+***
+
 ### ALLOWED\_TRANSFER\_ENTITY\_OUTCOMES
 
 > `const` **ALLOWED\_TRANSFER\_ENTITY\_OUTCOMES**: readonly \[`"created"`, `"skipped_duplicate"`, `"failed"`, `"refused"`\]
@@ -24104,6 +24923,41 @@ downstream auditors can reconstruct which pass contributed each case.
 
 ***
 
+### CAUSAL\_VALIDATION\_REPORT\_ARTIFACT\_FILENAME
+
+> `const` **CAUSAL\_VALIDATION\_REPORT\_ARTIFACT\_FILENAME**: `"causal-validation-report.json"`
+
+Canonical filename for the persisted causal-validation report artifact
+(Issue #2180). The runner writes one `causal-validation-report.json`
+per run when the causal-validation framework is enabled and embeds
+the resulting summary into `policy-report.json#causalCoverage`.
+
+***
+
+### CAUSAL\_VALIDATION\_REPORT\_SCHEMA\_VERSION
+
+> `const` **CAUSAL\_VALIDATION\_REPORT\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for the persisted causal-validation report artifact
+(Issue #2180). Bumped on any breaking change to the report shape, the
+counterfactual-pair envelope, or the causal-coverage formula.
+
+***
+
+### CAUSAL\_VALIDATION\_TOKEN\_BUDGET\_RATIO\_CAP
+
+> `const` **CAUSAL\_VALIDATION\_TOKEN\_BUDGET\_RATIO\_CAP**: `0.3`
+
+Default upper bound on the relative additional token cost the
+causal-validation framework may incur per run (Issue #2180 FinOps
+cap, "no more than 30 % per run"). Surfaced as a constant so CI can
+assert the cap and the runner can refuse to dispatch causal-pair
+generation that would exceed it. Pair generation is fully
+deterministic and never calls an LLM; under default operation the
+actual ratio is `0` — the cap is a hard ceiling, not a quota.
+
+***
+
 ### COMPACT\_BOUNDARY\_LOG\_ARTIFACT\_FILENAME
 
 > `const` **COMPACT\_BOUNDARY\_LOG\_ARTIFACT\_FILENAME**: `"compact-boundary-log.jsonl"`
@@ -24146,7 +25000,7 @@ Schema version for persisted context-budget analyzer reports.
 
 ### CONTRACT\_VERSION
 
-> `const` **CONTRACT\_VERSION**: `"4.64.0"`
+> `const` **CONTRACT\_VERSION**: `"4.66.0"`
 
 Current contract version constant.
 Must be bumped according to CONTRACT_CHANGELOG.md rules.
@@ -24289,6 +25143,48 @@ isolated from any scoped caller's cache by directory boundary.
 
 ***
 
+### DP\_BUDGET\_CONSUMED\_MANIFEST\_ARTIFACT\_FILENAME
+
+> `const` **DP\_BUDGET\_CONSUMED\_MANIFEST\_ARTIFACT\_FILENAME**: `"dp-budget-consumed.json"`
+
+Issue #2128 — canonical filename for the per-job differential-privacy
+budget-accounting manifest. Written into the per-job runDir when the
+policy profile enables `trainingInfluenceDpBudget`. The filename is also
+a member of [ALLOWED\_HARNESS\_ARTIFACT\_FILENAMES](#allowed_harness_artifact_filenames) so the harness
+artifact manifest pins its sha256 + size for audit replay.
+
+***
+
+### DP\_BUDGET\_CONSUMED\_MANIFEST\_SCHEMA\_VERSION
+
+> `const` **DP\_BUDGET\_CONSUMED\_MANIFEST\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Issue #2128 — schema version for [DpBudgetConsumedManifest](#dpbudgetconsumedmanifest).
+
+***
+
+### DP\_BUDGET\_DEFAULT\_DELTA\_PER\_JOB
+
+> `const` **DP\_BUDGET\_DEFAULT\_DELTA\_PER\_JOB**: `0.000001`
+
+Issue #2128 — default per-job delta estimate. Constant per job (does not
+scale with token count) per the additive-composition accounting model
+documented in the ADR.
+
+***
+
+### DP\_BUDGET\_DEFAULT\_PER\_TOKEN\_EPSILON
+
+> `const` **DP\_BUDGET\_DEFAULT\_PER\_TOKEN\_EPSILON**: `0.0001`
+
+Issue #2128 — default per-input-token epsilon estimate used by
+`estimateJobDpCharge`. Conservative ceiling chosen so a 200 000-token job
+(the `eu-banking-default` `test_generation` request cap) is charged
+`epsilon = 20` against the tenant budget. Operators tighten this on a
+derived policy profile when contractually required.
+
+***
+
 ### DRY\_RUN\_REPORT\_ARTIFACT\_FILENAME
 
 > `const` **DRY\_RUN\_REPORT\_ARTIFACT\_FILENAME**: `"dry-run-report.json"`
@@ -24320,6 +25216,26 @@ one Wave 1 ships with.
 > `const` **EU\_BANKING\_DEFAULT\_POLICY\_PROFILE\_VERSION**: `"1.0.0"`
 
 Version stamp for the built-in `eu-banking-default` policy profile.
+
+***
+
+### EU\_BANKING\_SOVEREIGN\_POLICY\_PROFILE\_ID
+
+> `const` **EU\_BANKING\_SOVEREIGN\_POLICY\_PROFILE\_ID**: `"eu-banking-sovereign"`
+
+Issue #2187 — Built-in policy-profile identifier for the
+sovereign-cloud / air-gap deployment topology used by DE Sparkassen,
+Volksbanken, and on-prem-only insurers. Routes all model calls through
+the operator-configured sovereign-cloud LLM gateway and refuses any
+deployment outside the customer-approved hosting-region allow-list.
+
+***
+
+### EU\_BANKING\_SOVEREIGN\_POLICY\_PROFILE\_VERSION
+
+> `const` **EU\_BANKING\_SOVEREIGN\_POLICY\_PROFILE\_VERSION**: `"1.0.0"`
+
+Version stamp for the built-in `eu-banking-sovereign` policy profile.
 
 ***
 
@@ -24541,6 +25457,18 @@ Canonical filename for the FinOps budget report artifact.
 > `const` **FINOPS\_BUDGET\_REPORT\_SCHEMA\_VERSION**: `"1.0.0"`
 
 Schema version for the persisted FinOps budget report artifact (Issue #1371).
+
+***
+
+### FORMAL\_VERIFICATION\_REPORT\_AUDIT\_ARTIFACT\_FILENAME
+
+> `const` **FORMAL\_VERIFICATION\_REPORT\_AUDIT\_ARTIFACT\_FILENAME**: `"formal-verification-report.json"`
+
+Canonical filename for the per-run formal-verification report
+emitted by the LTL / CTL model-checker driver (Issue #2181).
+Mirrored in `formal-verification.ts` as
+`FORMAL_VERIFICATION_REPORT_ARTIFACT_FILENAME` — both constants must
+stay in lockstep.
 
 ***
 
@@ -26137,7 +27065,7 @@ Schema version for persisted `TestDesignModel` projection artifacts.
 
 ### TEST\_INTELLIGENCE\_CONTRACT\_VERSION
 
-> `const` **TEST\_INTELLIGENCE\_CONTRACT\_VERSION**: `"1.29.0"`
+> `const` **TEST\_INTELLIGENCE\_CONTRACT\_VERSION**: `"1.39.0"`
 
 Contract version for the opt-in test-intelligence surface.
 
@@ -26227,6 +27155,22 @@ Schema version for the persisted test-intelligence provenance artifact.
 ### TIER\_ELASTIC\_EP\_TIERS
 
 > `const` **TIER\_ELASTIC\_EP\_TIERS**: `ReadonlyArray`\<[`TechniqueCoverageMinimumTier`](#techniquecoverageminimumtier)\>
+
+***
+
+### TMS\_PUSH\_REPORT\_ARTIFACT\_FILENAME
+
+> `const` **TMS\_PUSH\_REPORT\_ARTIFACT\_FILENAME**: `"tms-push-report.json"`
+
+Canonical filename for the per-push artifact.
+
+***
+
+### TMS\_PUSH\_REPORT\_SCHEMA\_VERSION
+
+> `const` **TMS\_PUSH\_REPORT\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version stamped on every persisted `tms-push-report.json`.
 
 ***
 
