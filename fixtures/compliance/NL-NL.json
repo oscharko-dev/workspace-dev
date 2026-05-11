@@ -1,0 +1,60 @@
+{
+  "citations": [
+    {
+      "euTarget": "PSD2 art. 97",
+      "local": "Wft art. 4:24a",
+      "localTopic": "Strong customer authentication"
+    },
+    {
+      "euTarget": "PSD2 art. 66",
+      "local": "Wft art. 4:25a",
+      "localTopic": "Open banking / TPP access"
+    },
+    {
+      "euTarget": "AMLD5 art. 13",
+      "local": "Wwft art. 3",
+      "localTopic": "Customer due diligence"
+    },
+    {
+      "euTarget": "EBA/GL/2019/04",
+      "local": "DNB Q&A on Information Security (2023)",
+      "localTopic": "ICT and operational risk"
+    },
+    {
+      "euTarget": "EBA/GL/2019/02",
+      "local": "DNB Guidance on Outsourcing (2020)",
+      "localTopic": "Outsourcing governance"
+    },
+    {
+      "euTarget": "Solvency II (Directive 2009/138/EC) art. 41",
+      "local": "Wft art. 3:18",
+      "localTopic": "Sound and controlled business operations"
+    },
+    {
+      "euTarget": "Solvency II art. 100–127",
+      "local": "Wft art. 3:67",
+      "localTopic": "Own funds and solvency capital"
+    },
+    {
+      "euTarget": "EU AI Act art. 9–15",
+      "local": "DNB Position Paper on AI (2024)",
+      "localTopic": "AI risk management"
+    },
+    {
+      "euTarget": "IDD (Directive (EU) 2016/97) art. 25",
+      "local": "Bgfo art. 17",
+      "localTopic": "Conduct of business — product oversight"
+    },
+    {
+      "euTarget": "DORA art. 5–16",
+      "local": "Wft art. 3:17",
+      "localTopic": "ICT operational resilience"
+    }
+  ],
+  "locale": "NL-NL",
+  "nationalRegulator": {
+    "code": "DNB",
+    "country": "Netherlands",
+    "name": "De Nederlandsche Bank"
+  }
+}

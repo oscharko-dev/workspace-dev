@@ -1,24 +1,35 @@
-# Per-locale calibration (Issue #2117)
+# Per-locale calibration (Issues #2117, #2188)
 
 This document describes the per-locale Platt-curve calibration added in Issue #2117
-alongside the existing aggregate calibration described in
+and extended in Issue #2188, alongside the existing aggregate calibration described in
 [test-intelligence-judge-calibration.md](./test-intelligence-judge-calibration.md).
 
 ## Supported locales
 
-Six EU-banking locales are supported:
+Eleven EU-banking locales are supported. The initial six were added by
+Issue #2117; Issue #2188 (W8-6) extended the corpus with five additional
+locales driven by concrete EU-banking customer pipeline demand:
 
-| Code    | Country / variant          |
-|---------|---------------------------|
-| `DE-DE` | Germany                    |
-| `DE-AT` | Austria                    |
-| `DE-CH` | Switzerland (German)       |
-| `EN-IE` | Ireland (English)          |
-| `FR-FR` | France                     |
-| `IT-IT` | Italy                      |
+| Code    | Country / variant            | Added by    |
+|---------|------------------------------|-------------|
+| `DE-DE` | Germany                      | Issue #2117 |
+| `DE-AT` | Austria                      | Issue #2117 |
+| `DE-CH` | Switzerland (German)         | Issue #2117 |
+| `EN-IE` | Ireland (English)            | Issue #2117 |
+| `FR-FR` | France                       | Issue #2117 |
+| `IT-IT` | Italy                        | Issue #2117 |
+| `PL-PL` | Poland (Polish)              | Issue #2188 |
+| `ES-ES` | Spain (Spanish)              | Issue #2188 |
+| `NL-NL` | Netherlands (Dutch)          | Issue #2188 |
+| `CS-CZ` | Czechia (Czech)              | Issue #2188 |
+| `HU-HU` | Hungary (Hungarian)          | Issue #2188 |
 
 The set is declared as `SUPPORTED_LOCALES` in `src/test-intelligence/locale-calibration.ts`
 and mirrored as the `SupportedLocale` union type in `src/contracts/index.ts`.
+
+See [`test-intelligence/locales.md`](./test-intelligence/locales.md) for the
+operator-facing onboarding checklist (native-speaker reviewer recruitment,
+gold-set sizing, glossary curation, citation-map curation) for new locales.
 
 ## Per-locale Platt curves
 

@@ -25,7 +25,7 @@ const GENERATED_AT = "2026-05-10T12:00:00.000Z";
 
 const baseReport = (): FinOpsBudgetReport => ({
   schemaVersion: "1.0.0",
-  contractVersion: "1.37.0",
+  contractVersion: "1.38.0",
   jobId: "job-1",
   generatedAt: GENERATED_AT,
   budget: {

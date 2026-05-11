@@ -162,7 +162,7 @@ export interface TestIntelligenceTransferPrincipal {
 }
 
 /** Contract version for the opt-in test-intelligence surface. */
-export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.37.0" as const;
+export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.38.0" as const;
 
 /**
  * Schema version for generated test case payloads.
@@ -6853,10 +6853,16 @@ export interface InferredBusinessObject {
 }
 
 /**
- * The six EU-banking locales supported by per-locale Platt-curve calibration
- * (Issue #2117).  Referenced by `BusinessTestIntentScreen.locale` so that
- * consumers can correlate per-screen locale with the per-locale calibration
- * curves without importing from the test-intelligence submodule.
+ * EU-banking locales supported by per-locale Platt-curve calibration.
+ *
+ * Initial six locales were added in Issue #2117
+ * (DE-DE / DE-AT / DE-CH / EN-IE / FR-FR / IT-IT).  Issue #2188 extended
+ * the corpus with five additional locales (PL-PL, ES-ES, NL-NL, CS-CZ,
+ * HU-HU) driven by concrete EU-banking customer pipeline demand.
+ *
+ * Referenced by `BusinessTestIntentScreen.locale` so that consumers can
+ * correlate per-screen locale with the per-locale calibration curves
+ * without importing from the test-intelligence submodule.
  */
 export type SupportedLocale =
   | "DE-DE"
@@ -6864,7 +6870,12 @@ export type SupportedLocale =
   | "DE-CH"
   | "EN-IE"
   | "FR-FR"
-  | "IT-IT";
+  | "IT-IT"
+  | "PL-PL"
+  | "ES-ES"
+  | "NL-NL"
+  | "CS-CZ"
+  | "HU-HU";
 
 /** Per-screen slice of the intent. */
 export interface BusinessTestIntentScreen {
@@ -13197,6 +13208,38 @@ export interface AuditDossierManifest {
     readonly distinctSigningKeyFingerprints: readonly string[];
     readonly earliestExecutedAt: string;
     readonly latestExecutedAt: string;
+  };
+  /**
+   * Per-locale calibration health table (Issue #2188, W8-6).
+   *
+   * Optional and additive. Populated only when the dossier generator
+   * finds at least one per-locale Platt-curve fixture under
+   * `fixtures/test-intelligence/locale-calibration/<locale>/`.
+   * Reflects the `G13_LOCALE_CALIBRATION_HEALTHY` gate per locale so
+   * the audit-dossier renders a one-row-per-locale health summary
+   * alongside the existing self-improving-calibration refit history.
+   *
+   * Legacy runs that do not ship per-locale fixtures keep the dossier
+   * shape stable.
+   */
+  readonly localeCalibrationHealth?: {
+    readonly gateCode: "G13_LOCALE_CALIBRATION_HEALTHY";
+    readonly thresholds: {
+      readonly kappaFloor: number;
+      readonly eceCeiling: number;
+      readonly minimumSampleCount: number;
+    };
+    readonly localeCount: number;
+    readonly passedCount: number;
+    readonly failedLocales: readonly string[];
+    readonly rows: readonly {
+      readonly locale: string;
+      readonly heldOutKappa: number;
+      readonly heldOutEce: number;
+      readonly sampleCount: number;
+      readonly fallbackToDefault: boolean;
+      readonly passed: boolean;
+    }[];
   };
   readonly regulatorCoverage: readonly AuditDossierRegulationCoverageEntry[];
   readonly summary: {

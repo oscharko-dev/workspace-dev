@@ -29,6 +29,15 @@ import {
 } from "../contracts/index.js";
 import { canonicalJson } from "./content-hash.js";
 import { renderAuditDossierPdf } from "./audit-dossier-renderer.js";
+import {
+  buildLocaleCalibrationHealthReport,
+  G13_LOCALE_CALIBRATION_HEALTHY,
+  LOCALE_CALIBRATION_ECE_CEILING,
+  LOCALE_CALIBRATION_FIXTURE_ROOT,
+  LOCALE_CALIBRATION_KAPPA_FLOOR,
+  LOCALE_CALIBRATION_MIN_SAMPLE_COUNT,
+  loadLocaleCalibrationArtifacts,
+} from "./locale-calibration-health.js";
 import type { ProvenanceDocument } from "./provenance-graph.js";
 import {
   loadCalibrationRefitHistory,
@@ -273,6 +282,16 @@ interface GenerateAuditDossierInput {
    * the existing shape.
    */
   readonly executionEvidenceCorpusDir?: string;
+  /**
+   * Optional override for the per-locale calibration fixture root
+   * consulted when rendering the per-locale calibration health table
+   * (Issue #2188). Defaults to
+   * `<repoRoot>/fixtures/test-intelligence/locale-calibration` so the
+   * production driver picks up the canonical Issue #2188 fixtures with
+   * no extra configuration. Pass an absolute path here to point the
+   * dossier at a sandbox tree.
+   */
+  readonly localeCalibrationFixtureRoot?: string;
 }
 
 export interface GenerateAuditDossierResult {
@@ -993,6 +1012,48 @@ export const generateAuditDossier = async (
             heldOutEce: row.heldOutEce,
             heldOutKappa: row.heldOutKappa,
           })),
+        },
+      };
+    })()),
+    ...(await (async () => {
+      const fixtureRoot =
+        input.localeCalibrationFixtureRoot ??
+        join(resolveRepoRoot(), LOCALE_CALIBRATION_FIXTURE_ROOT);
+      let artifacts;
+      try {
+        artifacts = await loadLocaleCalibrationArtifacts(fixtureRoot);
+      } catch {
+        return {};
+      }
+      if (artifacts.length === 0) return {};
+      const report = buildLocaleCalibrationHealthReport(artifacts);
+      return {
+        localeCalibrationHealth: {
+          gateCode: G13_LOCALE_CALIBRATION_HEALTHY,
+          thresholds: {
+            kappaFloor: LOCALE_CALIBRATION_KAPPA_FLOOR,
+            eceCeiling: LOCALE_CALIBRATION_ECE_CEILING,
+            minimumSampleCount: LOCALE_CALIBRATION_MIN_SAMPLE_COUNT,
+          },
+          localeCount: report.locales.length,
+          passedCount: report.locales.filter((entry) => entry.passed).length,
+          failedLocales: report.failedLocales,
+          rows: report.locales.map((entry) => {
+            const artifact = artifacts.find((a) => a.locale === entry.locale);
+            if (artifact === undefined) {
+              throw new Error(
+                `audit-dossier: locale ${entry.locale} present in health report but missing from artifact set`,
+              );
+            }
+            return {
+              locale: entry.locale,
+              heldOutKappa: artifact.heldOutKappa,
+              heldOutEce: artifact.heldOutEce,
+              sampleCount: artifact.sampleCount,
+              fallbackToDefault: artifact.fallbackToDefault,
+              passed: entry.passed,
+            };
+          }),
         },
       };
     })()),

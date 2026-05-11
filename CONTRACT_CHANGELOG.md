@@ -31,6 +31,60 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [1.38.0] - 2026-05-11
+
+Test-intelligence sub-contract bump for Issue #2188 (Wave 8 / W8-6) —
+extended per-locale Platt-curve calibration corpus. The harness now
+supports five additional EU-banking locales (PL-PL, ES-ES, NL-NL,
+CS-CZ, HU-HU) alongside the original six (DE-DE, DE-AT, DE-CH, EN-IE,
+FR-FR, IT-IT) introduced in Issue #2117.
+
+All changes are additive: the `SupportedLocale` union widens, the
+`AuditDossierManifest` shape gains a new optional
+`localeCalibrationHealth` block, and one new module
+(`locale-calibration-health.ts`) ships the `G13_LOCALE_CALIBRATION_HEALTHY`
+hard gate. No existing field, type, or hard gate was removed or
+renamed; per-locale calibration curves for the original six locales
+are byte-identical to the previous release.
+
+### Added (Issue #2188 — extended localizations PL / ES-ES / NL / CZ / HU)
+
+- `SupportedLocale` union widened from six locales to eleven, adding
+  `"PL-PL" | "ES-ES" | "NL-NL" | "CS-CZ" | "HU-HU"`. Type widening
+  only — no existing locale value is removed or renamed.
+- `SUPPORTED_LOCALES` array in `src/test-intelligence/locale-calibration.ts`
+  extended to mirror the union.
+- IBAN-prefix table extended with `PL`, `ES`, `NL`, `CZ`, `HU` country
+  codes; primary-tag promotion table extended with `pl`, `es`, `nl`,
+  `cs`, `hu`; keyword heuristic extended with the locale-specific
+  identifier sets (PESEL/NIP for PL, DNI/NIE/CIF for ES, BSN/KvK for
+  NL, Rodné číslo/IČO for CZ, Adószám/Személyi szám for HU). The IT
+  heuristic is preserved with priority over ES so the single-character
+  distinction between `Campo obbligatorio` (IT) and `Campo obligatorio`
+  (ES) remains correct.
+- New module `src/test-intelligence/locale-calibration-health.ts`
+  exporting:
+  - `G13_LOCALE_CALIBRATION_HEALTHY` — hard-gate code string.
+  - `LOCALE_CALIBRATION_KAPPA_FLOOR = 0.7`,
+    `LOCALE_CALIBRATION_ECE_CEILING = 0.1`,
+    `LOCALE_CALIBRATION_MIN_SAMPLE_COUNT = 30`.
+  - `evaluateLocaleCalibrationHealth`,
+    `buildLocaleCalibrationHealthReport`,
+    `loadLocaleCalibrationArtifacts`,
+    `assertLocaleCalibrationHealthy`, plus the typed
+    `LocaleCalibrationHealthError`.
+- `AuditDossierManifest` gains an optional `localeCalibrationHealth`
+  block carrying the per-locale gate verdict so the audit-dossier PDF
+  can table-render it. Optional and additive: legacy runs without
+  per-locale fixtures keep the dossier shape stable.
+- New operator-facing onboarding checklist at
+  `docs/test-intelligence/locales.md` covering native-speaker
+  reviewer recruitment, gold-set sizing, glossary curation, and
+  citation-map curation.
+
+All changes are additive; no existing field, type, gate code, or
+behaviour was removed or renamed.
+
 ## [1.37.0] - 2026-05-11
 
 Test-intelligence sub-contract bump for the Issue #2187 sovereign-cloud
