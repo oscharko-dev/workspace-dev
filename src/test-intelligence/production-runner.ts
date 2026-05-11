@@ -7614,6 +7614,11 @@ const VALID_LEVEL: ReadonlySet<TestCaseLevel> = new Set([
   "acceptance",
 ]);
 
+const normalizeDraftStepIndex = (value: unknown, fallback: number): number =>
+  typeof value === "number" && Number.isSafeInteger(value) && value > 0
+    ? value
+    : fallback;
+
 const validateDraftCase = (
   candidate: unknown,
   path: string,
@@ -7674,7 +7679,7 @@ const validateDraftCase = (
     if (typeof s.action !== "string" || s.action.length === 0) {
       return { ok: false, message: `${path}.steps[${i}].action is required` };
     }
-    const stepIndex = typeof s.index === "number" ? s.index : i + 1;
+    const stepIndex = normalizeDraftStepIndex(s.index, i + 1);
     const projected: ProductionRunnerLlmDraftCase["steps"][number] = {
       index: stepIndex,
       action: s.action,
@@ -8574,7 +8579,7 @@ const stampGeneratedTestCase = (input: {
   });
   const steps: GeneratedTestCaseStep[] = input.draft.steps.map((s, i) => {
     const projected: GeneratedTestCaseStep = {
-      index: typeof s.index === "number" && s.index > 0 ? s.index : i + 1,
+      index: normalizeDraftStepIndex(s.index, i + 1),
       action: s.action,
     };
     if (typeof s.data === "string") projected.data = s.data;
@@ -9087,18 +9092,14 @@ const buildDraftResponseSchema = (): Record<string, unknown> => ({
           },
           assumptions: { type: "array", items: { type: "string" } },
           openQuestions: { type: "array", items: { type: "string" } },
-          regulatoryRelevance: {
-            type: "object",
-            required: ["domain", "rationale"],
-            additionalProperties: false,
-            properties: {
-              domain: {
-                type: "string",
-                enum: [...ALLOWED_REGULATORY_RELEVANCE_DOMAINS],
-              },
-              rationale: { type: "string", minLength: 1 },
-            },
-          },
+          // Optional additive field: live gateways validate the draft before
+          // the tolerant runner parser sees it. Some models occasionally emit
+          // a scalar/string here instead of the documented object, and failing
+          // the whole draft defeats the "silently drop malformed optional
+          // metadata" contract enforced by parseDraftRegulatoryRelevance().
+          // Leave the prompt strict, but let the gateway accept any JSON value
+          // for this optional field so the runner can sanitize or omit it.
+          regulatoryRelevance: {},
           // Issue #1901 — coverage signals from the LLM. The schema
           // intentionally omits `additionalProperties: false` to mirror
           // the surrounding tolerance; the runner picks up the four

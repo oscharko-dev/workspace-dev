@@ -31,6 +31,31 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [1.44.7] - 2026-05-11
+
+Test-intelligence production-runner hardening for **Issue #2228**.
+This release keeps the live `test_generation` draft boundary resilient
+to optional metadata drift observed in the M7FGS benchmark and tightens
+step-index sanitization before final test-case stamping.
+
+### Changed (Issue #2228 — production-runner draft hardening)
+
+- `src/test-intelligence/production-runner.ts`:
+    - the draft response schema now tolerates malformed optional
+      `regulatoryRelevance` values at the gateway boundary so the runner
+      can apply the existing tolerant parser and drop invalid metadata
+      instead of failing the entire generation.
+    - draft step indexes are normalized to positive safe integers before
+      validation/stamping; invalid, negative, zero, or fractional model
+      indexes fall back to their deterministic step position.
+
+### Migration
+
+None. The `regulatoryRelevance` change only widens an optional draft
+metadata rejection path while preserving strict persisted output
+validation. Step-index normalization only affects malformed model output
+that would otherwise violate the persisted generated-test-case contract.
+
 ## [1.44.6] - 2026-05-11
 
 Post-merge cleanup for **Issue #2167** (Copilot review on PR #2226).
