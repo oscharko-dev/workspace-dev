@@ -186,8 +186,13 @@ test("schema: drift guard — the hash is stable for the current contract", () =
   // 1.31.0 -> 1.32.0 (additive self-improving judge-calibration loop —
   // optional `selfImprovingCalibrationRefitHistory` field on
   // AuditDossierManifest). Digest shifts in lockstep with the contract.
+  // Hash bumped by Issue #2183: TEST_INTELLIGENCE_CONTRACT_VERSION bumped
+  // 1.32.0 -> 1.33.0 (additive production-grade TMS adapters family —
+  // new `tms-push-report.json` artifact contract, new `TmsAdapter`
+  // surface, new CLI sub-command `tms-push`). Digest shifts in lockstep
+  // with the contract.
   const expected =
-    "a15914e9f8f9084317c8d25891734c894fb94d3b8b057aa3c496108975776eb9";
+    "4fcc31a296172450ae461a3405a47583d6a16d88ef374c7f4e77b3df8228d007";
   const actual = computeGeneratedTestCaseListSchemaHash();
   if (actual !== expected) {
     assert.fail(

@@ -69,6 +69,12 @@ import {
   TEST_INTELLIGENCE_CALIBRATION_REFIT_HELP,
 } from "./test-intelligence-calibration-refit-cli.js";
 import { CalibrationRefitOperatorError } from "./test-intelligence/self-improving-calibration.js";
+import {
+  parseTestIntelligenceTmsPushArgs,
+  runTestIntelligenceTmsPushCommand,
+  TEST_INTELLIGENCE_TMS_PUSH_HELP,
+  TestIntelligenceTmsPushOperatorError,
+} from "./test-intelligence-tms-push-cli.js";
 import path from "node:path";
 
 const DEFAULT_PORT = 1983;
@@ -1175,6 +1181,7 @@ Usage:
   workspace-dev test-intelligence verify-seal --bundle <path> [--key <path>]
   workspace-dev test-intelligence review <list|get|decide> [options]
   workspace-dev test-intelligence calibration-refit [options]
+  workspace-dev test-intelligence tms-push --run-dir <path> --tms <id> --project <id>
   workspace-dev --help
 
 Run "workspace-dev test-intelligence --help" for the test-intelligence subcommands.
@@ -1520,6 +1527,30 @@ const runTestIntelligenceSubCommand = async (
     });
     process.exit(exitCode);
   }
+  if (subCommand === "tms-push") {
+    if (args[1] === "--help" || args[1] === "help") {
+      process.stdout.write(`${TEST_INTELLIGENCE_TMS_PUSH_HELP}\n`);
+      process.exit(0);
+    }
+    let parsed;
+    try {
+      parsed = parseTestIntelligenceTmsPushArgs(args.slice(1));
+    } catch (err) {
+      if (err instanceof TestIntelligenceTmsPushOperatorError) {
+        process.stderr.write(`error: ${err.message}\n`);
+        process.exit(1);
+      }
+      throw err;
+    }
+    const exitCode = await runTestIntelligenceTmsPushCommand({
+      options: parsed,
+      sink: {
+        stdout: (message) => process.stdout.write(message),
+        stderr: (message) => process.stderr.write(message),
+      },
+    });
+    process.exit(exitCode);
+  }
   if (subCommand === "verify-provenance" || subCommand === "--verify-provenance") {
     if (args[1] === "--help" || args[1] === "help") {
       process.stdout.write(`${TEST_INTELLIGENCE_VERIFY_PROVENANCE_HELP}\n`);
@@ -1550,7 +1581,7 @@ const runTestIntelligenceSubCommand = async (
       `error: unknown sub-command for "test-intelligence": ${subCommand ?? "(none)"}\n`,
     );
     process.stderr.write(
-      "usage: workspace-dev test-intelligence <run|doctor|audit-dossier|audit-verify|verify-provenance|verify-seal|review|calibration-refit> [options]\n",
+      "usage: workspace-dev test-intelligence <run|doctor|audit-dossier|audit-verify|verify-provenance|verify-seal|review|calibration-refit|tms-push> [options]\n",
     );
     process.exit(1);
   }

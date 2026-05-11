@@ -162,7 +162,7 @@ export interface TestIntelligenceTransferPrincipal {
 }
 
 /** Contract version for the opt-in test-intelligence surface. */
-export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.32.0" as const;
+export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.33.0" as const;
 
 /**
  * Schema version for generated test case payloads.
@@ -13486,4 +13486,153 @@ export interface IncidentReport {
   readonly generatedAt: string;
   readonly reviewState: IncidentReviewState;
   readonly events: readonly IncidentEvent[];
+}
+
+// ---------------------------------------------------------------------------
+// Production-grade TMS adapter surface (Issue #2183, Wave 8).
+// ---------------------------------------------------------------------------
+
+/**
+ * TMS adapter discriminator for the four enterprise TMS systems shipped
+ * in Wave 8 (Issue #2183). The order is canonical for sort-based
+ * registry rendering; new adapters extend the array.
+ */
+export const ALLOWED_TMS_ADAPTER_IDS = [
+  "alm",
+  "polarion",
+  "qtest",
+  "xray",
+] as const;
+export type TmsAdapterId = (typeof ALLOWED_TMS_ADAPTER_IDS)[number];
+
+/**
+ * Per-case push verdict surfaced on the persisted `tms-push-report.json`.
+ *
+ *   - `pushed` — the adapter created a fresh test case in the TMS.
+ *   - `skipped-dup` — idempotency lookup found a prior write under the
+ *     same `(tenantId, runId, testCaseId)` key. No write performed.
+ *   - `failed` — adapter or transport error after all retry attempts.
+ */
+export const ALLOWED_TMS_PUSH_VERDICTS = [
+  "pushed",
+  "skipped-dup",
+  "failed",
+] as const;
+export type TmsPushVerdict = (typeof ALLOWED_TMS_PUSH_VERDICTS)[number];
+
+/**
+ * Authentication kinds accepted by the TMS adapter contract. Issue #2183
+ * requires PAT (Personal Access Token), OAuth 2.0 bearer, and generic
+ * Bearer token. Each adapter advertises which kind(s) it supports.
+ */
+export const ALLOWED_TMS_AUTH_KINDS = [
+  "pat",
+  "oauth2",
+  "bearer",
+] as const;
+export type TmsAuthKind = (typeof ALLOWED_TMS_AUTH_KINDS)[number];
+
+/** Schema version stamped on every persisted `tms-push-report.json`. */
+export const TMS_PUSH_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the per-push artifact. */
+export const TMS_PUSH_REPORT_ARTIFACT_FILENAME =
+  "tms-push-report.json" as const;
+
+/**
+ * Allowed reasons the push pipeline may refuse to perform any write.
+ * Evaluated in fail-closed order; every fired refusal is recorded so
+ * operators can address them all in one cycle.
+ */
+export const ALLOWED_TMS_PUSH_REFUSAL_CODES = [
+  "credentials_missing",
+  "credentials_invalid",
+  "project_validation_failed",
+  "mapping_preview_missing",
+  "mapping_preview_unreadable",
+  "no_mapped_test_cases",
+  "adapter_unsupported",
+  "connect_failed",
+] as const;
+export type TmsPushRefusalCode =
+  (typeof ALLOWED_TMS_PUSH_REFUSAL_CODES)[number];
+
+/** Single per-case row in `tms-push-report.json`. */
+export interface TmsPushReportEntry {
+  /** Stable provider-neutral id from `qc-mapping-preview.json`. */
+  testCaseId: string;
+  /** Idempotency key derived from `(tenantId, runId, testCaseId)`. */
+  idempotencyKey: string;
+  /** Push verdict; one of `ALLOWED_TMS_PUSH_VERDICTS`. */
+  verdict: TmsPushVerdict;
+  /**
+   * Round-trip evidence: the TMS-assigned id when the verdict is
+   * `pushed` or `skipped-dup`. Empty string for `failed`.
+   */
+  tmsTestCaseId: string;
+  /**
+   * Sanitised TMS error code preserved on `failed` (e.g. ALM
+   * `qccore.entity.not-found`, Xray `JIRA-401`). Empty for non-failures.
+   */
+  tmsErrorCode: string;
+  /**
+   * Length-bounded, redacted TMS error message preserved on `failed`.
+   * Never carries URLs, tokens, or raw response bodies. Empty for
+   * non-failures.
+   */
+  tmsErrorMessage: string;
+  /** Number of HTTP attempts performed for this case (1 + retries). */
+  attemptCount: number;
+  /** ISO-8601 UTC timestamp at which the verdict was recorded. */
+  recordedAt: string;
+}
+
+/**
+ * Aggregate `tms-push-report.json` artifact (Issue #2183).
+ *
+ * One file per push operation written under the run dir. The artifact is
+ * the round-trip evidence that an operator hands an auditor: every
+ * approved+mapped case appears exactly once with a verdict and (for
+ * pushed cases) the TMS-assigned id.
+ */
+export interface TmsPushReportArtifact {
+  readonly schemaVersion: typeof TMS_PUSH_REPORT_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  /** Adapter discriminator used by the run. */
+  readonly adapterId: TmsAdapterId;
+  /** Adapter implementation version stamped at compile time. */
+  readonly adapterVersion: string;
+  /**
+   * Symbolic alias for the TMS endpoint (never the resolved URL).
+   * Mirrors `QcMappingProfile.baseUrlAlias`.
+   */
+  readonly tmsEndpointAlias: string;
+  /** Project id inside the TMS (e.g. Jira project key, ALM project name). */
+  readonly tmsProjectId: string;
+  /** Run identifier from the source `run-dir`; empty when not derivable. */
+  readonly runId: string;
+  /** Stable tenant id used in idempotency keys. */
+  readonly tenantId: string;
+  /** ISO-8601 UTC timestamp at which the push run completed. */
+  readonly generatedAt: string;
+  /** Whether the pipeline refused to perform any write. */
+  readonly refused: boolean;
+  /** Sorted, deduplicated refusal codes that fired. */
+  readonly refusalCodes: readonly TmsPushRefusalCode[];
+  /** Whether the push was a `--dry-run` (no actual TMS writes performed). */
+  readonly dryRun: boolean;
+  /** Per-case results, sorted by `testCaseId`. */
+  readonly entries: readonly TmsPushReportEntry[];
+  /** Number of entries with verdict `pushed`. */
+  readonly pushedCount: number;
+  /** Number of entries with verdict `skipped-dup`. */
+  readonly skippedDuplicateCount: number;
+  /** Number of entries with verdict `failed`. */
+  readonly failedCount: number;
+  /** Hard invariant: the adapter never embeds raw screenshots. */
+  readonly rawScreenshotsIncluded: false;
+  /** Hard invariant: the adapter never embeds credentials. */
+  readonly credentialsIncluded: false;
+  /** Hard invariant: the adapter never echoes resolved URLs. */
+  readonly transferUrlIncluded: false;
 }

@@ -154,7 +154,7 @@ test("cache-break-events-log: golden line for the canonical example", () => {
     ],
   });
   const golden =
-    '{"cacheCreationTokens":200,"cacheReadTokens":12,"contractVersion":"1.32.0",' +
+    '{"cacheCreationTokens":200,"cacheReadTokens":12,"contractVersion":"1.33.0",' +
     '"diffArtifactBasename":"0.diff.json","jobId":"job-1","parentHash":"' +
     HASH_A +
     '","querySource":"judge_primary","roleStepId":"test_generation","schemaVersion":"1.0.0",' +
