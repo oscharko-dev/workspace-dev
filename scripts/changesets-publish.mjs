@@ -40,16 +40,21 @@ const resolvePublishEnv = () => {
   ).trim();
 
   if (publishEnv.GITHUB_ACTIONS === "true") {
-    if (!publishEnv.ACTIONS_ID_TOKEN_REQUEST_URL || !publishEnv.ACTIONS_ID_TOKEN_REQUEST_TOKEN) {
-      throw new Error("Trusted publishing prerequisites missing: id-token permission is not available.");
-    }
+    const hasGitHubOidc =
+      Boolean(publishEnv.ACTIONS_ID_TOKEN_REQUEST_URL) &&
+      Boolean(publishEnv.ACTIONS_ID_TOKEN_REQUEST_TOKEN);
+    let publishProvenance = false;
 
     if (publishAuthMode === "trusted-publisher-oidc") {
+      if (!hasGitHubOidc) {
+        throw new Error("Trusted publishing prerequisites missing: id-token permission is not available.");
+      }
       // Enforce OIDC trusted publishing and prevent token fallback in CI.
       delete publishEnv.NODE_AUTH_TOKEN;
       delete publishEnv.NPM_TOKEN;
       delete publishEnv.npm_config__authToken;
       delete publishEnv.NPM_CONFIG__AUTH_TOKEN;
+      publishProvenance = true;
     } else if (publishAuthMode === "npm-token") {
       const token = String(
         publishEnv.NODE_AUTH_TOKEN ?? publishEnv.NPM_TOKEN ?? ""
@@ -61,6 +66,7 @@ const resolvePublishEnv = () => {
       }
       publishEnv.NODE_AUTH_TOKEN = token;
       publishEnv.NPM_TOKEN = token;
+      publishProvenance = hasGitHubOidc;
     } else {
       throw new Error(
         `Unsupported WORKSPACE_DEV_PUBLISH_AUTH_MODE '${publishAuthMode}'. Expected trusted-publisher-oidc or npm-token.`
@@ -74,8 +80,8 @@ const resolvePublishEnv = () => {
     publishEnv.NPM_CONFIG_IGNORE_SCRIPTS = "true";
     publishEnv.npm_config_access = "public";
     publishEnv.NPM_CONFIG_ACCESS = "public";
-    publishEnv.npm_config_provenance = "true";
-    publishEnv.NPM_CONFIG_PROVENANCE = "true";
+    publishEnv.npm_config_provenance = publishProvenance ? "true" : "false";
+    publishEnv.NPM_CONFIG_PROVENANCE = publishProvenance ? "true" : "false";
   }
 
   return publishEnv;
