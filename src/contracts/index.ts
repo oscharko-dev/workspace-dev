@@ -162,7 +162,7 @@ export interface TestIntelligenceTransferPrincipal {
 }
 
 /** Contract version for the opt-in test-intelligence surface. */
-export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.38.0" as const;
+export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.39.0" as const;
 
 /**
  * Schema version for generated test case payloads.
@@ -1879,6 +1879,24 @@ export interface TestCasePolicyProfileRules {
    * when omitted the runtime falls back to the profile's built-in default.
    */
   allowedHostingRegions?: readonly RegionAttestationHostingRegion[];
+  /**
+   * Issue #2128 — opt-in training-influence DP budget configuration. When
+   * omitted or `.enabled === false` (the secure default), the accountant
+   * is inactive.
+   *
+   * This field is the policy-profile-side declaration of the budget. The
+   * runtime helpers in `src/test-intelligence/training-influence-dp-budget.ts`
+   * (`applyDpCharge`, `buildDpBudgetConsumedManifest`, ...) are the
+   * call-site API operators wire into their gateway adapter to charge each
+   * job, block on cap exhaustion, and emit the per-job
+   * `dp-budget-consumed.json` artifact for audit replay. The harness
+   * itself does not call these helpers — this is a library surface, not
+   * an automatically-applied gate.
+   *
+   * NOT a cryptographic DP guarantee — this is an accounting layer that
+   * supports operator decision-making. See the ADR for the model.
+   */
+  trainingInfluenceDpBudget?: TrainingInfluenceDpBudgetConfig;
 }
 
 export const ALLOWED_JUDGE_REFUSAL_POLICIES = [
@@ -6547,6 +6565,10 @@ export const ALLOWED_HARNESS_ARTIFACT_FILENAMES = [
   "cache-break-events.jsonl",
   "compact-boundary-log.jsonl",
   "coverage-plan.json",
+  // Issue #2128 — per-job differential-privacy budget-accounting manifest
+  // (training-influence accountability). Opt-in feature; written only when
+  // the policy profile enables `trainingInfluenceDpBudget`.
+  "dp-budget-consumed.json",
   "genealogy.json",
   "ir-mutation-coverage-strength.json",
   "judge-panel-verdicts.json",
@@ -6590,6 +6612,148 @@ export interface HarnessArtifactManifest {
   readonly entries: readonly HarnessArtifactManifestEntry[];
   /** sha256-hex over `canonicalJson(entries)`. */
   readonly digest: string;
+}
+
+/**
+ * Issue #2128 — schema version for {@link DpBudgetConsumedManifest}.
+ */
+export const DP_BUDGET_CONSUMED_MANIFEST_SCHEMA_VERSION = "1.0.0" as const;
+
+/**
+ * Issue #2128 — canonical filename for the per-job differential-privacy
+ * budget-accounting manifest. Written into the per-job runDir when the
+ * policy profile enables `trainingInfluenceDpBudget`. The filename is also
+ * a member of {@link ALLOWED_HARNESS_ARTIFACT_FILENAMES} so the harness
+ * artifact manifest pins its sha256 + size for audit replay.
+ */
+export const DP_BUDGET_CONSUMED_MANIFEST_ARTIFACT_FILENAME =
+  "dp-budget-consumed.json" as const;
+
+/**
+ * Issue #2128 — default per-input-token epsilon estimate used by
+ * `estimateJobDpCharge`. Conservative ceiling chosen so a 200 000-token job
+ * (the `eu-banking-default` `test_generation` request cap) is charged
+ * `epsilon = 20` against the tenant budget. Operators tighten this on a
+ * derived policy profile when contractually required.
+ */
+export const DP_BUDGET_DEFAULT_PER_TOKEN_EPSILON = 1e-4 as const;
+
+/**
+ * Issue #2128 — default per-job delta estimate. Constant per job (does not
+ * scale with token count) per the additive-composition accounting model
+ * documented in the ADR.
+ */
+export const DP_BUDGET_DEFAULT_DELTA_PER_JOB = 1e-6 as const;
+
+/**
+ * Issue #2128 — closed list of decisions {@link applyDpCharge} can return.
+ * Adding a member is an additive minor bump.
+ */
+export const ALLOWED_DP_BUDGET_DECISIONS = [
+  "accepted",
+  "rejected_budget_exhausted",
+  "skipped_disabled",
+] as const;
+
+/** Discriminated alias for {@link ALLOWED_DP_BUDGET_DECISIONS}. */
+export type DpBudgetDecision = (typeof ALLOWED_DP_BUDGET_DECISIONS)[number];
+
+/**
+ * Issue #2128 — operator-controlled training-influence DP budget policy.
+ * Opt-in: when the policy profile omits `trainingInfluenceDpBudget` (the
+ * default) the gate is fully inactive and no manifest is written.
+ *
+ * The numbers in this config are NOT cryptographic differential-privacy
+ * guarantees — they are an operator-facing accounting layer that bounds
+ * how much input content a tenant may contribute to provider gateways
+ * inside a single cycle. See the ADR for the mathematical model.
+ */
+export interface TrainingInfluenceDpBudgetConfig {
+  /** Master switch. When `false`, the gate is inactive. */
+  readonly enabled: boolean;
+  /**
+   * Epsilon contribution charged per input token. Default
+   * {@link DP_BUDGET_DEFAULT_PER_TOKEN_EPSILON}.
+   */
+  readonly perTokenEpsilon?: number;
+  /**
+   * Delta contribution charged per job (constant, independent of token
+   * count). Default {@link DP_BUDGET_DEFAULT_DELTA_PER_JOB}.
+   */
+  readonly deltaPerJob?: number;
+  /** Tenant-level epsilon cap across all jobs in the current cycle. */
+  readonly tenantEpsilonBudget: number;
+  /** Tenant-level delta cap across all jobs in the current cycle. */
+  readonly tenantDeltaBudget: number;
+}
+
+/**
+ * Issue #2128 — durable per-tenant accounting state. The harness reads
+ * this before each job, calls {@link applyDpCharge}, and persists the
+ * returned `newState` for the next job. `cycleId` is opaque to the
+ * accountant — operators advance it on their preferred cadence (per
+ * day, per quarter, per audit window) by calling
+ * {@link resetTenantDpBudgetCycle}.
+ */
+export interface TenantDpBudgetState {
+  readonly schemaVersion: typeof DP_BUDGET_CONSUMED_MANIFEST_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly tenantId: string;
+  readonly cycleId: string;
+  readonly cycleStartedAt: string;
+  readonly epsilonBudget: number;
+  readonly deltaBudget: number;
+  readonly epsilonConsumed: number;
+  readonly deltaConsumed: number;
+  readonly jobsCharged: number;
+}
+
+/**
+ * Issue #2128 — estimated per-job charge produced by
+ * `estimateJobDpCharge`. The values are deterministic functions of the
+ * inputs; two byte-identical jobs estimate to byte-identical charges.
+ */
+export interface DpBudgetCharge {
+  readonly epsilon: number;
+  readonly delta: number;
+  readonly inputTokens: number;
+  readonly perTokenEpsilon: number;
+  readonly deltaPerJob: number;
+}
+
+/**
+ * Issue #2128 — per-job manifest carrying `dpBudgetConsumed` for audit.
+ * Persisted as `dp-budget-consumed.json` next to the other harness
+ * artifacts. The {@link HarnessArtifactManifest} pins its sha256 + size
+ * so the evidence-verify route reproduces the audit trail offline.
+ */
+export interface DpBudgetConsumedManifest {
+  readonly schemaVersion: typeof DP_BUDGET_CONSUMED_MANIFEST_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly tenantId: string;
+  readonly jobId: string;
+  readonly cycleId: string;
+  readonly generatedAt: string;
+  readonly decision: DpBudgetDecision;
+  /** Charge applied to the tenant budget by this job. */
+  readonly dpBudgetConsumed: {
+    readonly epsilon: number;
+    readonly delta: number;
+    readonly inputTokens: number;
+  };
+  /** Running cycle totals AFTER this job's charge was applied. */
+  readonly cycleTotals: {
+    readonly epsilonConsumed: number;
+    readonly deltaConsumed: number;
+    readonly epsilonBudget: number;
+    readonly deltaBudget: number;
+    readonly jobsCharged: number;
+  };
+  /** Parameters that produced the estimate, for replay. */
+  readonly parameters: {
+    readonly perTokenEpsilon: number;
+    readonly deltaPerJob: number;
+  };
 }
 
 /**
