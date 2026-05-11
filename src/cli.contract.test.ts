@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -1128,6 +1128,94 @@ test("cli contract: test-intelligence tms-push without --tms exits with operator
   });
   assert.equal(result.exitCode, 1);
   assert.match(result.stderr, /--tms is required/i);
+});
+
+test("cli contract: test-intelligence onboard --help prints onboarding flags", async () => {
+  const result = await runCliToExit({
+    args: ["test-intelligence", "onboard", "--help"],
+  });
+  assert.equal(result.exitCode, 0, result.stderr);
+  assert.match(result.stdout, /--tenant-id/i);
+  assert.match(result.stdout, /--legal-name/i);
+  assert.match(result.stdout, /--policy-profile/i);
+  assert.match(result.stdout, /--output-root/i);
+  assert.match(result.stdout, /--doctor/i);
+  assert.match(result.stdout, /Issue #2185/);
+});
+
+test("cli contract: test-intelligence onboard without --tenant-id exits 1 with operator error", async () => {
+  const result = await runCliToExit({
+    args: [
+      "test-intelligence",
+      "onboard",
+      "--legal-name",
+      "Acme",
+      "--policy-profile",
+      "eu-banking-default",
+      "--output-root",
+      "/tmp/none",
+    ],
+  });
+  assert.equal(result.exitCode, 1);
+  assert.match(result.stderr, /--tenant-id is required/i);
+});
+
+test("cli contract: test-intelligence onboard --doctor against missing tenant exits 2", async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-ti-onboard-"));
+  try {
+    const result = await runCliToExit({
+      args: [
+        "test-intelligence",
+        "onboard",
+        "--doctor",
+        "--tenant-id",
+        "ghost-bank",
+        "--output-root",
+        tmpDir,
+      ],
+    });
+    assert.equal(result.exitCode, 2);
+    assert.match(result.stdout, /Result: FAIL/i);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("cli contract: test-intelligence onboard end-to-end provisions a tenant directory the doctor approves", async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-ti-onboard-"));
+  try {
+    const provision = await runCliToExit({
+      args: [
+        "test-intelligence",
+        "onboard",
+        "--tenant-id",
+        "acme-bank",
+        "--legal-name",
+        "Acme Bank AG",
+        "--policy-profile",
+        "eu-banking-default",
+        "--output-root",
+        tmpDir,
+      ],
+    });
+    assert.equal(provision.exitCode, 0, provision.stderr);
+    assert.match(provision.stdout, /Tenant onboarding complete/);
+    const doctor = await runCliToExit({
+      args: [
+        "test-intelligence",
+        "onboard",
+        "--doctor",
+        "--tenant-id",
+        "acme-bank",
+        "--output-root",
+        tmpDir,
+      ],
+    });
+    assert.equal(doctor.exitCode, 0, doctor.stderr);
+    assert.match(doctor.stdout, /Result: PASS/);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
 });
 
 test("cli contract: test-intelligence run --enable-visual-sidecar fails closed when visual envs are missing", async () => {

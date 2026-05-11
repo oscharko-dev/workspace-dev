@@ -1,9 +1,9 @@
 {
-  "contractVersion": "1.34.0",
+  "contractVersion": "1.35.0",
   "generatedAt": "2026-05-10T11:00:00.000Z",
   "items": [
     {
-      "contractVersion": "1.34.0",
+      "contractVersion": "1.35.0",
       "enqueuedAt": "2026-05-10T09:00:00.000Z",
       "itemId": "5b21e2d4d3aa01b3c19e9a86bdaa44c5",
       "judgeDisagreement": {
@@ -36,7 +36,7 @@
   "tenantId": "acme",
   "verdicts": [
     {
-      "contractVersion": "1.34.0",
+      "contractVersion": "1.35.0",
       "decidedAt": "2026-05-10T10:00:00.000Z",
       "itemId": "5b21e2d4d3aa01b3c19e9a86bdaa44c5",
       "publicKeyFingerprintSha256": "0000000000000000000000000000000000000000000000000000000000000000",

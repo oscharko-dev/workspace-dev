@@ -31,6 +31,108 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [1.35.0] - 2026-05-11
+
+Test-intelligence sub-contract bump for the Issue #2185 self-service
+customer-onboarding CLI (Wave 8 / W8-3). A bank's operator now stands
+up a complete tenant directory in a single command — tenant bundle,
+calibration corpus slot, three locally-generated signing keys, DORA
+Art. 28 ICT register entry, and an onboarding-evidence audit trail —
+without operator hand-holding. All changes are additive — no existing
+field, type, or command was removed or renamed.
+
+### Added (Issue #2185 — self-service customer-onboarding CLI)
+
+- New module `src/test-intelligence/tenant-onboarding.ts` exposing the
+  provisioning flow + the doctor validator:
+  - `runTenantOnboarding(input): Promise<TenantOnboardingResult>` —
+    the main entrypoint; validates inputs, generates Ed25519 key
+    material locally, writes the tenant directory, and returns the
+    operator-facing summary report. Throws
+    `TenantOnboardingValidationError` on operator-facing input errors.
+  - `runTenantOnboardingDoctor(input): Promise<TenantOnboardingDoctorResult>`
+    — the safety-net validator; verifies the tenant layout, parses
+    every key, cross-checks public-key fingerprints against the ICT
+    register, and refuses tenant-scope mismatches as multi-tenant
+    isolation violations (W6-2).
+- New persisted-artifact constants:
+  - `TENANT_ONBOARDING_SCHEMA_VERSION` (`"1.0.0"`).
+  - `TENANT_ICT_REGISTER_SCHEMA_VERSION` (`"1.0.0"`).
+  - `TENANT_ONBOARDING_TENANTS_SUBDIR` (`"tenants"`).
+  - `TENANT_ONBOARDING_BUNDLE_FILENAME` (`"tenant-bundle.json"`).
+  - `TENANT_ONBOARDING_CALIBRATION_CORPUS_DIRNAME`
+    (`"calibration-corpus"`).
+  - `TENANT_ONBOARDING_SIGNING_KEYS_DIRNAME` (`"signing-keys"`).
+  - `TENANT_ICT_REGISTER_FILENAME` (`"ict-register.json"`).
+  - `TENANT_ONBOARDING_EVIDENCE_FILENAME`
+    (`"onboarding-evidence.json"`).
+  - `TENANT_ONBOARDING_FINGERPRINTS_FILENAME` (`"fingerprints.json"`).
+  - `AUDIT_DOSSIER_PRIVATE_KEY_FILENAME` /
+    `AUDIT_DOSSIER_PUBLIC_KEY_FILENAME` (W6-1).
+  - `REGION_ATTESTATION_KEY_FILENAME` (W6-3).
+  - `REVIEWER_SIGNING_PRIVATE_KEY_FILENAME` /
+    `REVIEWER_SIGNING_PUBLIC_KEY_FILENAME` (W6-5).
+- New file-mode constants exported for documentation /
+  cross-platform parity tests: `PRIVATE_KEY_FILE_MODE` (`0o600`),
+  `HMAC_SECRET_FILE_MODE` (`0o600`),
+  `PUBLIC_ARTIFACT_FILE_MODE` (`0o644`).
+- New input-validation surface:
+  - `TENANT_ONBOARDING_TENANT_ID_PATTERN` —
+    `^[a-z0-9][a-z0-9_-]{0,63}$`, kept in sync with
+    `tenant-bundle.ts`.
+  - `TENANT_ONBOARDING_KNOWN_POLICY_PROFILE_IDS` — closed allow-list
+    of policy-profile ids the onboarding CLI accepts (currently
+    `eu-banking-default`).
+- New persisted-artifact + input types:
+  - `TenantOnboardingInput`, `Ed25519KeyMaterial`,
+    `SigningKeyFingerprints`, `CreatedArtifactRef`,
+    `TenantOnboardingResult`.
+  - `TenantOnboardingDoctorInput`, `TenantOnboardingDoctorCheck`,
+    `TenantOnboardingDoctorResult`.
+- New error class `TenantOnboardingValidationError` with stable
+  `code` strings:
+  - `TENANT_ONBOARDING_INVALID_TENANT_ID`
+  - `TENANT_ONBOARDING_INVALID_LEGAL_NAME`
+  - `TENANT_ONBOARDING_UNKNOWN_POLICY_PROFILE`
+  - `TENANT_ONBOARDING_INVALID_OUTPUT_ROOT`
+  - `TENANT_ONBOARDING_INVALID_ENVIRONMENT_ID`
+  - `TENANT_ONBOARDING_INVALID_JURISDICTION`
+  - `TENANT_ONBOARDING_INVALID_EFFECTIVE_DATE`
+  - `TENANT_ONBOARDING_DIRECTORY_EXISTS`
+  - `TENANT_ONBOARDING_INTERNAL_BUNDLE_INVALID`
+- New CLI surface in `src/test-intelligence-onboard-cli.ts`:
+  - `parseTestIntelligenceOnboardArgs(argv)` returning either
+    `TestIntelligenceOnboardOptions` (provision mode) or
+    `TestIntelligenceOnboardDoctorOptions` (doctor mode).
+  - `runTestIntelligenceOnboardCommand(options, sink)` returning
+    `Promise<number>` — exit codes `0` (ok), `1`
+    (operator/config error), `2` (doctor failed).
+  - `TestIntelligenceOnboardOperatorError` parser-level error class.
+  - `TEST_INTELLIGENCE_ONBOARD_HELP` help text constant.
+- New `test-intelligence onboard` CLI subcommand wired into
+  `src/cli.ts`, with two invocation forms:
+  - `test-intelligence onboard --tenant-id <id> --legal-name <name>
+    --policy-profile <id> --output-root <dir>
+    [--force] [--environment-id <id>] [--project-id <id>]
+    [--jurisdiction <code>] [--effective-date <iso>]`.
+  - `test-intelligence onboard --doctor --tenant-id <id>
+    --output-root <dir> [--environment-id <id>] [--project-id <id>]`.
+
+### Behaviour notes
+
+- Key generation is strictly local (`crypto.generateKeyPairSync` /
+  `crypto.randomBytes`); no KMS / HSM call. Private keys are written
+  with mode `0600` and never reprinted by the harness — the operator
+  owns key custody.
+- Provision mode refuses to overwrite an existing tenant directory
+  unless `--force` is passed.
+- Every onboarded artifact embeds the tenant scope; doctor mode
+  refuses an artifact whose embedded `tenantId` differs from the
+  expected scope as a catastrophic multi-tenant isolation violation
+  (W6-2).
+
+---
+
 ## [1.34.0] - 2026-05-11
 
 Test-intelligence sub-contract bump for the Issue #2184 BYO-rubric /
