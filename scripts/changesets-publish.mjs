@@ -39,22 +39,33 @@ const resolvePublishEnv = () => {
     publishEnv.WORKSPACE_DEV_PUBLISH_AUTH_MODE ?? "trusted-publisher-oidc"
   ).trim();
 
-  if (publishEnv.GITHUB_ACTIONS === "true" && publishAuthMode !== "trusted-publisher-oidc") {
-    throw new Error(
-      "Trusted publishing is mandatory in GitHub Actions. Set WORKSPACE_DEV_PUBLISH_AUTH_MODE=trusted-publisher-oidc."
-    );
-  }
-
   if (publishEnv.GITHUB_ACTIONS === "true") {
     if (!publishEnv.ACTIONS_ID_TOKEN_REQUEST_URL || !publishEnv.ACTIONS_ID_TOKEN_REQUEST_TOKEN) {
       throw new Error("Trusted publishing prerequisites missing: id-token permission is not available.");
     }
 
-    // Enforce OIDC trusted publishing and prevent token fallback in CI.
-    delete publishEnv.NODE_AUTH_TOKEN;
-    delete publishEnv.NPM_TOKEN;
-    delete publishEnv.npm_config__authToken;
-    delete publishEnv.NPM_CONFIG__AUTH_TOKEN;
+    if (publishAuthMode === "trusted-publisher-oidc") {
+      // Enforce OIDC trusted publishing and prevent token fallback in CI.
+      delete publishEnv.NODE_AUTH_TOKEN;
+      delete publishEnv.NPM_TOKEN;
+      delete publishEnv.npm_config__authToken;
+      delete publishEnv.NPM_CONFIG__AUTH_TOKEN;
+    } else if (publishAuthMode === "npm-token") {
+      const token = String(
+        publishEnv.NODE_AUTH_TOKEN ?? publishEnv.NPM_TOKEN ?? ""
+      ).trim();
+      if (!token) {
+        throw new Error(
+          "NPM token publishing requested but NODE_AUTH_TOKEN/NPM_TOKEN is missing."
+        );
+      }
+      publishEnv.NODE_AUTH_TOKEN = token;
+      publishEnv.NPM_TOKEN = token;
+    } else {
+      throw new Error(
+        `Unsupported WORKSPACE_DEV_PUBLISH_AUTH_MODE '${publishAuthMode}'. Expected trusted-publisher-oidc or npm-token.`
+      );
+    }
 
     // The release workflow already runs exhaustive quality gates in dedicated jobs.
     // Re-running package lifecycle scripts during publish introduces flaky ELIFECYCLE
