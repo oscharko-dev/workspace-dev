@@ -6,7 +6,7 @@
 
 ## Context
 
-Issue [#2176](../../) added a *runtime* tenant-isolation guard
+Issue #2176 added a *runtime* tenant-isolation guard
 (`AsyncLocalStorage` + `assertTenantScope`) and persisted a per-run
 `tenant-isolation-attestation.json` certifying that *that specific run*
 observed no cross-tenant persistent-store read. The attestation is
@@ -92,8 +92,10 @@ cross-tenant leakage record.
 - One new artifact in source control: `fixtures/test-intelligence/tenant-isolation/tenant-isolation-proof.json`
   (committed) plus `fixtures/test-intelligence/tenant-isolation/tenant-isolation-pentest.json`.
 - One new CI gate (`G12`) wired into `pr-quality-gate.yml`.
-- Two new `pnpm` scripts: `generate:tenant-isolation-proof` and
-  `test:ti-tenant-isolation-pentest`.
+- Three new `pnpm` scripts: `generate:tenant-isolation-proof`,
+  `generate:tenant-isolation-pentest`, and
+  `test:ti-tenant-isolation-proof` (which composes the test file plus
+  the proof-drift and pentest-drift CI gates).
 - Any future change to the cache-key construction or storage layout
   requires an ADR amendment (this file) plus a regenerated proof
   artifact. Reviewers can read the ADR + new proof bytes side-by-side
@@ -105,8 +107,8 @@ cross-tenant leakage record.
 
 ## References
 
-- Issue [#2130](../../) — implementation issue (this ADR).
-- Issue [#2176](../../) — runtime guard (predecessor).
+- Issue #2130 — implementation issue (this ADR).
+- Issue #2176 — runtime guard (predecessor).
 - DORA Article 9 (ICT risk management framework) and Article 28 (ICT
   third-party risk) — see
   [`docs/dora/multi-tenant-isolation.md`](../dora/multi-tenant-isolation.md).

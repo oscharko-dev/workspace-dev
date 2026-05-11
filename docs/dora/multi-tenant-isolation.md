@@ -81,11 +81,15 @@ visibility. See [`docs/adr/2130-cross-tenant-isolation-proof-artifact.md`](../ad
 pnpm run generate:tenant-isolation-proof
 
 # Pentest evidence (committed under fixtures/test-intelligence/tenant-isolation/tenant-isolation-pentest.json)
-pnpm run test:ti-tenant-isolation-pentest
+pnpm run generate:tenant-isolation-pentest
 ```
 
 Both commands are deterministic; identical source produces byte-identical
-artifacts. The CI gate enforces this.
+artifacts. The CI gate (`pnpm run test:ti-tenant-isolation-proof`)
+byte-compares both the regenerated proof and the regenerated pentest
+evidence against their committed fixtures, so drift in attempt
+ordering, observation text, or pre-image distinctness shape surfaces
+as a gate failure rather than a silent rewrite.
 
 ## Reading the proof artifact
 

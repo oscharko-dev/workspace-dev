@@ -211,21 +211,22 @@ test("tenant-isolation-proof: witness paths match runtime persistent-cache layou
     // constructing the cache. The cache materialises directories
     // lazily on store, so we just confirm the path strings agree.
     const aSegments = witness.tenantA.tenantScope;
-    const expectedAPath = join(
-      dir,
+    // The proof carries POSIX-form paths for byte-stability across host
+    // OSes (Windows/macOS/Linux). Compare segment-by-segment so the
+    // assertion is OS-agnostic without depending on string substitution
+    // tricks that happen to be no-ops on POSIX hosts.
+    const expectedASegments = [
+      ...dir.split(/[\\/]/u).filter((segment) => segment.length > 0),
       aSegments.tenantId,
       aSegments.environmentId,
       aSegments.projectId ?? "default",
       `${witness.cacheKeyDigest}.json`,
-    );
-    const proofA = witness.tenantA.storagePath.replace(
-      "<rootDir>",
-      dir.split("/").join("/"),
-    );
-    assert.equal(
-      expectedAPath.split("/").join("/"),
-      proofA.split("/").join("/"),
-    );
+    ];
+    const proofASegments = witness.tenantA.storagePath
+      .replace("<rootDir>", dir)
+      .split(/[\\/]/u)
+      .filter((segment) => segment.length > 0);
+    assert.deepEqual(proofASegments, expectedASegments);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
