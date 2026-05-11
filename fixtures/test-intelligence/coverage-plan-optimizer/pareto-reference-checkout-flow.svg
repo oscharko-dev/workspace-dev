@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 320" role="img" aria-label="Pareto frontier for fixture reference-checkout-flow">
+<title>Pareto frontier — fixture reference-checkout-flow</title>
+<desc>X axis: token cost (minimize). Y axis: mutation kill rate (maximize). The optimizer recommends the closest point that satisfies the kill-rate floor (0.76) and the cost ceiling (64000.00).</desc>
+<rect x="0" y="0" width="480" height="320" fill="#ffffff"/>
+<rect x="60" y="32" width="396" height="232" fill="none" stroke="#000000" stroke-width="1"/>
+<line x1="60" y1="87.68" x2="456" y2="87.68" stroke="#cc0000" stroke-width="1" stroke-dasharray="4 2"/>
+<line x1="318.61" y1="32" x2="318.61" y2="264" stroke="#cc0000" stroke-width="1" stroke-dasharray="4 2"/>
+<polyline fill="none" stroke="#0050a0" stroke-width="1.5" points="91.92,224.24 97.58,218.01 101.62,211.98 107.28,206.40 113.34,201.01 120.61,192.16 128.29,186.63 134.76,179.36 150.11,164.87 162.23,155.71 170.31,151.61 173.14,148.55 179.61,141.85 187.69,137.76 196.18,135.03 205.87,125.50 216.78,124.58 223.65,117.59 229.71,114.83 242.24,114.28 249.11,108.44 257.60,104.33 268.51,101.14 271.74,97.47 299.22,85.95 303.66,84.00 312.55,81.30 319.82,79.12 336.80,76.93 341.64,74.67 359.42,70.93 362.66,70.13 376.80,70.00 388.92,66.94 390.94,63.31 399.83,61.52 412.76,58.99 424.08,56.99 439.84,55.19 456.00,52.72"/>
+<circle cx="91.92" cy="224.24" r="2.5" fill="#0050a0"/>
+<circle cx="97.58" cy="218.01" r="2.5" fill="#0050a0"/>
+<circle cx="101.62" cy="211.98" r="2.5" fill="#0050a0"/>
+<circle cx="107.28" cy="206.40" r="2.5" fill="#0050a0"/>
+<circle cx="113.34" cy="201.01" r="2.5" fill="#0050a0"/>
+<circle cx="120.61" cy="192.16" r="2.5" fill="#0050a0"/>
+<circle cx="128.29" cy="186.63" r="2.5" fill="#0050a0"/>
+<circle cx="134.76" cy="179.36" r="2.5" fill="#0050a0"/>
+<circle cx="150.11" cy="164.87" r="2.5" fill="#0050a0"/>
+<circle cx="162.23" cy="155.71" r="2.5" fill="#0050a0"/>
+<circle cx="170.31" cy="151.61" r="2.5" fill="#0050a0"/>
+<circle cx="173.14" cy="148.55" r="2.5" fill="#0050a0"/>
+<circle cx="179.61" cy="141.85" r="2.5" fill="#0050a0"/>
+<circle cx="187.69" cy="137.76" r="2.5" fill="#0050a0"/>
+<circle cx="196.18" cy="135.03" r="2.5" fill="#0050a0"/>
+<circle cx="205.87" cy="125.50" r="2.5" fill="#0050a0"/>
+<circle cx="216.78" cy="124.58" r="2.5" fill="#0050a0"/>
+<circle cx="223.65" cy="117.59" r="2.5" fill="#0050a0"/>
+<circle cx="229.71" cy="114.83" r="2.5" fill="#0050a0"/>
+<circle cx="242.24" cy="114.28" r="2.5" fill="#0050a0"/>
+<circle cx="249.11" cy="108.44" r="2.5" fill="#0050a0"/>
+<circle cx="257.60" cy="104.33" r="2.5" fill="#0050a0"/>
+<circle cx="268.51" cy="101.14" r="2.5" fill="#0050a0"/>
+<circle cx="271.74" cy="97.47" r="2.5" fill="#0050a0"/>
+<circle cx="299.22" cy="85.95" r="2.5" fill="#0050a0"/>
+<circle cx="303.66" cy="84.00" r="2.5" fill="#0050a0"/>
+<circle cx="312.55" cy="81.30" r="2.5" fill="#0050a0"/>
+<circle cx="319.82" cy="79.12" r="2.5" fill="#0050a0"/>
+<circle cx="336.80" cy="76.93" r="2.5" fill="#0050a0"/>
+<circle cx="341.64" cy="74.67" r="2.5" fill="#0050a0"/>
+<circle cx="359.42" cy="70.93" r="2.5" fill="#0050a0"/>
+<circle cx="362.66" cy="70.13" r="2.5" fill="#0050a0"/>
+<circle cx="376.80" cy="70.00" r="2.5" fill="#0050a0"/>
+<circle cx="388.92" cy="66.94" r="2.5" fill="#0050a0"/>
+<circle cx="390.94" cy="63.31" r="2.5" fill="#0050a0"/>
+<circle cx="399.83" cy="61.52" r="2.5" fill="#0050a0"/>
+<circle cx="412.76" cy="58.99" r="2.5" fill="#0050a0"/>
+<circle cx="424.08" cy="56.99" r="2.5" fill="#0050a0"/>
+<circle cx="439.84" cy="55.19" r="2.5" fill="#0050a0"/>
+<circle cx="456.00" cy="52.72" r="2.5" fill="#0050a0"/>
+<circle cx="299.22" cy="85.95" r="5" fill="none" stroke="#008040" stroke-width="2"/>
+<text x="258" y="304" text-anchor="middle" font-family="monospace" font-size="11" fill="#000000">token cost (minimize)</text>
+<text x="14" y="148" text-anchor="middle" font-family="monospace" font-size="11" fill="#000000" transform="rotate(-90 14 148)">mutation kill rate (maximize)</text>
+<text x="240" y="20" text-anchor="middle" font-family="monospace" font-size="12" fill="#000000">reference-checkout-flow</text>
+</svg>

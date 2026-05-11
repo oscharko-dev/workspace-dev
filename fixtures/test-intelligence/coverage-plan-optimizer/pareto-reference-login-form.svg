@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 320" role="img" aria-label="Pareto frontier for fixture reference-login-form">
+<title>Pareto frontier — fixture reference-login-form</title>
+<desc>X axis: token cost (minimize). Y axis: mutation kill rate (maximize). The optimizer recommends the closest point that satisfies the kill-rate floor (0.76) and the cost ceiling (17280.00).</desc>
+<rect x="0" y="0" width="480" height="320" fill="#ffffff"/>
+<rect x="60" y="32" width="396" height="232" fill="none" stroke="#000000" stroke-width="1"/>
+<line x1="60" y1="87.68" x2="456" y2="87.68" stroke="#cc0000" stroke-width="1" stroke-dasharray="4 2"/>
+<line x1="260.08" y1="32" x2="260.08" y2="264" stroke="#cc0000" stroke-width="1" stroke-dasharray="4 2"/>
+<polyline fill="none" stroke="#0050a0" stroke-width="1.5" points="84.32,221.41 94.74,203.64 105.16,189.81 108.63,186.89 115.58,179.03 122.53,172.72 126.00,170.64 132.95,158.88 139.89,153.89 143.37,148.11 146.84,146.88 153.79,139.72 157.26,136.11 167.68,127.72 178.11,121.18 188.53,116.09 195.47,108.96 202.42,105.93 209.37,101.68 216.32,97.33 230.21,90.05 240.63,86.09 251.05,83.00 254.53,79.93 271.89,74.26 282.32,70.30 292.74,67.21 303.16,64.81 310.11,63.40 320.53,60.31 330.95,57.91 344.84,55.23 355.26,53.36 358.74,52.96 383.05,49.17 400.42,48.04 407.37,46.09 421.26,44.71 442.11,42.69 456.00,41.53"/>
+<circle cx="84.32" cy="221.41" r="2.5" fill="#0050a0"/>
+<circle cx="94.74" cy="203.64" r="2.5" fill="#0050a0"/>
+<circle cx="105.16" cy="189.81" r="2.5" fill="#0050a0"/>
+<circle cx="108.63" cy="186.89" r="2.5" fill="#0050a0"/>
+<circle cx="115.58" cy="179.03" r="2.5" fill="#0050a0"/>
+<circle cx="122.53" cy="172.72" r="2.5" fill="#0050a0"/>
+<circle cx="126.00" cy="170.64" r="2.5" fill="#0050a0"/>
+<circle cx="132.95" cy="158.88" r="2.5" fill="#0050a0"/>
+<circle cx="139.89" cy="153.89" r="2.5" fill="#0050a0"/>
+<circle cx="143.37" cy="148.11" r="2.5" fill="#0050a0"/>
+<circle cx="146.84" cy="146.88" r="2.5" fill="#0050a0"/>
+<circle cx="153.79" cy="139.72" r="2.5" fill="#0050a0"/>
+<circle cx="157.26" cy="136.11" r="2.5" fill="#0050a0"/>
+<circle cx="167.68" cy="127.72" r="2.5" fill="#0050a0"/>
+<circle cx="178.11" cy="121.18" r="2.5" fill="#0050a0"/>
+<circle cx="188.53" cy="116.09" r="2.5" fill="#0050a0"/>
+<circle cx="195.47" cy="108.96" r="2.5" fill="#0050a0"/>
+<circle cx="202.42" cy="105.93" r="2.5" fill="#0050a0"/>
+<circle cx="209.37" cy="101.68" r="2.5" fill="#0050a0"/>
+<circle cx="216.32" cy="97.33" r="2.5" fill="#0050a0"/>
+<circle cx="230.21" cy="90.05" r="2.5" fill="#0050a0"/>
+<circle cx="240.63" cy="86.09" r="2.5" fill="#0050a0"/>
+<circle cx="251.05" cy="83.00" r="2.5" fill="#0050a0"/>
+<circle cx="254.53" cy="79.93" r="2.5" fill="#0050a0"/>
+<circle cx="271.89" cy="74.26" r="2.5" fill="#0050a0"/>
+<circle cx="282.32" cy="70.30" r="2.5" fill="#0050a0"/>
+<circle cx="292.74" cy="67.21" r="2.5" fill="#0050a0"/>
+<circle cx="303.16" cy="64.81" r="2.5" fill="#0050a0"/>
+<circle cx="310.11" cy="63.40" r="2.5" fill="#0050a0"/>
+<circle cx="320.53" cy="60.31" r="2.5" fill="#0050a0"/>
+<circle cx="330.95" cy="57.91" r="2.5" fill="#0050a0"/>
+<circle cx="344.84" cy="55.23" r="2.5" fill="#0050a0"/>
+<circle cx="355.26" cy="53.36" r="2.5" fill="#0050a0"/>
+<circle cx="358.74" cy="52.96" r="2.5" fill="#0050a0"/>
+<circle cx="383.05" cy="49.17" r="2.5" fill="#0050a0"/>
+<circle cx="400.42" cy="48.04" r="2.5" fill="#0050a0"/>
+<circle cx="407.37" cy="46.09" r="2.5" fill="#0050a0"/>
+<circle cx="421.26" cy="44.71" r="2.5" fill="#0050a0"/>
+<circle cx="442.11" cy="42.69" r="2.5" fill="#0050a0"/>
+<circle cx="456.00" cy="41.53" r="2.5" fill="#0050a0"/>
+<circle cx="240.63" cy="86.09" r="5" fill="none" stroke="#008040" stroke-width="2"/>
+<text x="258" y="304" text-anchor="middle" font-family="monospace" font-size="11" fill="#000000">token cost (minimize)</text>
+<text x="14" y="148" text-anchor="middle" font-family="monospace" font-size="11" fill="#000000" transform="rotate(-90 14 148)">mutation kill rate (maximize)</text>
+<text x="240" y="20" text-anchor="middle" font-family="monospace" font-size="12" fill="#000000">reference-login-form</text>
+</svg>
