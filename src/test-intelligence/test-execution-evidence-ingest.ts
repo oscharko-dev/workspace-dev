@@ -690,60 +690,85 @@ const verifyEvidenceSignature = (
 const validateEvidenceShape = (
   evidence: ExecutionEvidence,
 ): string | undefined => {
-  if (typeof evidence !== "object" || evidence === null) {
+  // Adapters return strongly-typed objects, but external callers (CLI
+  // env, third-party orchestrators) may hand us bytes-shaped-as-objects
+  // that bypass the compiler — keep the runtime checks even though the
+  // declared type narrows them.
+  if ((evidence as unknown) === null || typeof evidence !== "object") {
     return "evidence must be a non-null object";
   }
+  const raw = evidence as unknown as Record<string, unknown>;
   if (
-    typeof evidence.testCaseId !== "string" ||
-    evidence.testCaseId.length === 0
+    typeof raw["testCaseId"] !== "string" ||
+    (raw["testCaseId"] as string).length === 0
   ) {
     return "testCaseId must be a non-empty string";
   }
   if (
-    typeof evidence.tenantId !== "string" ||
-    evidence.tenantId.length === 0
+    typeof raw["tenantId"] !== "string" ||
+    (raw["tenantId"] as string).length === 0
   ) {
     return "tenantId must be a non-empty string";
   }
   if (
-    typeof evidence.tmsAdapterId !== "string" ||
-    evidence.tmsAdapterId.length === 0
+    typeof raw["tmsAdapterId"] !== "string" ||
+    (raw["tmsAdapterId"] as string).length === 0
   ) {
     return "tmsAdapterId must be a non-empty string";
   }
   if (
-    typeof evidence.tmsCaseId !== "string" ||
-    evidence.tmsCaseId.length === 0 ||
-    evidence.tmsCaseId.length > MAX_TMS_CASE_ID_CHARS
+    typeof raw["tmsCaseId"] !== "string" ||
+    (raw["tmsCaseId"] as string).length === 0 ||
+    (raw["tmsCaseId"] as string).length > MAX_TMS_CASE_ID_CHARS
   ) {
     return `tmsCaseId must be a 1..${MAX_TMS_CASE_ID_CHARS}-char string`;
   }
-  if (!ALLOWED_EXECUTION_VERDICTS.includes(evidence.executionVerdict)) {
-    return `executionVerdict "${String(evidence.executionVerdict)}" is not allowed`;
-  }
   if (
-    evidence.reviewerVerdict !== undefined &&
-    !ALLOWED_REVIEWER_VERDICTS.includes(evidence.reviewerVerdict)
+    !ALLOWED_EXECUTION_VERDICTS.includes(
+      raw["executionVerdict"] as ExecutionVerdict,
+    )
   ) {
-    return `reviewerVerdict "${String(evidence.reviewerVerdict)}" is not allowed`;
+    return `executionVerdict "${stringify(raw["executionVerdict"])}" is not allowed`;
   }
   if (
-    evidence.reviewerRationale !== undefined &&
-    (typeof evidence.reviewerRationale !== "string" ||
-      evidence.reviewerRationale.length > MAX_REVIEWER_RATIONALE_CHARS)
+    raw["reviewerVerdict"] !== undefined &&
+    !ALLOWED_REVIEWER_VERDICTS.includes(
+      raw["reviewerVerdict"] as ReviewerVerdict,
+    )
+  ) {
+    return `reviewerVerdict "${stringify(raw["reviewerVerdict"])}" is not allowed`;
+  }
+  if (
+    raw["reviewerRationale"] !== undefined &&
+    (typeof raw["reviewerRationale"] !== "string" ||
+      (raw["reviewerRationale"] as string).length > MAX_REVIEWER_RATIONALE_CHARS)
   ) {
     return `reviewerRationale must be a string ≤ ${MAX_REVIEWER_RATIONALE_CHARS} chars`;
   }
   if (
-    typeof evidence.executedAt !== "string" ||
-    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/.test(evidence.executedAt)
+    typeof raw["executedAt"] !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/.test(
+      raw["executedAt"] as string,
+    )
   ) {
     return "executedAt must be an ISO-8601 UTC timestamp ending with Z";
   }
-  if (typeof evidence.attestationSignatureHex !== "string") {
+  if (typeof raw["attestationSignatureHex"] !== "string") {
     return "attestationSignatureHex must be a string";
   }
   return undefined;
+};
+
+const stringify = (value: unknown): string => {
+  if (typeof value === "string") return value;
+  if (value === undefined) return "undefined";
+  if (value === null) return "null";
+  try {
+    const serialised = JSON.stringify(value);
+    return typeof serialised === "string" ? serialised : "(unserialisable)";
+  } catch {
+    return "(unserialisable)";
+  }
 };
 
 const detectConflict = (
