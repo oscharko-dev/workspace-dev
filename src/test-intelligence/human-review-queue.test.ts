@@ -253,7 +253,7 @@ test("enqueue → fetch → record verdict round-trips on disk and verifies sign
     assert.equal(fetched?.itemId, item.itemId);
 
     const verdict = buildVerdict(item.itemId, km);
-    const persistedItem = await recordHumanReviewVerdict(root, verdict);
+    const persistedItem = await recordHumanReviewVerdict(root, verdict, TENANT);
     assert.equal(persistedItem.itemId, item.itemId);
 
     const verdictPath = path.join(root, TENANT, "verdicts", `${item.itemId}.json`);
@@ -278,7 +278,7 @@ test("recordHumanReviewVerdict refuses tampered signatures", async () => {
       rationale: "different rationale that invalidates the signature",
     };
     await assert.rejects(
-      () => recordHumanReviewVerdict(root, tampered),
+      () => recordHumanReviewVerdict(root, tampered, TENANT),
       (err: unknown) =>
         err instanceof HumanReviewQueueError && err.code === "E_SIGNATURE_INVALID",
     );
@@ -297,10 +297,24 @@ test("recordHumanReviewVerdict refuses fingerprint mismatch", async () => {
       publicKeyFingerprintSha256: km2.publicKeyFingerprintSha256,
     };
     await assert.rejects(
-      () => recordHumanReviewVerdict(root, swapped),
+      () => recordHumanReviewVerdict(root, swapped, TENANT),
       (err: unknown) =>
         err instanceof HumanReviewQueueError &&
         err.code === "E_KEY_FINGERPRINT_MISMATCH",
+    );
+  });
+});
+
+test("recordHumanReviewVerdict requires the caller to target the owning tenant partition", async () => {
+  await withTempRoot(async (root) => {
+    const km = generateEd25519();
+    const item = buildItem();
+    await enqueueHumanReview(root, item);
+
+    await assert.rejects(
+      () => recordHumanReviewVerdict(root, buildVerdict(item.itemId, km), "other-tenant"),
+      (err: unknown) =>
+        err instanceof HumanReviewQueueError && err.code === "E_QUEUE_ITEM_NOT_FOUND",
     );
   });
 });
@@ -344,7 +358,7 @@ test("findHumanReviewSlaBreaches surfaces only past-due items without verdicts",
     await enqueueHumanReview(root, expiredItem);
     await enqueueHumanReview(root, okItem);
     await enqueueHumanReview(root, decidedItem);
-    await recordHumanReviewVerdict(root, buildVerdict(decidedItem.itemId, km));
+    await recordHumanReviewVerdict(root, buildVerdict(decidedItem.itemId, km), TENANT);
 
     const breaches = await findHumanReviewSlaBreaches(
       root,
@@ -365,7 +379,7 @@ test("buildHumanReviewLog assembles a canonical, byte-stable per-run log", async
     const km = generateEd25519();
     const item = buildItem();
     await enqueueHumanReview(root, item);
-    await recordHumanReviewVerdict(root, buildVerdict(item.itemId, km));
+    await recordHumanReviewVerdict(root, buildVerdict(item.itemId, km), TENANT);
 
     const log = await buildHumanReviewLog({
       rootDir: root,
@@ -403,7 +417,7 @@ test("revised verdicts must include a revisedTestCase JSON body", async () => {
       verdict: "revised",
       revisedTestCase: { id: "tc-1", revision: 1 },
     });
-    await recordHumanReviewVerdict(root, revised);
+    await recordHumanReviewVerdict(root, revised, TENANT);
     const persisted = await readFile(
       path.join(root, TENANT, "verdicts", `${item.itemId}.json`),
       "utf8",

@@ -53,6 +53,7 @@ jobs:
         run: |
           pnpm run typecheck
           pnpm run test
+          pnpm run test:coverage
           pnpm run test:flaky-retry
           pnpm run test:bdd
           pnpm run test:property-based
@@ -230,22 +231,6 @@ jobs:
       - name: Generate SPDX SBOM
         run: node scripts/generate-spdx.mjs "${RELEASE_EVIDENCE_DIR}/sbom/workspace-dev.spdx.json"
 
-      - name: Generate OpenVEX artifact
-        shell: bash
-        run: |
-          set -euo pipefail
-          package_name="$(node -p "require('./package.json').name")"
-          package_version="$(node -p "require('./package.json').version")"
-          generated_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-
-          sed \
-            -e "s|__REPOSITORY__|${{ github.repository }}|g" \
-            -e "s|__COMMIT_SHA__|${{ github.sha }}|g" \
-            -e "s|__TIMESTAMP__|${generated_at}|g" \
-            -e "s|__PACKAGE_NAME__|${package_name}|g" \
-            -e "s|__PACKAGE_VERSION__|${package_version}|g" \
-            openvex.template.json > "${RELEASE_EVIDENCE_DIR}/openvex.json"
-
       - name: Configure npm publish auth mode
         id: npm_auth_mode
         shell: bash
@@ -330,8 +315,7 @@ jobs:
 
           CYCLO_ASSET="${RELEASE_EVIDENCE_DIR}/sbom/workspace-dev.cdx.json"
           SPDX_ASSET="${RELEASE_EVIDENCE_DIR}/sbom/workspace-dev.spdx.json"
-          OPENVEX_ASSET="${RELEASE_EVIDENCE_DIR}/openvex.json"
-          for ASSET_PATH in "${CYCLO_ASSET}" "${SPDX_ASSET}" "${OPENVEX_ASSET}"; do
+          for ASSET_PATH in "${CYCLO_ASSET}" "${SPDX_ASSET}"; do
             if [[ ! -f "${ASSET_PATH}" ]]; then
               echo "Required release evidence asset is missing: ${ASSET_PATH}"
               exit 1
@@ -343,14 +327,12 @@ jobs:
             gh release upload "${RELEASE_TAG}" \
               "${CYCLO_ASSET}#workspace-dev-${PACKAGE_VERSION}.cdx.json" \
               "${SPDX_ASSET}#workspace-dev-${PACKAGE_VERSION}.spdx.json" \
-              "${OPENVEX_ASSET}#workspace-dev-${PACKAGE_VERSION}.openvex.json" \
               --clobber
           else
             echo "Creating GitHub release ${RELEASE_TAG} with generated release notes."
             gh release create "${RELEASE_TAG}" \
               "${CYCLO_ASSET}#workspace-dev-${PACKAGE_VERSION}.cdx.json" \
               "${SPDX_ASSET}#workspace-dev-${PACKAGE_VERSION}.spdx.json" \
-              "${OPENVEX_ASSET}#workspace-dev-${PACKAGE_VERSION}.openvex.json" \
               --target "${GITHUB_SHA}" \
               --title "workspace-dev ${RELEASE_TAG}" \
               --generate-notes
@@ -367,7 +349,6 @@ jobs:
           name: workspace-dev-release-evidence-${{ github.run_id }}
           path: |
             ${{ env.RELEASE_EVIDENCE_DIR }}/sbom
-            ${{ env.RELEASE_EVIDENCE_DIR }}/openvex.json
           if-no-files-found: ignore
 
       - name: Release summary
