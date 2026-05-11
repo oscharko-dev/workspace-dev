@@ -95,3 +95,6 @@ jobs:
 
       - name: Sovereign-cloud / air-gap smoke (Issue #2187)
         run: pnpm run test:ti-airgap-smoke
+
+      - name: Cross-tenant isolation proof gate G12 (Issue #2130)
+        run: pnpm run test:ti-tenant-isolation-proof
