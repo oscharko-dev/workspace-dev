@@ -31,6 +31,65 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [1.39.0] - 2026-05-11
+
+Test-intelligence sub-contract bump for Issue #2128 (Wave 9 / W9-deferred
+Phase 4) — opt-in training-influence differential-privacy budget
+accountant. The accountant is an operator-controlled per-tenant
+budget-tracking layer that bounds how much input content a tenant may
+contribute to LLM gateway providers across a single audit cycle. It is
+explicitly NOT a cryptographic DP guarantee: true DP cannot be enforced
+client-side. See `docs/decisions/2026-05-11-issue-2128-training-influence-dp-budget.md`
+for the mathematical model and limitations.
+
+All changes are additive. The `eu-banking-default` and
+`eu-banking-sovereign` policy profiles ship without
+`trainingInfluenceDpBudget`, so the gate is inactive by default and no
+existing behavior changes.
+
+### Added (Issue #2128 — training-influence DP budget accounting)
+
+- New constants in `src/contracts/index.ts`:
+  - `DP_BUDGET_CONSUMED_MANIFEST_SCHEMA_VERSION = "1.0.0"`
+  - `DP_BUDGET_CONSUMED_MANIFEST_ARTIFACT_FILENAME = "dp-budget-consumed.json"`
+  - `DP_BUDGET_DEFAULT_PER_TOKEN_EPSILON = 1e-4`
+  - `DP_BUDGET_DEFAULT_DELTA_PER_JOB = 1e-6`
+  - `ALLOWED_DP_BUDGET_DECISIONS = ["accepted", "rejected_budget_exhausted", "skipped_disabled"]`
+- New contract types: `TrainingInfluenceDpBudgetConfig`,
+  `TenantDpBudgetState`, `DpBudgetCharge`, `DpBudgetDecision`,
+  `DpBudgetConsumedManifest`.
+- New optional field on `TestCasePolicyProfileRules`:
+  `trainingInfluenceDpBudget?: TrainingInfluenceDpBudgetConfig`. Omitted
+  on every shipped profile so the gate is opt-in and the default is
+  inactive.
+- New entry in `ALLOWED_HARNESS_ARTIFACT_FILENAMES`:
+  `"dp-budget-consumed.json"`. When the accountant is enabled the harness
+  writes this artifact next to the other canonical-JSON harness artifacts
+  and `harness-artifact-manifest.json` pins its sha256 + size for replay.
+- New module `src/test-intelligence/training-influence-dp-budget.ts`
+  exposing:
+  - `estimateJobDpCharge({ inputTokens, perTokenEpsilon?, deltaPerJob? })`
+  - `createTenantDpBudgetState({ tenantId, cycleId, cycleStartedAt, config })`
+  - `applyDpCharge(state, { config, inputTokens })`
+  - `resetTenantDpBudgetCycle(previous, { cycleId, cycleStartedAt, config? })`
+  - `buildDpBudgetConsumedManifest({ result, stateAfter, jobId, generatedAt })`
+  - `isDpBudgetConsumedManifest(value)`
+  - `serializeDpBudgetConsumedManifest(manifest)`
+
+### Backwards compatibility
+
+- The `eu-banking-default` and `eu-banking-sovereign` profiles are
+  byte-identical: `trainingInfluenceDpBudget` is omitted, the gate is
+  inactive, and no manifest is written. Every Wave 1–8 hard gate,
+  threshold, and tier-elastic coefficient is unchanged.
+- The new entry in `ALLOWED_HARNESS_ARTIFACT_FILENAMES` is purely
+  additive: existing harness runs that do not enable the accountant do
+  not produce the file, and `buildHarnessArtifactManifest` skips any
+  candidate filename whose file is absent on disk, so the manifest's
+  serialized form for unmodified deployments is byte-identical.
+
+---
+
 ## [1.38.0] - 2026-05-11
 
 Test-intelligence sub-contract bump for Issue #2188 (Wave 8 / W8-6) —
