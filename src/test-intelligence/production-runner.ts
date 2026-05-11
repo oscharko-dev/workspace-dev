@@ -1518,9 +1518,10 @@ export interface RunFigmaToQcTestCasesResult {
     /**
      * Path to the deterministic PDF rendering of the customer artefacts
      * (sibling of `testfaelle.md` in the customer-markdown directory).
-     * Today contains the combined `testfaelle.md`; JIRA story and
-     * mask screenshots are appended once the open clarifications
-     * (dated 2026-05-11) are resolved.
+     * The PDF contains three structural sections: combined
+     * `testfaelle.md`, `JIRA_STORY.md` content extracted from custom
+     * context when present (placeholder otherwise), and screenshot
+     * SHA-256 references. Raw screenshot bytes are never embedded.
      */
     pdf: string;
   };

@@ -31,9 +31,14 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
-## [1.44.8] - 2026-05-11
+## Internal implementation note - 2026-05-11
 
 Customer-Markdown PDF output for **Issue #2238**.
+
+This note is intentionally not a `TEST_INTELLIGENCE_CONTRACT_VERSION`
+bump. The PDF path is an internal production-runner result field; it is
+not exported from `src/contracts/index.ts`, not exposed through package
+`exports`, and not an over-the-wire HTTP response contract.
 
 A `testfaelle.pdf` sibling is now emitted under
 `<outputRoot>/jobs/<jobId>/test-intelligence/customer-markdown/`
@@ -48,16 +53,14 @@ existing `no raw screenshots` invariant from
 `eingabemasken-fixtures.test.ts` / `baseline-fixtures.test.ts`
 continues to hold.
 
-### Changed (Issue #2238 — customer-markdown PDF artefact)
+### Changed (Issue #2238 - customer-markdown PDF artefact)
 
-- `RunFigmaToQcTestCasesResult.customerMarkdownPaths` gains a required
+- `RunFigmaToQcTestCasesResult.customerMarkdownPaths` gains an internal
   `pdf: string` field pointing at the new `testfaelle.pdf` artefact
-  on disk. Minor bump under the "new optional field"-equivalent rule
-  because the field is part of an internal result object, not an
-  over-the-wire HTTP response shape; CLI consumers were updated in
-  the same PR.
-- `src/test-intelligence/customer-markdown-pdf.ts` (new): public
-  helpers `buildCustomerMarkdownPdf`,
+  on disk. All in-repo runner-result stubs and CLI consumers are kept
+  in sync with the production runner shape.
+- `src/test-intelligence/customer-markdown-pdf.ts` (new): internal
+  helper module with `buildCustomerMarkdownPdf`,
   `extractJiraStoryFromCustomContext`,
   `buildJiraStorySectionBody`,
   `buildScreenshotReferenceSectionBody`, plus the
@@ -67,9 +70,9 @@ continues to hold.
 ### Migration
 
 Consumers reading `RunFigmaToQcTestCasesResult.customerMarkdownPaths`
-will see a new required `pdf` string field; the file is written
-atomically before the result resolves, so the path is always live
-when the result is observed.
+inside this repository will see a new required `pdf` string field; the
+file is written atomically before the result resolves, so the path is
+always live when the result is observed.
 
 ## [1.44.7] - 2026-05-11
 

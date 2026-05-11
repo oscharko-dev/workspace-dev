@@ -40,6 +40,7 @@ export const TI_EVAL_FILES = Object.freeze([
   "src/test-intelligence/custom-context-markdown.test.ts",
   "src/test-intelligence/custom-context-store.test.ts",
   "src/test-intelligence/customer-eval-sample-plan.test.ts",
+  "src/test-intelligence/customer-markdown-pdf.test.ts",
   "src/test-intelligence/dry-run-report.test.ts",
   "src/test-intelligence/evidence-attestation.airgapped.test.ts",
   "src/test-intelligence/evidence-attestation.concurrency.test.ts",

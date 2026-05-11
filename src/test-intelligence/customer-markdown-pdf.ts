@@ -22,36 +22,18 @@
  *     lengths, so any non-determinism in upstream input would show up
  *     as a stable diff, never as random byte drift
  *
- * Scope today (Issue tracked separately):
+ * Production wiring:
  *
  *   The renderer takes a generic `sections` list of {heading, body}
- *   pairs. The production-runner currently passes only the combined
- *   `testfaelle.md`. The two further artefacts requested by the
- *   customer brief — `JIRA_STORY.md` and screenshots of the mask —
- *   are intentionally NOT inlined yet because:
- *
- *     - `JIRA_STORY.md` is not produced anywhere in the pipeline;
- *       its source must be clarified before content can be wired in
- *       (see the open clarification dated 2026-05-11).
- *     - Screenshots of the mask collide with hard "never raw
- *       screenshot bytes" invariants asserted by
- *       `eingabemasken-fixtures.test.ts` and `baseline-fixtures.test.ts`;
- *       a separate ADR + PII pipeline pass is required before bytes
- *       may be embedded.
- *
- *   Both extensions are append-only: a future change adds further
- *   entries to the `sections` array at the call site in
- *   `production-runner.ts` — no PDF-encoder change is needed.
- *
- *   Today's wiring includes structural placeholders for both: a
- *   `JIRA_STORY.md` section that is populated from a
+ *   pairs. The production-runner passes three sections today:
+ *   combined `testfaelle.md`, `JIRA_STORY.md` content extracted from a
  *   `customContextMarkdown` `## JIRA_STORY` heading (placeholder text
- *   otherwise) and a `Screen Shots der Maske` section that lists
- *   hash references for screenshots the visual sidecar captured
- *   (placeholder otherwise). Raw screenshot bytes are NEVER embedded
- *   — this is the same hard invariant asserted by
- *   `eingabemasken-fixtures.test.ts` /
- *   `baseline-fixtures.test.ts`.
+ *   otherwise), and `Screen Shots der Maske` SHA-256 references for
+ *   captured screens (placeholder otherwise).
+ *
+ *   Raw screenshot bytes are NEVER embedded. The PDF only carries
+ *   text references, preserving the hard invariant asserted by
+ *   `eingabemasken-fixtures.test.ts` / `baseline-fixtures.test.ts`.
  */
 
 /** Single content block. Rendered as a heading line followed by the body. */
