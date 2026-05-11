@@ -30,6 +30,7 @@ export const TI_EVAL_FILES = Object.freeze([
   "src/test-intelligence/causal-hypothesis-registry.test.ts",
   "src/test-intelligence/causal-validation-framework.test.ts",
   "src/test-intelligence/compact-boundary-log.test.ts",
+  "src/test-intelligence/coverage-plan-optimizer.test.ts",
   "src/test-intelligence/custom-context-boundaries.test.ts",
   "src/test-intelligence/custom-context-markdown-canonicalization.test.ts",
   "src/test-intelligence/custom-context-markdown-pii-redaction.test.ts",

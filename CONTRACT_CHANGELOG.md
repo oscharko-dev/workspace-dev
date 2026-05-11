@@ -31,6 +31,99 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [1.42.0] - 2026-05-11
+
+Test-intelligence sub-contract bump for Issue #2131 (Wave Q9-deferred /
+Phase 4 — P4 above SOTA differentiator) — multi-modal coverage-plan
+optimizer with NSGA-II Pareto-frontier quota allocation. Adds a
+dependency-light `coverage-plan-optimizer` module that evolves per-
+fixture technique-quota allocations against four objectives (maximize
+mutation kill rate, maximize technique coverage; minimize token cost,
+minimize latency), a deterministic baseline artifact + per-fixture SVG
+Pareto plots committed under
+`fixtures/test-intelligence/coverage-plan-optimizer/`, and a new CI
+gate (`G_COVERAGE_OPTIMIZER_BASELINE_PASS`) that regenerates the
+baseline on every PR and asserts byte-equality plus AC #4 (recommended
+plan holds at `>= 95 %` of best-known kill rate at `<= 80 %` of current
+static token cost).
+
+All changes are additive: a new module ships under
+`src/test-intelligence/coverage-plan-optimizer.ts`, no existing
+contract, manifest, fixture, or policy profile is mutated. The
+technique-quota runtime gate (`technique-quota.ts`) is unchanged —
+quotas are still resolved against the operator-tuned
+`policy:technique-coverage-minimum` rule; the optimizer's recommended
+plan is wired back into the policy profile out-of-band on benchmark
+refresh, not via a runtime hook.
+
+### Added (Issue #2131 — coverage-plan optimizer)
+
+- New module `src/test-intelligence/coverage-plan-optimizer.ts` exporting:
+  - `COVERAGE_PLAN_OPTIMIZER_REPORT_SCHEMA_VERSION = "1.0.0"`.
+  - `COVERAGE_PLAN_OPTIMIZER_BENCHMARK_SCHEMA_VERSION = "1.0.0"`.
+  - `COVERAGE_PLAN_OPTIMIZER_REPORT_ARTIFACT_FILENAME = "coverage-plan-optimizer.json"`,
+    `COVERAGE_PLAN_OPTIMIZER_ARTIFACT_DIRECTORY = "coverage-optimizer"`.
+  - `COVERAGE_PLAN_OPTIMIZER_BASELINE_REPO_PATH`,
+    `COVERAGE_PLAN_OPTIMIZER_PLOT_DIRECTORY`.
+  - `G_COVERAGE_OPTIMIZER_BASELINE_PASS` — CI hard-gate code.
+  - `COVERAGE_PLAN_OPTIMIZER_BASELINE_FIXED_GENERATED_AT = "1970-01-01T00:00:00.000Z"` —
+    structural timestamp baked into the committed baseline so bytes
+    do not drift with wall-clock time.
+  - `COVERAGE_PLAN_OPTIMIZER_METHODOLOGY_DISCLAIMER` — verbatim string
+    stamped on every produced report.
+  - `COVERAGE_PLAN_OPTIMIZER_KILL_RATE_FLOOR = 0.95`,
+    `COVERAGE_PLAN_OPTIMIZER_COST_CEILING = 0.80` — AC #4 thresholds.
+  - `COVERAGE_PLAN_OPTIMIZER_NUMERIC_PRECISION = 9` — emitted-number
+    rounding precision (decimals).
+  - `COVERAGE_PLAN_OPTIMIZER_OBJECTIVES` — closed four-element ordered
+    objective list with `COVERAGE_PLAN_OPTIMIZER_OBJECTIVE_DIRECTIONS`
+    map pinning per-objective improvement direction.
+  - `DEFAULT_NSGA_II_CONFIG` — published default GA hyper-parameters
+    (`populationSize=40, generations=60, crossoverRate=0.9,
+    mutationRate=0.15`).
+  - `COVERAGE_PLAN_OPTIMIZER_DEFAULT_SEED = 0x2131_2131` — committed
+    baseline seed.
+  - `REFERENCE_BENCHMARK_FIXTURES` — curated three-fixture reference
+    corpus the committed baseline plans against
+    (`reference-login-form`, `reference-search-results`,
+    `reference-checkout-flow`).
+  - Pure functions: `evaluatePlan`, `optimizeFixture`,
+    `selectRecommendedPlan`, `buildCoveragePlanOptimizerReport`,
+    `buildCoveragePlanOptimizerBaselineReport`,
+    `serializeCoveragePlanOptimizerReport`,
+    `computeCoveragePlanOptimizerReportDigest`,
+    `renderParetoFrontierSvg`.
+  - Persistence: `writeCoveragePlanOptimizerReport` (atomic
+    `${path}.${pid}.${uuid}.tmp` rename).
+  - Types: `TechniqueCoefficients`, `FixtureBenchmark`,
+    `NsgaIIConfig`, `CoveragePlanOptimizerInput`, `ObjectiveVector`,
+    `ParetoIndividual`, `FixtureOptimizationResult`,
+    `CoveragePlanOptimizerReport`,
+    `CoveragePlanOptimizerObjective`,
+    `WriteCoveragePlanOptimizerReportInput`.
+- New committed artifacts under
+  `fixtures/test-intelligence/coverage-plan-optimizer/`:
+  `baseline.json`, `pareto-reference-checkout-flow.svg`,
+  `pareto-reference-login-form.svg`,
+  `pareto-reference-search-results.svg`.
+- New ADR `docs/decisions/2026-05-11-issue-2131-coverage-plan-optimizer.md`.
+- New scripts: `scripts/generate-coverage-plan-optimizer-baseline.mjs`,
+  `scripts/check-coverage-plan-optimizer-baseline.mjs`.
+- New pnpm scripts: `generate:coverage-plan-optimizer-baseline`,
+  `test:ti-coverage-plan-optimizer`.
+- New CI step `Coverage-plan optimizer baseline gate (Issue #2131)`
+  in `.github/workflows/pr-quality-gate.yml` running
+  `pnpm run test:ti-coverage-plan-optimizer`.
+
+### Migration
+
+None. The optimizer is a library surface; existing call sites,
+contracts, fixtures, and policy profiles are unaffected. Operators
+who want to evolve their per-fixture quotas call
+`buildCoveragePlanOptimizerReport(...)` on benchmark refresh and
+wire the resulting `recommendedPlan` back into the policy profile
+out-of-band.
+
 ## [1.41.0] - 2026-05-11
 
 Test-intelligence sub-contract bump for Issue #2130 (Wave Q9-deferred /

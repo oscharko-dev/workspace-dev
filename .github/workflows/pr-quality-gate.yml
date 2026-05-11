@@ -98,3 +98,6 @@ jobs:
 
       - name: Cross-tenant isolation proof gate G12 (Issue #2130)
         run: pnpm run test:ti-tenant-isolation-proof
+
+      - name: Coverage-plan optimizer baseline gate (Issue #2131)
+        run: pnpm run test:ti-coverage-plan-optimizer
