@@ -6389,6 +6389,90 @@ test("runFigmaToQcTestCases tolerates malformed regulatoryRelevance on a draft (
   }
 });
 
+test("runFigmaToQcTestCases leaves draft response schema tolerant for malformed optional regulatoryRelevance scalars", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-"));
+  try {
+    const malformed = {
+      ...SAMPLE_DRAFT,
+      regulatoryRelevance: "banking",
+    } as unknown as ProductionRunnerLlmDraftCase;
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: okResponder([malformed]),
+    });
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-bad-reg-scalar",
+      generatedAt: "2026-05-02T10:00:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client },
+    });
+    const stamped = result.generatedTestCases.testCases[0];
+    assert.ok(stamped);
+    assert.equal(stamped.regulatoryRelevance, undefined);
+
+    const recorded = client.recordedRequests();
+    assert.ok(recorded.length > 0);
+    const schema =
+      recorded[0]?.responseSchema as
+        | {
+            properties?: {
+              testCases?: {
+                items?: {
+                  properties?: Record<string, unknown>;
+                };
+              };
+            };
+          }
+        | undefined;
+    assert.deepEqual(
+      schema?.properties?.testCases?.items?.properties?.regulatoryRelevance,
+      {},
+    );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("runFigmaToQcTestCases normalizes invalid draft step indexes before stamping", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-"));
+  try {
+    const malformed = {
+      ...SAMPLE_DRAFT,
+      steps: [
+        { ...SAMPLE_DRAFT.steps[0], index: 0 },
+        { ...SAMPLE_DRAFT.steps[1], index: 1.5 },
+        { ...SAMPLE_DRAFT.steps[2], index: -3 },
+      ],
+    } as unknown as ProductionRunnerLlmDraftCase;
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: okResponder([malformed]),
+    });
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-bad-step-index",
+      generatedAt: "2026-05-02T10:00:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client },
+    });
+    const stamped = result.generatedTestCases.testCases[0];
+    assert.ok(stamped);
+    assert.deepEqual(
+      stamped.steps.map((step) => step.index),
+      [1, 2, 3],
+    );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Issue #1894: --custom-context-markdown wiring
 // ---------------------------------------------------------------------------
