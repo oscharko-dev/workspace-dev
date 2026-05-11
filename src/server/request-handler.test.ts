@@ -7385,6 +7385,7 @@ test("submit figma_to_qc_test_cases returns 200 with summary when both gates on 
         customerMarkdownPaths: {
           combined: "/tmp/runner-mock/customer-markdown/testfaelle.md",
           perCase: [],
+          pdf: "/tmp/runner-mock/customer-markdown/testfaelle.pdf",
         },
       };
     };

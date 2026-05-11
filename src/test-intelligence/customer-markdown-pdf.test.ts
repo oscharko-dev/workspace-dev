@@ -7,11 +7,10 @@
  * magic header, and the embedded text must be present so a reviewer
  * can `pdftotext` the file and recover the source.
  *
- * Until the JIRA_STORY.md source and the screenshot PII pipeline are
- * resolved (open clarifications dated 2026-05-11), the PDF only
- * contains the combined `testfaelle.md` section. The renderer's
- * section list is intentionally generic so the additional artefacts
- * can be appended without changing the encoder.
+ * These unit tests use compact single-section fixtures to verify the
+ * encoder. Production wiring passes additional structural sections for
+ * `JIRA_STORY.md` and screenshot SHA-256 references, with placeholders
+ * when the source artefacts are absent.
  */
 
 import assert from "node:assert/strict";
