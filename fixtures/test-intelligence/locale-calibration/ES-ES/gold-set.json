@@ -1,0 +1,761 @@
+{
+  "cases": [
+    {
+      "adjudicated": false,
+      "caseId": "es-es-gold-001",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer A verdict for es-es-gold-001",
+          "reviewer": "es-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer B verdict for es-es-gold-001",
+          "reviewer": "es-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        }
+      ],
+      "label": 1,
+      "locale": "ES-ES",
+      "rawScore": 0.82,
+      "riskCategory": "high"
+    },
+    {
+      "adjudicated": false,
+      "caseId": "es-es-gold-002",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer A verdict for es-es-gold-002",
+          "reviewer": "es-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer B verdict for es-es-gold-002",
+          "reviewer": "es-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        }
+      ],
+      "label": 1,
+      "locale": "ES-ES",
+      "rawScore": 0.84,
+      "riskCategory": "regulated_data"
+    },
+    {
+      "adjudicated": false,
+      "caseId": "es-es-gold-003",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer A verdict for es-es-gold-003",
+          "reviewer": "es-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer B verdict for es-es-gold-003",
+          "reviewer": "es-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        }
+      ],
+      "label": 1,
+      "locale": "ES-ES",
+      "rawScore": 0.86,
+      "riskCategory": "financial_transaction"
+    },
+    {
+      "adjudicated": false,
+      "caseId": "es-es-gold-004",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer A verdict for es-es-gold-004",
+          "reviewer": "es-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer B verdict for es-es-gold-004",
+          "reviewer": "es-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        }
+      ],
+      "label": 1,
+      "locale": "ES-ES",
+      "rawScore": 0.88,
+      "riskCategory": "high"
+    },
+    {
+      "adjudicated": false,
+      "caseId": "es-es-gold-005",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer A verdict for es-es-gold-005",
+          "reviewer": "es-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer B verdict for es-es-gold-005",
+          "reviewer": "es-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        }
+      ],
+      "label": 1,
+      "locale": "ES-ES",
+      "rawScore": 0.9,
+      "riskCategory": "regulated_data"
+    },
+    {
+      "adjudicated": false,
+      "caseId": "es-es-gold-006",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer A verdict for es-es-gold-006",
+          "reviewer": "es-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer B verdict for es-es-gold-006",
+          "reviewer": "es-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        }
+      ],
+      "label": 1,
+      "locale": "ES-ES",
+      "rawScore": 0.92,
+      "riskCategory": "financial_transaction"
+    },
+    {
+      "adjudicated": false,
+      "caseId": "es-es-gold-007",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer A verdict for es-es-gold-007",
+          "reviewer": "es-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer B verdict for es-es-gold-007",
+          "reviewer": "es-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        }
+      ],
+      "label": 1,
+      "locale": "ES-ES",
+      "rawScore": 0.94,
+      "riskCategory": "high"
+    },
+    {
+      "adjudicated": false,
+      "caseId": "es-es-gold-008",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer A verdict for es-es-gold-008",
+          "reviewer": "es-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer B verdict for es-es-gold-008",
+          "reviewer": "es-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        }
+      ],
+      "label": 1,
+      "locale": "ES-ES",
+      "rawScore": 0.82,
+      "riskCategory": "regulated_data"
+    },
+    {
+      "adjudicated": false,
+      "caseId": "es-es-gold-009",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer A verdict for es-es-gold-009",
+          "reviewer": "es-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer B verdict for es-es-gold-009",
+          "reviewer": "es-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        }
+      ],
+      "label": 1,
+      "locale": "ES-ES",
+      "rawScore": 0.84,
+      "riskCategory": "financial_transaction"
+    },
+    {
+      "adjudicated": false,
+      "caseId": "es-es-gold-010",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer A verdict for es-es-gold-010",
+          "reviewer": "es-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer B verdict for es-es-gold-010",
+          "reviewer": "es-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        }
+      ],
+      "label": 1,
+      "locale": "ES-ES",
+      "rawScore": 0.86,
+      "riskCategory": "high"
+    },
+    {
+      "adjudicated": false,
+      "caseId": "es-es-gold-011",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer A verdict for es-es-gold-011",
+          "reviewer": "es-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer B verdict for es-es-gold-011",
+          "reviewer": "es-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        }
+      ],
+      "label": 1,
+      "locale": "ES-ES",
+      "rawScore": 0.88,
+      "riskCategory": "regulated_data"
+    },
+    {
+      "adjudicated": false,
+      "caseId": "es-es-gold-012",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer A verdict for es-es-gold-012",
+          "reviewer": "es-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer B verdict for es-es-gold-012",
+          "reviewer": "es-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        }
+      ],
+      "label": 1,
+      "locale": "ES-ES",
+      "rawScore": 0.9,
+      "riskCategory": "financial_transaction"
+    },
+    {
+      "adjudicated": false,
+      "caseId": "es-es-gold-013",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer A verdict for es-es-gold-013",
+          "reviewer": "es-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer B verdict for es-es-gold-013",
+          "reviewer": "es-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        }
+      ],
+      "label": 1,
+      "locale": "ES-ES",
+      "rawScore": 0.92,
+      "riskCategory": "high"
+    },
+    {
+      "adjudicated": false,
+      "caseId": "es-es-gold-014",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer A verdict for es-es-gold-014",
+          "reviewer": "es-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer B verdict for es-es-gold-014",
+          "reviewer": "es-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        }
+      ],
+      "label": 1,
+      "locale": "ES-ES",
+      "rawScore": 0.94,
+      "riskCategory": "regulated_data"
+    },
+    {
+      "adjudicated": false,
+      "caseId": "es-es-gold-015",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer A verdict for es-es-gold-015",
+          "reviewer": "es-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer B verdict for es-es-gold-015",
+          "reviewer": "es-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        }
+      ],
+      "label": 1,
+      "locale": "ES-ES",
+      "rawScore": 0.82,
+      "riskCategory": "financial_transaction"
+    },
+    {
+      "adjudicated": false,
+      "caseId": "es-es-gold-016",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer A verdict for es-es-gold-016",
+          "reviewer": "es-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer B verdict for es-es-gold-016",
+          "reviewer": "es-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        }
+      ],
+      "label": 1,
+      "locale": "ES-ES",
+      "rawScore": 0.84,
+      "riskCategory": "high"
+    },
+    {
+      "adjudicated": false,
+      "caseId": "es-es-gold-017",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer A verdict for es-es-gold-017",
+          "reviewer": "es-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer B verdict for es-es-gold-017",
+          "reviewer": "es-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        }
+      ],
+      "label": 1,
+      "locale": "ES-ES",
+      "rawScore": 0.86,
+      "riskCategory": "regulated_data"
+    },
+    {
+      "adjudicated": false,
+      "caseId": "es-es-gold-018",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer A verdict for es-es-gold-018",
+          "reviewer": "es-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer B verdict for es-es-gold-018",
+          "reviewer": "es-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        }
+      ],
+      "label": 1,
+      "locale": "ES-ES",
+      "rawScore": 0.88,
+      "riskCategory": "financial_transaction"
+    },
+    {
+      "adjudicated": false,
+      "caseId": "es-es-gold-019",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer A verdict for es-es-gold-019",
+          "reviewer": "es-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "reject"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer B verdict for es-es-gold-019",
+          "reviewer": "es-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "reject"
+        }
+      ],
+      "label": 0,
+      "locale": "ES-ES",
+      "rawScore": 0.18,
+      "riskCategory": "high"
+    },
+    {
+      "adjudicated": false,
+      "caseId": "es-es-gold-020",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer A verdict for es-es-gold-020",
+          "reviewer": "es-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "reject"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer B verdict for es-es-gold-020",
+          "reviewer": "es-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "reject"
+        }
+      ],
+      "label": 0,
+      "locale": "ES-ES",
+      "rawScore": 0.2,
+      "riskCategory": "regulated_data"
+    },
+    {
+      "adjudicated": false,
+      "caseId": "es-es-gold-021",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer A verdict for es-es-gold-021",
+          "reviewer": "es-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "reject"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer B verdict for es-es-gold-021",
+          "reviewer": "es-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "reject"
+        }
+      ],
+      "label": 0,
+      "locale": "ES-ES",
+      "rawScore": 0.12,
+      "riskCategory": "financial_transaction"
+    },
+    {
+      "adjudicated": false,
+      "caseId": "es-es-gold-022",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer A verdict for es-es-gold-022",
+          "reviewer": "es-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "reject"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer B verdict for es-es-gold-022",
+          "reviewer": "es-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "reject"
+        }
+      ],
+      "label": 0,
+      "locale": "ES-ES",
+      "rawScore": 0.14,
+      "riskCategory": "high"
+    },
+    {
+      "adjudicated": false,
+      "caseId": "es-es-gold-023",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer A verdict for es-es-gold-023",
+          "reviewer": "es-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "reject"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer B verdict for es-es-gold-023",
+          "reviewer": "es-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "reject"
+        }
+      ],
+      "label": 0,
+      "locale": "ES-ES",
+      "rawScore": 0.16,
+      "riskCategory": "regulated_data"
+    },
+    {
+      "adjudicated": false,
+      "caseId": "es-es-gold-024",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer A verdict for es-es-gold-024",
+          "reviewer": "es-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "reject"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer B verdict for es-es-gold-024",
+          "reviewer": "es-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "reject"
+        }
+      ],
+      "label": 0,
+      "locale": "ES-ES",
+      "rawScore": 0.18,
+      "riskCategory": "financial_transaction"
+    },
+    {
+      "adjudicated": false,
+      "caseId": "es-es-gold-025",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer A verdict for es-es-gold-025",
+          "reviewer": "es-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "reject"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer B verdict for es-es-gold-025",
+          "reviewer": "es-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "reject"
+        }
+      ],
+      "label": 0,
+      "locale": "ES-ES",
+      "rawScore": 0.2,
+      "riskCategory": "high"
+    },
+    {
+      "adjudicated": false,
+      "caseId": "es-es-gold-026",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer A verdict for es-es-gold-026",
+          "reviewer": "es-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "reject"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer B verdict for es-es-gold-026",
+          "reviewer": "es-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "reject"
+        }
+      ],
+      "label": 0,
+      "locale": "ES-ES",
+      "rawScore": 0.12,
+      "riskCategory": "regulated_data"
+    },
+    {
+      "adjudicated": true,
+      "adjudication": {
+        "arbiter": "es-arbiter-1",
+        "findingCodes": [],
+        "rationale": "ES-ES arbiter resolution for es-es-gold-027",
+        "timestamp": "2026-04-15T08:00:00.000Z",
+        "verdict": "accept"
+      },
+      "caseId": "es-es-gold-027",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer A verdict for es-es-gold-027",
+          "reviewer": "es-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer B verdict for es-es-gold-027",
+          "reviewer": "es-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "reject"
+        }
+      ],
+      "label": 1,
+      "locale": "ES-ES",
+      "rawScore": 0.48,
+      "riskCategory": "financial_transaction"
+    },
+    {
+      "adjudicated": true,
+      "adjudication": {
+        "arbiter": "es-arbiter-1",
+        "findingCodes": [],
+        "rationale": "ES-ES arbiter resolution for es-es-gold-028",
+        "timestamp": "2026-04-15T08:00:00.000Z",
+        "verdict": "reject"
+      },
+      "caseId": "es-es-gold-028",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer A verdict for es-es-gold-028",
+          "reviewer": "es-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "reject"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer B verdict for es-es-gold-028",
+          "reviewer": "es-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        }
+      ],
+      "label": 0,
+      "locale": "ES-ES",
+      "rawScore": 0.52,
+      "riskCategory": "high"
+    },
+    {
+      "adjudicated": true,
+      "adjudication": {
+        "arbiter": "es-arbiter-1",
+        "findingCodes": [],
+        "rationale": "ES-ES arbiter resolution for es-es-gold-029",
+        "timestamp": "2026-04-15T08:00:00.000Z",
+        "verdict": "accept"
+      },
+      "caseId": "es-es-gold-029",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer A verdict for es-es-gold-029",
+          "reviewer": "es-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer B verdict for es-es-gold-029",
+          "reviewer": "es-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "reject"
+        }
+      ],
+      "label": 1,
+      "locale": "ES-ES",
+      "rawScore": 0.56,
+      "riskCategory": "regulated_data"
+    },
+    {
+      "adjudicated": true,
+      "adjudication": {
+        "arbiter": "es-arbiter-1",
+        "findingCodes": [],
+        "rationale": "ES-ES arbiter resolution for es-es-gold-030",
+        "timestamp": "2026-04-15T08:00:00.000Z",
+        "verdict": "reject"
+      },
+      "caseId": "es-es-gold-030",
+      "goldVerdicts": [
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer A verdict for es-es-gold-030",
+          "reviewer": "es-reviewer-1",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "reject"
+        },
+        {
+          "findingCodes": [],
+          "rationale": "ES-ES reviewer B verdict for es-es-gold-030",
+          "reviewer": "es-reviewer-2",
+          "timestamp": "2026-04-15T08:00:00.000Z",
+          "verdict": "accept"
+        }
+      ],
+      "label": 0,
+      "locale": "ES-ES",
+      "rawScore": 0.6,
+      "riskCategory": "financial_transaction"
+    }
+  ],
+  "description": "Native-speaker-labeled calibration gold set for ES-ES. 30 cases (18 accept, 8 reject, 4 adjudicated) chosen to satisfy the per-locale Platt-curve fit and inter-rater κ ≥ 0.7 gates.",
+  "issueRef": "Issue #2188",
+  "locale": "ES-ES",
+  "reviewerPool": [
+    "es-reviewer-1",
+    "es-reviewer-2",
+    "es-arbiter-1"
+  ],
+  "schemaVersion": "1.0.0"
+}

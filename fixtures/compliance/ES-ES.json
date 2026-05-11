@@ -1,0 +1,60 @@
+{
+  "citations": [
+    {
+      "euTarget": "PSD2 art. 97",
+      "local": "Circular 3/2022 norma 9",
+      "localTopic": "Strong customer authentication"
+    },
+    {
+      "euTarget": "PSD2 art. 66",
+      "local": "Real Decreto-ley 19/2018 art. 68",
+      "localTopic": "Open banking / TPP access"
+    },
+    {
+      "euTarget": "AMLD5 art. 13",
+      "local": "Ley 10/2010 art. 7",
+      "localTopic": "Customer due diligence"
+    },
+    {
+      "euTarget": "EBA/GL/2019/04 (ICT and security risk management)",
+      "local": "Circular 2/2016 norma 43",
+      "localTopic": "Operational and ICT risk"
+    },
+    {
+      "euTarget": "EBA/GL/2019/02 (outsourcing)",
+      "local": "Circular 2/2016 norma 65",
+      "localTopic": "Outsourcing governance"
+    },
+    {
+      "euTarget": "Consumer Credit Directive art. 5",
+      "local": "Ley 16/2011 art. 10",
+      "localTopic": "Consumer credit information disclosure"
+    },
+    {
+      "euTarget": "IFRS 9 / CRR (Regulation (EU) 575/2013)",
+      "local": "Circular 4/2017 norma 67",
+      "localTopic": "Provisioning and ECL"
+    },
+    {
+      "euTarget": "EU AI Act art. 9–15",
+      "local": "Guía técnica 1/2020 sobre uso de IA",
+      "localTopic": "AI risk management in financial services"
+    },
+    {
+      "euTarget": "CRD IV (Directive 2013/36/EU) art. 88",
+      "local": "Ley 10/2014 (LOSS) art. 29",
+      "localTopic": "Governance arrangements"
+    },
+    {
+      "euTarget": "DORA art. 28",
+      "local": "Real Decreto 84/2015 art. 36",
+      "localTopic": "ICT third-party risk"
+    }
+  ],
+  "locale": "ES-ES",
+  "nationalRegulator": {
+    "code": "BdE",
+    "country": "Spain",
+    "name": "Banco de España"
+  }
+}

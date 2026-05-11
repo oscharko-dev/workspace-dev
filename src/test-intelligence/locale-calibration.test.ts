@@ -33,6 +33,28 @@ test("locale-calibration: isSupportedLocale returns false for unknown codes", ()
   assert.equal(isSupportedLocale("de"), false);
   assert.equal(isSupportedLocale(""), false);
   assert.equal(isSupportedLocale("default"), false);
+  // Common near-misses for the Issue #2188 locales.
+  assert.equal(isSupportedLocale("CZ-CZ"), false); // language tag is `cs`, not `cz`
+  assert.equal(isSupportedLocale("PL"), false);
+});
+
+test("locale-calibration: SUPPORTED_LOCALES covers all eleven locales (Issue #2117 + #2188)", () => {
+  assert.deepEqual(
+    [...SUPPORTED_LOCALES].sort(),
+    [
+      "CS-CZ",
+      "DE-AT",
+      "DE-CH",
+      "DE-DE",
+      "EN-IE",
+      "ES-ES",
+      "FR-FR",
+      "HU-HU",
+      "IT-IT",
+      "NL-NL",
+      "PL-PL",
+    ],
+  );
 });
 
 test("locale-calibration: LOCALE_CALIBRATION_FALLBACK_KEY is not a SupportedLocale", () => {
@@ -71,6 +93,27 @@ test("locale-calibration: 2-letter primary tag 'it' promotes to IT-IT", () => {
 
 test("locale-calibration: 2-letter primary tag 'en' promotes to EN-IE (EU banking default)", () => {
   assert.equal(deriveLocaleFromScreen({ screenLocale: "en" }), "EN-IE");
+});
+
+// Issue #2188 — extended locale primary-tag promotions.
+test("locale-calibration: 2-letter primary tag 'pl' promotes to PL-PL", () => {
+  assert.equal(deriveLocaleFromScreen({ screenLocale: "pl" }), "PL-PL");
+});
+
+test("locale-calibration: 2-letter primary tag 'es' promotes to ES-ES", () => {
+  assert.equal(deriveLocaleFromScreen({ screenLocale: "es" }), "ES-ES");
+});
+
+test("locale-calibration: 2-letter primary tag 'nl' promotes to NL-NL", () => {
+  assert.equal(deriveLocaleFromScreen({ screenLocale: "nl" }), "NL-NL");
+});
+
+test("locale-calibration: 2-letter primary tag 'cs' promotes to CS-CZ", () => {
+  assert.equal(deriveLocaleFromScreen({ screenLocale: "cs" }), "CS-CZ");
+});
+
+test("locale-calibration: 2-letter primary tag 'hu' promotes to HU-HU", () => {
+  assert.equal(deriveLocaleFromScreen({ screenLocale: "hu" }), "HU-HU");
 });
 
 // ---------------------------------------------------------------------------
@@ -116,6 +159,42 @@ test("locale-calibration: IBAN prefix IT maps to IT-IT", () => {
   assert.equal(
     deriveLocaleFromScreen({ ibanPrefixes: ["IT60X0542811101000000123456"] }),
     "IT-IT",
+  );
+});
+
+// Issue #2188 — IBAN prefixes for the five extended locales.
+test("locale-calibration: IBAN prefix PL maps to PL-PL", () => {
+  assert.equal(
+    deriveLocaleFromScreen({ ibanPrefixes: ["PL61109010140000071219812874"] }),
+    "PL-PL",
+  );
+});
+
+test("locale-calibration: IBAN prefix ES maps to ES-ES", () => {
+  assert.equal(
+    deriveLocaleFromScreen({ ibanPrefixes: ["ES9121000418450200051332"] }),
+    "ES-ES",
+  );
+});
+
+test("locale-calibration: IBAN prefix NL maps to NL-NL", () => {
+  assert.equal(
+    deriveLocaleFromScreen({ ibanPrefixes: ["NL91ABNA0417164300"] }),
+    "NL-NL",
+  );
+});
+
+test("locale-calibration: IBAN prefix CZ maps to CS-CZ", () => {
+  assert.equal(
+    deriveLocaleFromScreen({ ibanPrefixes: ["CZ6508000000192000145399"] }),
+    "CS-CZ",
+  );
+});
+
+test("locale-calibration: IBAN prefix HU maps to HU-HU", () => {
+  assert.equal(
+    deriveLocaleFromScreen({ ibanPrefixes: ["HU42117730161111101800000000"] }),
+    "HU-HU",
   );
 });
 
@@ -205,6 +284,73 @@ test("locale-calibration: Pflichtfeld alone maps to DE-DE", () => {
     deriveLocaleFromScreen({ validationStrings: ["Pflichtfeld"] }),
     "DE-DE",
   );
+});
+
+// Issue #2188 — keyword heuristics for the five extended locales.
+test("locale-calibration: Pole wymagane keyword maps to PL-PL", () => {
+  assert.equal(
+    deriveLocaleFromScreen({ validationStrings: ["Pole wymagane"] }),
+    "PL-PL",
+  );
+});
+
+test("locale-calibration: PESEL keyword maps to PL-PL", () => {
+  assert.equal(deriveLocaleFromScreen({ fieldLabels: ["PESEL"] }), "PL-PL");
+});
+
+test("locale-calibration: Campo obligatorio keyword maps to ES-ES", () => {
+  assert.equal(
+    deriveLocaleFromScreen({ validationStrings: ["Campo obligatorio"] }),
+    "ES-ES",
+  );
+});
+
+test("locale-calibration: DNI keyword maps to ES-ES", () => {
+  assert.equal(deriveLocaleFromScreen({ fieldLabels: ["DNI"] }), "ES-ES");
+});
+
+test("locale-calibration: Campo obbligatorio (IT) still maps to IT-IT, not ES-ES", () => {
+  // The single-character distinction must keep working: IT comes before ES.
+  assert.equal(
+    deriveLocaleFromScreen({ validationStrings: ["Campo obbligatorio"] }),
+    "IT-IT",
+  );
+});
+
+test("locale-calibration: Verplicht veld keyword maps to NL-NL", () => {
+  assert.equal(
+    deriveLocaleFromScreen({ validationStrings: ["Verplicht veld"] }),
+    "NL-NL",
+  );
+});
+
+test("locale-calibration: BSN keyword maps to NL-NL", () => {
+  assert.equal(deriveLocaleFromScreen({ fieldLabels: ["BSN"] }), "NL-NL");
+});
+
+test("locale-calibration: Povinné pole keyword maps to CS-CZ", () => {
+  assert.equal(
+    deriveLocaleFromScreen({ validationStrings: ["Povinné pole"] }),
+    "CS-CZ",
+  );
+});
+
+test("locale-calibration: Rodné číslo keyword maps to CS-CZ", () => {
+  assert.equal(
+    deriveLocaleFromScreen({ fieldLabels: ["Rodné číslo"] }),
+    "CS-CZ",
+  );
+});
+
+test("locale-calibration: Kötelező mező keyword maps to HU-HU", () => {
+  assert.equal(
+    deriveLocaleFromScreen({ validationStrings: ["Kötelező mező"] }),
+    "HU-HU",
+  );
+});
+
+test("locale-calibration: Adószám keyword maps to HU-HU", () => {
+  assert.equal(deriveLocaleFromScreen({ fieldLabels: ["Adószám"] }), "HU-HU");
 });
 
 // ---------------------------------------------------------------------------
@@ -332,3 +478,29 @@ test("locale-calibration: fixture IT-IT resolves to IT-IT via direct locale tag"
   };
   assert.equal(deriveLocaleFromScreen({ screenLocale: raw.locale }), "IT-IT");
 });
+
+// Issue #2188 — fixture smoke tests for the five extended locales via the
+// keyword heuristic (screenLocale is intentionally omitted so the heuristic
+// is actually exercised).
+
+const KEYWORD_FIXTURES: ReadonlyArray<[SupportedLocale, string]> = [
+  ["PL-PL", "PL-PL.figma.json"],
+  ["ES-ES", "ES-ES.figma.json"],
+  ["NL-NL", "NL-NL.figma.json"],
+  ["CS-CZ", "CS-CZ.figma.json"],
+  ["HU-HU", "HU-HU.figma.json"],
+];
+
+for (const [expected, filename] of KEYWORD_FIXTURES) {
+  test(`locale-calibration: fixture ${expected} resolves to ${expected} via keyword heuristic`, async () => {
+    const raw = JSON.parse(await readFile(join(FIXTURES_DIR, filename), "utf8")) as {
+      nodes: Array<{ validations?: string[]; nodeName?: string }>;
+    };
+    const validations = raw.nodes.flatMap((n) => n.validations ?? []);
+    const labels = raw.nodes.map((n) => n.nodeName ?? "");
+    assert.equal(
+      deriveLocaleFromScreen({ validationStrings: validations, fieldLabels: labels }),
+      expected,
+    );
+  });
+}

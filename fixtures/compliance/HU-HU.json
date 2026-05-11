@@ -1,0 +1,60 @@
+{
+  "citations": [
+    {
+      "euTarget": "PSD2 art. 97",
+      "local": "Hpt. 67/A. §",
+      "localTopic": "Strong customer authentication"
+    },
+    {
+      "euTarget": "PSD2 art. 66",
+      "local": "Hpt. 67/B. §",
+      "localTopic": "Open banking / TPP access"
+    },
+    {
+      "euTarget": "AMLD5 art. 13",
+      "local": "Pmt. 7. §",
+      "localTopic": "Customer due diligence"
+    },
+    {
+      "euTarget": "EBA/GL/2019/04",
+      "local": "MNB 1/2020. (IV. 14.) sz. ajánlása",
+      "localTopic": "ICT and operational risk"
+    },
+    {
+      "euTarget": "EBA/GL/2019/02",
+      "local": "MNB 9/2017. (VII. 13.) sz. ajánlása",
+      "localTopic": "Outsourcing"
+    },
+    {
+      "euTarget": "CRD IV art. 88",
+      "local": "Hpt. 110. §",
+      "localTopic": "Governance arrangements"
+    },
+    {
+      "euTarget": "Solvency II art. 100–127",
+      "local": "Bit. 161. §",
+      "localTopic": "Solvency capital requirement"
+    },
+    {
+      "euTarget": "EU AI Act art. 9–15",
+      "local": "MNB 8/2024. (V. 13.) sz. ajánlása",
+      "localTopic": "AI in financial services"
+    },
+    {
+      "euTarget": "Consumer Credit Directive art. 5",
+      "local": "Fhtv. 6. §",
+      "localTopic": "Consumer credit information disclosure"
+    },
+    {
+      "euTarget": "DORA art. 28",
+      "local": "Hpt. 67/D. §",
+      "localTopic": "ICT third-party risk"
+    }
+  ],
+  "locale": "HU-HU",
+  "nationalRegulator": {
+    "code": "MNB",
+    "country": "Hungary",
+    "name": "Magyar Nemzeti Bank"
+  }
+}
