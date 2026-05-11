@@ -471,21 +471,26 @@ const validateFieldLifecycleCoverage = (
     (testCase) => testCase.technique === "state_transition",
   );
   // Mandatory tier: aggregate by (screenId, trigger). One uncovered
-  // group → one error, not one per (field × transition) pair.
+  // group → one error, not one per (field × transition) pair. The
+  // current mandatory tier maps each trigger to exactly one (from, to)
+  // pair (validation_pass → in_progress→validated, validation_fail →
+  // in_progress→error, user_input → initial→in_progress), so the
+  // key intentionally omits from/to — it would be redundant. `from`
+  // and `to` are still carried on the group for the error message.
   type MandatoryGroupKey = string;
   type MandatoryGroup = {
     readonly screenId: string;
     readonly trigger: WorkflowFieldLifecycleTrigger;
     readonly from: WorkflowFieldLifecycleState;
     readonly to: WorkflowFieldLifecycleState;
-    readonly transitionIds: string[];
+    transitionIds: string[];
   };
   const mandatoryGroups = new Map<MandatoryGroupKey, MandatoryGroup>();
   for (const { transition, fieldId } of allTransitions) {
     const tier = classifyFieldLifecycleTransition(transition);
     if (tier !== "mandatory_negative_path") continue;
     const screenId = extractScreenIdFromFieldId(fieldId);
-    const key = `${screenId}::${transition.trigger}::${transition.from}::${transition.to}`;
+    const key = `${screenId}::${transition.trigger}`;
     const existing = mandatoryGroups.get(key);
     if (existing === undefined) {
       mandatoryGroups.set(key, {
@@ -514,7 +519,12 @@ const validateFieldLifecycleCoverage = (
         `mandatory_negative_path trigger "${group.trigger}" ` +
         `(${group.from} → ${group.to}) has no anchored test case step ` +
         `across ${transitionCount} field-lifecycle transition${transitionCount === 1 ? "" : "s"}: ` +
-        `${group.transitionIds.slice(0, 3).join(", ")}${transitionCount > 3 ? `, +${transitionCount - 3} more` : ""}`,
+        `${group.transitionIds
+          .slice(0, 3)
+          .map((id) => `"${id}"`)
+          .join(
+            ", ",
+          )}${transitionCount > 3 ? `, +${transitionCount - 3} more` : ""}`,
     });
   }
   // Recommended-tier + state-transition tier stay per-transition

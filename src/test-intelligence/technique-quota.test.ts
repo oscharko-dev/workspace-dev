@@ -138,7 +138,7 @@ test("tier-elastic formula: tier bands follow the 4/5/9/20 cutovers", () => {
   }
 });
 
-test("Epic #2167 P0 scenario — xr6Nf 32-field screen clears the documented quota miss-by-1", () => {
+test("Epic #2167 P0 scenario — xr6Nf 32-field screen clears the documented quota miss-by-4", () => {
   // P0 multi-dataset benchmark (2026-05-11) reported xr6Nf / Test-View-05
   // (32 fields) failing the technique-coverage-minimum gate: the 0.85×
   // tier required 28 EP cases while the generator produced 24 — a miss

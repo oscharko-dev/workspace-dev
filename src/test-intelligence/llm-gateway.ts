@@ -1265,18 +1265,28 @@ const parseOpenAiChatResponse = async ({
       try {
         content = JSON.parse(structuredContent) as unknown;
       } catch {
-        // Epic #2167 Q0 follow-up (2026-05-11): `wireStructuredOutputMode:
-        // "none"` (the configured mode for `gpt-oss-120b` on Azure Foundry)
-        // sends no `response_format` to the model, relying on the system
-        // prompt to ask for raw JSON. On very large prompts (M7FGS
-        // ≥ 10 MB Figma payload) the model still emits prose preludes or
-        // ```json markdown fences around the JSON object. Before failing
-        // the request, attempt a bounded recovery: strip a single
-        // markdown fence if present, else extract the first balanced
-        // JSON object / array from the raw text. The recovered payload is
+        // Epic #2167 Q0 follow-up (2026-05-11): recovery is gated to
+        // `wireStructuredOutputMode === "none"` only — the modes that
+        // send a `response_format` to the provider (`json_schema` /
+        // `json_object`) impose the JSON contract on the wire, so a
+        // parse failure there indicates a provider/contract issue and
+        // must surface verbatim. With `"none"` (the configured mode for
+        // `gpt-oss-120b` on Azure Foundry), no `response_format` is
+        // sent and the model relies on the system prompt to return raw
+        // JSON. On very large prompts (M7FGS ≥ 10 MB Figma payload)
+        // the model occasionally emits prose preludes or ```json
+        // markdown fences around the JSON object. Before failing the
+        // request, attempt a bounded recovery: strip a single markdown
+        // fence if present, else extract the first balanced JSON
+        // object / array from the raw text. The recovered payload is
         // still schema-validated below, so a successful extraction does
         // not weaken the schema contract.
-        const recovered = extractFirstJsonObjectOrArray(structuredContent);
+        const wireMode =
+          constrainedDecoding?.wireMode ?? resolveWireMode(config);
+        const recovered =
+          wireMode === "none"
+            ? extractFirstJsonObjectOrArray(structuredContent)
+            : undefined;
         if (recovered === undefined) {
           return {
             outcome: "error",
