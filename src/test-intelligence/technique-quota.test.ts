@@ -189,7 +189,15 @@ test("Issue #2171: tier-elastic quotas accept caller-supplied tiers and keep the
       minFieldCount: 20,
       multiplier: 0.85,
       floor: 0,
-      label: "fields>=20: ceil(0.85*fields)",
+      label: "fields=20-29: ceil(0.85*fields)",
+    },
+    // Wave-5 W5-4 follow-up (2026-05-11): added fields>=30 tier at 0.75×
+    // to unblock multi-section banking masks (xr6Nf / Test-View-05).
+    {
+      minFieldCount: 30,
+      multiplier: 0.75,
+      floor: 0,
+      label: "fields>=30: ceil(0.75*fields)",
     },
   ]);
 });
@@ -438,7 +446,10 @@ test("writeTechniqueQuotaReport persists a byte-deterministic JSON artifact", as
       join(dir, TECHNIQUE_QUOTA_REPORT_ARTIFACT_FILENAME),
     );
     const persisted = JSON.parse(await readFile(result.path, "utf8"));
-    assert.equal(persisted.schemaVersion, TECHNIQUE_QUOTA_REPORT_SCHEMA_VERSION);
+    assert.equal(
+      persisted.schemaVersion,
+      TECHNIQUE_QUOTA_REPORT_SCHEMA_VERSION,
+    );
     assert.equal(persisted.entries.length, 1);
     assert.equal(persisted.entries[0].technique, "equivalence_partitioning");
   } finally {

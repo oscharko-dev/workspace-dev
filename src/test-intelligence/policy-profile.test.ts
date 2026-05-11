@@ -70,10 +70,16 @@ test("default profile is deep-frozen", () => {
 
 test("Issue #2053: default profile enforces G-NEG-CASE at 0.30 with deep-frozen config", () => {
   const config = EU_BANKING_DEFAULT_POLICY_PROFILE.rules.negativeCaseLift;
-  assert.ok(config !== undefined, "expected default profile to expose the gate config");
+  assert.ok(
+    config !== undefined,
+    "expected default profile to expose the gate config",
+  );
   assert.equal(config.gateMode, "enforce");
   assert.equal(config.thresholdRatio, 0.3);
-  assert.ok(Object.isFrozen(config), "negativeCaseLift block must be deep-frozen");
+  assert.ok(
+    Object.isFrozen(config),
+    "negativeCaseLift block must be deep-frozen",
+  );
 });
 
 test("Issue #2053: clone round-trips negativeCaseLift and isolates it from the frozen default", () => {
@@ -97,7 +103,10 @@ test("Issue #2053: clone round-trips negativeCaseLift and isolates it from the f
 test("Issue #2068: default profile selects tier-elastic technique-coverage minimum", () => {
   const config =
     EU_BANKING_DEFAULT_POLICY_PROFILE.rules.techniqueCoverageMinimum;
-  assert.ok(config !== undefined, "expected the default profile to expose the knob");
+  assert.ok(
+    config !== undefined,
+    "expected the default profile to expose the knob",
+  );
   assert.equal(config.mode, "tier-elastic");
   assert.deepEqual(config.tiers, TIER_ELASTIC_EP_TIERS);
   assert.ok(
@@ -232,15 +241,18 @@ test("Issue #2169: default profile exposes the elastic FinOps wall-clock coeffic
 });
 
 test("Issue #2169: clone round-trips finopsWallClockBudget and isolates overrides", () => {
+  // Wave-5 W5-2 follow-up (2026-05-11): coefficients re-calibrated for
+  // live `gpt-oss-120b` latency profile (was 90s base / 1.8s/case / 360s
+  // ceiling — too tight; P0 multi-dataset 2 of 4 visible runs breached).
   const a = cloneEuBankingDefaultProfile();
   const b = cloneEuBankingDefaultProfile();
   assert.deepEqual(a.rules.finopsWallClockBudget, {
-    baseMs: 90_000,
-    perCaseMs: 1_800,
-    perAdditionalJudgeMs: 12_000,
-    perAdversarialRoundMs: 18_000,
-    visualSidecarMs: 15_000,
-    hardCeilingMs: 360_000,
+    baseMs: 150_000,
+    perCaseMs: 4_000,
+    perAdditionalJudgeMs: 20_000,
+    perAdversarialRoundMs: 30_000,
+    visualSidecarMs: 30_000,
+    hardCeilingMs: 1_800_000,
   });
   a.rules.finopsWallClockBudget = {
     baseMs: 80_000,
@@ -250,9 +262,9 @@ test("Issue #2169: clone round-trips finopsWallClockBudget and isolates override
     visualSidecarMs: 12_000,
     hardCeilingMs: 300_000,
   };
-  assert.equal(b.rules.finopsWallClockBudget?.baseMs, 90_000);
+  assert.equal(b.rules.finopsWallClockBudget?.baseMs, 150_000);
   assert.equal(
     EU_BANKING_DEFAULT_POLICY_PROFILE.rules.finopsWallClockBudget?.baseMs,
-    90_000,
+    150_000,
   );
 });

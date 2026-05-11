@@ -43,8 +43,7 @@ export interface ResolveWallClockBudgetInput {
   readonly coefficients?: FinOpsWallClockBudgetPolicy;
 }
 
-export interface ResolveTestGenerationWallClockBudgetInput
-  extends ResolveWallClockBudgetInput {
+export interface ResolveTestGenerationWallClockBudgetInput extends ResolveWallClockBudgetInput {
   readonly explicitOverrideMs?: number;
   readonly profileRules?: TestCasePolicyProfileRules;
 }
@@ -61,14 +60,30 @@ export interface FinOpsBudgetValidationResult {
   errors: ReadonlyArray<FinOpsBudgetValidationIssue>;
 }
 
-export const DEFAULT_FINOPS_WALL_CLOCK_BUDGET_POLICY:
-  Readonly<FinOpsWallClockBudgetPolicy> = Object.freeze({
-    baseMs: 90_000,
-    perCaseMs: 1_800,
-    perAdditionalJudgeMs: 12_000,
-    perAdversarialRoundMs: 18_000,
-    visualSidecarMs: 15_000,
-    hardCeilingMs: 360_000,
+export const DEFAULT_FINOPS_WALL_CLOCK_BUDGET_POLICY: Readonly<FinOpsWallClockBudgetPolicy> =
+  Object.freeze({
+    // Wave-5 W5-2 follow-up (2026-05-11): the original coefficients
+    // (90s base + 1.8s/case + 12s/judge + 18s/adversarial + 15s/visual +
+    // 360s ceiling) were resolved at 136 800 ms for an 11-case run; the
+    // actual T7l7 measurement was 194 879 ms — a 25 % gap. P0 multi-
+    // dataset benchmark (2026-05-11) showed 2 of 4 visible runs still
+    // breaching the elastic wall-clock budget after this fix. The
+    // re-calibration below moves the per-case + base + ceiling values
+    // up to give cross-family judges + adversarial round + repair-loop
+    // realistic headroom on the live `gpt-oss-120b` deployment, where
+    // observed first-byte latency is 1.5–3.0× the mock baseline used
+    // when the original coefficients were calibrated.
+    //
+    // For a typical 11-case T7l7 run with 2 judges + 1 adversarial
+    // round + visual sidecar enabled, the resolved budget is now
+    // 150 + 11×4 + 20 + 30 + 30 = 274s (was 137s). Observed run took
+    // 195s — comfortable margin.
+    baseMs: 150_000,
+    perCaseMs: 4_000,
+    perAdditionalJudgeMs: 20_000,
+    perAdversarialRoundMs: 30_000,
+    visualSidecarMs: 30_000,
+    hardCeilingMs: 1_800_000,
   });
 
 /** Default envelope with no enforced limits. Useful as a "permissive" baseline. */
@@ -309,9 +324,7 @@ export const resolveTestGenerationWallClockBudget = (
     visualSidecarMs;
   return {
     mode:
-      input.explicitOverrideMs !== undefined
-        ? "constant_override"
-        : "elastic",
+      input.explicitOverrideMs !== undefined ? "constant_override" : "elastic",
     role: "test_generation",
     resolvedMs: input.explicitOverrideMs ?? formulaMs,
     formulaMs,
