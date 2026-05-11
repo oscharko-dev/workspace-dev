@@ -510,6 +510,7 @@ export const PRODUCTION_RUNNER_FAILURE_CLASSES = [
   "CUSTOM_CONTEXT_MARKDOWN_INVALID",
   "CUSTOMER_PROFILE_INVALID",
   "TENANT_BUNDLE_INVALID",
+  "HUMAN_REVIEW_CONFIG_INVALID",
   "NEGATIVE_CASE_LIFT_BELOW_THRESHOLD",
 ] as const;
 
@@ -2649,6 +2650,13 @@ export const runFigmaToQcTestCases = async (
     //    no merging with the production default. Invalid envelopes fail
     //    fast before any IO touches the network.
     const finopsBudget = resolveFinopsBudget(input.finopsBudget);
+
+    // 0a. Validate the optional human-review config (Issue #2167 hardening).
+    //     Runs before any FS I/O so an empty/whitespace `rootDir` or a
+    //     non-finite / out-of-range `slaMs` is rejected with
+    //     `HUMAN_REVIEW_CONFIG_INVALID` before the runner attempts to
+    //     enqueue or read from the queue.
+    const humanReviewConfig = resolveHumanReviewConfig(input.humanReview);
 
     // 0b. Canonicalize the optional Markdown supporting context (Issue #1894).
     //     Runs before any IO so a malformed or oversize Markdown body fails
@@ -5345,11 +5353,11 @@ export const runFigmaToQcTestCases = async (
     let humanReviewLogPath: string | undefined;
     if (judgeConsensusDisposition.disposition === "needs_review") {
       const reviewQueueRoot =
-        input.humanReview?.rootDir ??
+        humanReviewConfig?.rootDir ??
         join(input.outputRoot, "test-intelligence", "human-review");
       const slaDeadlineAt = new Date(
         Date.parse(input.generatedAt) +
-          (input.humanReview?.slaMs ?? 24 * 60 * 60 * 1000),
+          (humanReviewConfig?.slaMs ?? 24 * 60 * 60 * 1000),
       ).toISOString();
       const disagreementJudges = judgeConsensusResult.panel.map((entry) => {
         return {
@@ -5406,35 +5414,50 @@ export const runFigmaToQcTestCases = async (
         enqueuedAt: input.generatedAt,
         slaDeadlineAt,
       } satisfies HumanReviewQueueItem;
-      const humanReviewQueueItem =
-        (await getHumanReviewQueueItem(
-          reviewQueueRoot,
-          nextHumanReviewQueueItem.tenantId,
-          nextHumanReviewQueueItem.itemId,
-        )) ?? nextHumanReviewQueueItem;
-      if (humanReviewQueueItem === nextHumanReviewQueueItem) {
-        await enqueueHumanReview(reviewQueueRoot, humanReviewQueueItem);
-      }
-      const humanReviewLog = await buildHumanReviewLog({
-        rootDir: reviewQueueRoot,
-        tenantId: humanReviewQueueItem.tenantId,
-        jobId: input.jobId,
-        generatedAt: input.generatedAt,
-        nowIso: input.generatedAt,
-      });
-      if (
-        humanReviewLog.items.length > 0 ||
-        humanReviewLog.verdicts.length > 0 ||
-        humanReviewLog.slaBreaches.length > 0
-      ) {
-        humanReviewLogBytes = Buffer.from(
-          `${canonicalJson(humanReviewLog)}\n`,
-          "utf8",
-        );
-        humanReviewLogPath = join(
-          artifactDir,
-          HUMAN_REVIEW_LOG_ARTIFACT_FILENAME,
-        );
+      // Issue #2167 hardening: the queue lookup, enqueue, and log build
+      // perform FS I/O outside the artifact-persistence try/catch below,
+      // so any `HumanReviewQueueError` or raw fs error would escape as an
+      // unclassified failure. Wrap and rethrow as `PERSIST_FAILED` so the
+      // request handler maps it to the same envelope as every other
+      // artifact-write failure.
+      try {
+        const humanReviewQueueItem =
+          (await getHumanReviewQueueItem(
+            reviewQueueRoot,
+            nextHumanReviewQueueItem.tenantId,
+            nextHumanReviewQueueItem.itemId,
+          )) ?? nextHumanReviewQueueItem;
+        if (humanReviewQueueItem === nextHumanReviewQueueItem) {
+          await enqueueHumanReview(reviewQueueRoot, humanReviewQueueItem);
+        }
+        const humanReviewLog = await buildHumanReviewLog({
+          rootDir: reviewQueueRoot,
+          tenantId: humanReviewQueueItem.tenantId,
+          jobId: input.jobId,
+          generatedAt: input.generatedAt,
+          nowIso: input.generatedAt,
+        });
+        if (
+          humanReviewLog.items.length > 0 ||
+          humanReviewLog.verdicts.length > 0 ||
+          humanReviewLog.slaBreaches.length > 0
+        ) {
+          humanReviewLogBytes = Buffer.from(
+            `${canonicalJson(humanReviewLog)}\n`,
+            "utf8",
+          );
+          humanReviewLogPath = join(
+            artifactDir,
+            HUMAN_REVIEW_LOG_ARTIFACT_FILENAME,
+          );
+        }
+      } catch (err) {
+        throw new ProductionRunnerError({
+          failureClass: "PERSIST_FAILED",
+          message: `Could not persist human-review queue/log: ${sanitizeErrorMessage({ error: err, fallback: "filesystem failure" })}`,
+          retryable: false,
+          cause: err,
+        });
       }
     }
     // Issue #2068 — per-run technique-quota report. Built upstream by the
@@ -5839,7 +5862,8 @@ export const runFigmaToQcTestCases = async (
                 techniqueQuotaReportBytes,
               ),
             ]),
-        ...(humanReviewLogPath === undefined || humanReviewLogBytes === undefined
+        ...(humanReviewLogPath === undefined ||
+        humanReviewLogBytes === undefined
           ? []
           : [writeAtomicBytes(humanReviewLogPath, humanReviewLogBytes)]),
         ...(a11yJudgeVerdictPath === undefined ||
@@ -9314,6 +9338,59 @@ const resolveFinopsBudget = (
     });
   }
   return envelope;
+};
+
+/** Upper bound for `humanReview.slaMs`: 30 days in milliseconds. */
+const HUMAN_REVIEW_SLA_MS_CEILING: number = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * Validate the optional `humanReview` runner config before any FS I/O.
+ *
+ * Rejects:
+ * - `rootDir` that is not a string or is empty/whitespace (would otherwise
+ *   route queue writes under the process CWD).
+ * - `slaMs` that is not a positive, finite, safe integer ≤ 30 days (a
+ *   non-finite value would propagate into `Date.parse(...) + slaMs` and
+ *   make `new Date(NaN).toISOString()` throw at runtime).
+ *
+ * Returns the original config unchanged when valid. Throws
+ * `ProductionRunnerError{ failureClass: "HUMAN_REVIEW_CONFIG_INVALID" }`
+ * with a stable message format on any invalid field.
+ */
+const resolveHumanReviewConfig = (
+  config: { readonly rootDir?: string; readonly slaMs?: number } | undefined,
+): { readonly rootDir?: string; readonly slaMs?: number } | undefined => {
+  if (config === undefined) return undefined;
+  const issues: string[] = [];
+  if (config.rootDir !== undefined) {
+    if (
+      typeof config.rootDir !== "string" ||
+      config.rootDir.trim().length === 0
+    ) {
+      issues.push("rootDir: must be a non-empty, non-whitespace string");
+    }
+  }
+  if (config.slaMs !== undefined) {
+    if (
+      typeof config.slaMs !== "number" ||
+      !Number.isFinite(config.slaMs) ||
+      !Number.isSafeInteger(config.slaMs) ||
+      config.slaMs <= 0 ||
+      config.slaMs > HUMAN_REVIEW_SLA_MS_CEILING
+    ) {
+      issues.push(
+        `slaMs: must be a positive, finite, safe integer ≤ ${HUMAN_REVIEW_SLA_MS_CEILING} (30 days, milliseconds)`,
+      );
+    }
+  }
+  if (issues.length > 0) {
+    throw new ProductionRunnerError({
+      failureClass: "HUMAN_REVIEW_CONFIG_INVALID",
+      message: `humanReview config rejected: ${issues.join("; ")}`,
+      retryable: false,
+    });
+  }
+  return config;
 };
 
 /**
