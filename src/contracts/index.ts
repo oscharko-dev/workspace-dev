@@ -162,7 +162,7 @@ export interface TestIntelligenceTransferPrincipal {
 }
 
 /** Contract version for the opt-in test-intelligence surface. */
-export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.36.0" as const;
+export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.37.0" as const;
 
 /**
  * Schema version for generated test case payloads.

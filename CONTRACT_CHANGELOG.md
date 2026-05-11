@@ -31,6 +31,80 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [1.37.0] - 2026-05-11
+
+Test-intelligence sub-contract bump for the Issue #2187 sovereign-cloud
+/ air-gap deployment profile (Wave 8 / W8-5). The harness gains a
+deployment topology overlay for DE Sparkassen, Volksbanken, and
+on-prem-only insurers that cannot route through Microsoft Azure or any
+other public-cloud LLM endpoint. All changes are additive — no existing
+field, type, or command was removed or renamed; the `eu-banking-default`
+profile and its hard gates (G1–G7 + G8 + G9) are byte-identical to the
+previous release.
+
+### Added (Issue #2187 — sovereign-cloud / air-gap deployment profile)
+
+- New contract constants in `src/contracts/index.ts`:
+  - `EU_BANKING_SOVEREIGN_POLICY_PROFILE_ID = "eu-banking-sovereign"`
+  - `EU_BANKING_SOVEREIGN_POLICY_PROFILE_VERSION = "1.0.0"`
+- `RegionAttestation.attestedBy` union extended with the new
+  `"sovereign-cloud"` source. The new label is first-class evidence
+  (no `severity: "warning"` flag) for endpoints that don't implement
+  Azure IMDS but carry an operator-signed sovereign-cloud deployment
+  manifest. The legacy `"azure-instance-metadata"` /
+  `"endpoint-cert-cn"` / `"operator-pinned"` values are preserved.
+- New module `src/test-intelligence/air-gap-guard.ts` exposing:
+  - `WORKSPACE_TEST_SPACE_AIR_GAP_MODE` env flag for strict-mode
+    enforcement.
+  - `WORKSPACE_TEST_SPACE_AIR_GAP_ALLOWED_HOSTS` comma-separated
+    allow-list env flag.
+  - `createAirGapFetchGuard(options)` — wraps a fetch implementation;
+    refuses every host outside the allow-list under strict mode.
+  - `assertLocalFilesystemPath(path, options)` — refuses `s3://`,
+    `https://`, `gs://`, `azure://`, `ftp://`, `sftp://`, `wasb(s)://`,
+    `abfs(s)://` as filesystem-rooted resources under strict mode.
+  - Typed errors `AirGapNetworkPolicyError` and
+    `AirGapResourceLocationError`.
+- New module `src/test-intelligence/llm-gateway-sovereign.ts` exposing
+  `createSovereignLlmGatewayClient(config, runtime, options)` — thin
+  wrapper around `createLlmGatewayClient` that pins the configured
+  `baseUrl` host into the air-gap allow-list. All circuit breaker,
+  idempotency, and failure-class semantics are inherited unchanged.
+- New module `src/test-intelligence-figma-export-cli.ts` exposing
+  `runFigmaExport`, `runFigmaExportCli`, and the
+  `SovereignFigmaPayload` shape with
+  `FIGMA_PAYLOAD_SCHEMA_VERSION = "1.0.0"`.
+- New env flag `WORKSPACE_TEST_SPACE_REGION_ATTESTATION_SOVEREIGN_SOURCE`
+  (`region-attestation.ts`) — when set (or implied by strict air-gap
+  mode), short-circuits IMDS / TLS-cert resolution and produces a
+  `sovereign-cloud` observation from the operator-pinned region.
+- New CLI sub-command `workspace-dev test-intelligence figma-export
+  --figma-url <url> --output <path>` (runs outside the air-gap).
+- New CLI flag alias `--figma-payload <path>` on
+  `workspace-dev test-intelligence run` (functionally identical to
+  `--figma-json-file`, semantically explicit for the air-gap flow).
+- New top-level re-exports in `src/index.ts`:
+  - `EU_BANKING_SOVEREIGN_POLICY_PROFILE_ID`
+  - `EU_BANKING_SOVEREIGN_POLICY_PROFILE_VERSION`
+- New helpers in `src/test-intelligence/policy-profile.ts`:
+  - `EU_BANKING_SOVEREIGN_POLICY_PROFILE` (deep-frozen).
+  - `EU_BANKING_SOVEREIGN_POLICY_PROFILE_DESCRIPTION` (string).
+  - `cloneEuBankingSovereignProfile({ allowedHostingRegions })` — clone
+    + narrow the attested region allow-list to the customer's
+    contractually approved set.
+
+### Backwards compatibility
+
+- The `eu-banking-default` profile is byte-identical: every Wave 1–7
+  hard gate, threshold, and tier-elastic coefficient is unchanged.
+- The `replay-cache-persistent` air-gap assertion is a no-op when
+  `WORKSPACE_TEST_SPACE_AIR_GAP_MODE` is unset.
+- The `region-attestation` sovereign-cloud short-circuit is opt-in:
+  legacy IMDS → TLS-cert → operator-pinned resolution is preserved
+  for unmodified deployments.
+
+---
+
 ## [1.36.0] - 2026-05-11
 
 Test-intelligence sub-contract bump for the Issue #2186 test-execution
