@@ -19,11 +19,14 @@ import {
   GRID_CARBON_INTENSITY_MAX_AGE_DAYS,
   GRID_CARBON_INTENSITY_TABLE_SCHEMA_VERSION,
   REFERENCE_ENERGY_COEFFICIENT_TABLE,
+  REFERENCE_GRID_CARBON_INTENSITY_TABLE,
   aggregateCarbonFootprint,
   assertGridCarbonIntensityTableFresh,
   buildCarbonFootprintReport,
+  carbonRoleUsageFromFinOpsRoles,
   computeCarbonFootprintReportDigest,
   computeGridCarbonIntensityTableAgeDays,
+  pickDominantCarbonRegion,
   rankCandidatesByCarbon,
   requireEnergyCoefficient,
   requireGridCarbonIntensity,
@@ -34,6 +37,7 @@ import {
   type EnergyCoefficientTable,
   type GridCarbonIntensityTable,
 } from "./carbon-footprint.js";
+import { SUPPORTED_REGION_ATTESTATION_HOSTING_REGIONS } from "../contracts/index.js";
 
 const FIXED_NOW = "2026-05-11T00:00:00Z";
 
@@ -108,7 +112,11 @@ describe("carbon-footprint: published table integrity", () => {
         entry.citation.length > 0,
         `${entry.deployment} missing citation`,
       );
-      assert.ok(entry.origin === "estimated" || entry.origin === "published_paper" || entry.origin === "vendor_disclosure");
+      assert.ok(
+        entry.origin === "estimated" ||
+          entry.origin === "published_paper" ||
+          entry.origin === "vendor_disclosure",
+      );
     }
   });
 
@@ -132,7 +140,8 @@ describe("carbon-footprint: validators", () => {
           outputKwhPerMillionTokens: 1,
           fixedKwhPerAttempt: 0,
           citation: "test",
-          origin: "guess" as unknown as EnergyCoefficientTable["entries"][number]["origin"],
+          origin:
+            "guess" as unknown as EnergyCoefficientTable["entries"][number]["origin"],
         },
       ],
     };
@@ -267,7 +276,10 @@ describe("carbon-footprint: buildCarbonFootprintReport", () => {
   test("carries energyKwh and co2eGrams on the manifest", () => {
     assert.ok(report.energyKwh > 0);
     assert.ok(report.co2eGrams > 0);
-    assert.ok(report.energyKwh < 1, "energy should be sub-kWh on smoke fixture");
+    assert.ok(
+      report.energyKwh < 1,
+      "energy should be sub-kWh on smoke fixture",
+    );
   });
 
   test("energyKwh equals the sum of per-role energy", () => {
@@ -378,7 +390,8 @@ describe("carbon-footprint: buildCarbonFootprintReport", () => {
           ],
         }),
       (err: unknown) =>
-        err instanceof CarbonFootprintError && err.code === "role_usage_invalid",
+        err instanceof CarbonFootprintError &&
+        err.code === "role_usage_invalid",
     );
   });
 
@@ -398,7 +411,8 @@ describe("carbon-footprint: buildCarbonFootprintReport", () => {
           ],
         }),
       (err: unknown) =>
-        err instanceof CarbonFootprintError && err.code === "role_usage_invalid",
+        err instanceof CarbonFootprintError &&
+        err.code === "role_usage_invalid",
     );
   });
 
@@ -425,7 +439,11 @@ describe("carbon-footprint: writeCarbonFootprintReport", () => {
     const result = await writeCarbonFootprintReport({ report, runDir });
     assert.equal(
       result.artifactPath,
-      join(runDir, CARBON_FOOTPRINT_ARTIFACT_DIRECTORY, CARBON_FOOTPRINT_REPORT_ARTIFACT_FILENAME),
+      join(
+        runDir,
+        CARBON_FOOTPRINT_ARTIFACT_DIRECTORY,
+        CARBON_FOOTPRINT_REPORT_ARTIFACT_FILENAME,
+      ),
     );
     const persisted = JSON.parse(
       await readFile(result.artifactPath, "utf8"),
@@ -581,5 +599,135 @@ describe("carbon-footprint: rankCandidatesByCarbon (routing optimizer hook)", ()
     });
     // Output-heavy mix should still favor mini (smaller output coefficient).
     assert.equal(outputHeavy.ranked[0]?.deployment, "azure-openai-gpt-4o-mini");
+  });
+});
+
+describe("carbon-footprint: production-runner wiring (Issue #2129 Wave B.3)", () => {
+  test("REFERENCE_GRID_CARBON_INTENSITY_TABLE passes the standard validator", () => {
+    validateGridCarbonIntensityTable(REFERENCE_GRID_CARBON_INTENSITY_TABLE);
+  });
+
+  test("REFERENCE_GRID_CARBON_INTENSITY_TABLE covers every region admitted by SUPPORTED_REGION_ATTESTATION_HOSTING_REGIONS", () => {
+    const covered = new Set(
+      REFERENCE_GRID_CARBON_INTENSITY_TABLE.entries.map(
+        (entry) => entry.region,
+      ),
+    );
+    for (const region of SUPPORTED_REGION_ATTESTATION_HOSTING_REGIONS) {
+      assert.ok(
+        covered.has(region),
+        `region "${region}" is admitted by the attestation contract but missing from REFERENCE_GRID_CARBON_INTENSITY_TABLE`,
+      );
+    }
+  });
+
+  test("REFERENCE_GRID_CARBON_INTENSITY_TABLE also covers the legacy Azure-style aliases", () => {
+    const covered = new Set(
+      REFERENCE_GRID_CARBON_INTENSITY_TABLE.entries.map(
+        (entry) => entry.region,
+      ),
+    );
+    for (const region of [
+      "francecentral",
+      "germanywestcentral",
+      "northeurope",
+      "swedencentral",
+      "westeurope",
+    ]) {
+      assert.ok(
+        covered.has(region),
+        `legacy alias "${region}" missing from REFERENCE_GRID_CARBON_INTENSITY_TABLE`,
+      );
+    }
+  });
+
+  test("carbonRoleUsageFromFinOpsRoles drops rows with no deployment label and rows with zero attempts", () => {
+    const reduced = carbonRoleUsageFromFinOpsRoles([
+      // Active row.
+      {
+        role: "test_generation",
+        deployment: "azure-openai-gpt-4o",
+        inputTokens: 100,
+        outputTokens: 50,
+        attempts: 2,
+      },
+      // Cache-hit-only role: no deployment observed.
+      {
+        role: "judge_primary",
+        deployment: "",
+        inputTokens: 0,
+        outputTokens: 0,
+        attempts: 0,
+      },
+      // Configured but skipped role: deployment recorded but zero attempts.
+      {
+        role: "visual_primary",
+        deployment: "anthropic-claude-3-7-sonnet",
+        inputTokens: 0,
+        outputTokens: 0,
+        attempts: 0,
+      },
+    ]);
+    assert.equal(reduced.length, 1);
+    assert.equal(reduced[0]?.role, "test_generation");
+    assert.equal(reduced[0]?.deployment, "azure-openai-gpt-4o");
+  });
+
+  test("pickDominantCarbonRegion picks the most-frequent region and ties break alphabetically", () => {
+    assert.equal(
+      pickDominantCarbonRegion([
+        { region: "eu-west-1" },
+        { region: "eu-central-1" },
+        { region: "eu-west-1" },
+      ]),
+      "eu-west-1",
+    );
+    // Tie between eu-central-1 and eu-west-1 → alphabetical wins.
+    assert.equal(
+      pickDominantCarbonRegion([
+        { region: "eu-west-1" },
+        { region: "eu-central-1" },
+      ]),
+      "eu-central-1",
+    );
+    // Empty observation set returns undefined so the wiring can skip
+    // silently.
+    assert.equal(pickDominantCarbonRegion([]), undefined);
+    // Empty region strings are ignored.
+    assert.equal(
+      pickDominantCarbonRegion([{ region: "" }, { region: "" }]),
+      undefined,
+    );
+  });
+
+  test("buildCarbonFootprintReport works end-to-end with the baked-in reference tables", () => {
+    const report = buildCarbonFootprintReport({
+      jobId: "job-wave-b3-smoke",
+      generatedAt: "2026-05-11T00:00:00Z",
+      region: "eu-central-1",
+      roles: carbonRoleUsageFromFinOpsRoles([
+        {
+          role: "test_generation",
+          deployment: "azure-openai-gpt-4o",
+          inputTokens: 12_500,
+          outputTokens: 4_300,
+          attempts: 3,
+        },
+      ]),
+      energyCoefficients: REFERENCE_ENERGY_COEFFICIENT_TABLE,
+      gridIntensity: REFERENCE_GRID_CARBON_INTENSITY_TABLE,
+    });
+    assert.equal(report.region, "eu-central-1");
+    assert.equal(report.perRole.length, 1);
+    assert.equal(report.perRole[0]?.role, "test_generation");
+    // Energy = (12500/1e6)*0.29 + (4300/1e6)*1.16 + 3*0.0000015
+    // ≈ 0.00362 + 0.004988 + 0.0000045 ≈ 0.00861 kWh
+    assert.ok(report.energyKwh > 0.008 && report.energyKwh < 0.009);
+    // CO2e at 366 g/kWh ≈ 3.15 g
+    assert.ok(report.co2eGrams > 3 && report.co2eGrams < 3.3);
+    assert.equal(
+      report.methodology.gridIntensityProvenance,
+      "iea-ember-public-baseline-2024",
+    );
   });
 });

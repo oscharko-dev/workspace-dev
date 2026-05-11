@@ -506,6 +506,22 @@ test("runFigmaToQcTestCases happy path persists artifacts and renders customer M
     assert.match(finopsTimeSeriesStore, /"records":/u);
     assert.match(finopsTimeSeriesStore, /"jobId":"job-123"/u);
     assert.match(finopsTimeSeriesStore, /"fixtureId":"figma:ABC"/u);
+    // Wave B.3 (Issue #2129): the carbon-footprint artifact is emitted
+    // when the runner observed at least one served region the baked-in
+    // grid-intensity table covers. The mock-deployment-only path in this
+    // fixture lands `eu-central-1`, so the artifact must be present.
+    assert.ok(
+      result.artifactPaths.carbonFootprintReport !== undefined,
+      "carbon-footprint report should be emitted when a known region is observed",
+    );
+    const carbonFootprintReport = JSON.parse(
+      await readFile(result.artifactPaths.carbonFootprintReport, "utf8"),
+    );
+    assert.equal(carbonFootprintReport.schemaVersion, "1.0.0");
+    assert.equal(carbonFootprintReport.jobId, "job-123");
+    assert.equal(carbonFootprintReport.secretsIncluded, false);
+    assert.equal(carbonFootprintReport.rawPromptsIncluded, false);
+    assert.ok(Array.isArray(carbonFootprintReport.perRole));
     assert.equal(
       result.runQuality.artifactPath,
       result.artifactPaths.runQuality,
@@ -2453,9 +2469,9 @@ test("runFigmaToQcTestCases wires Figma URL screenshots through the visual sidec
         (url) => !url.startsWith("http://169.254.169.254/metadata/instance"),
       ),
       [
-      "https://api.figma.com/v1/files/ABC/nodes?ids=1%3A1",
-      "https://api.figma.com/v1/images/ABC?ids=1%3A1&format=png&scale=2",
-      "https://figma-alpha-api.s3.us-west-2.amazonaws.com/1_1.png",
+        "https://api.figma.com/v1/files/ABC/nodes?ids=1%3A1",
+        "https://api.figma.com/v1/images/ABC?ids=1%3A1&format=png&scale=2",
+        "https://figma-alpha-api.s3.us-west-2.amazonaws.com/1_1.png",
       ],
     );
     assert.equal(requestHeaders[0]?.get("x-figma-token"), "figd_test");
@@ -7434,7 +7450,10 @@ test("Issue #2037: production runner writes provenance.jsonld and policy report 
     const logicJudgeActivity = graph.find(
       (node) => node["ti:role"] === "logic_judge",
     );
-    assert.ok(logicJudgeActivity, "expected logic_judge activity in provenance");
+    assert.ok(
+      logicJudgeActivity,
+      "expected logic_judge activity in provenance",
+    );
     const activityInformedBy = (node: Record<string, unknown>): string[] =>
       Array.isArray(node["prov:wasInformedBy"])
         ? node["prov:wasInformedBy"]

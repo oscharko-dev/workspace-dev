@@ -536,7 +536,10 @@ export const buildCarbonFootprintReport = (
   validateGridCarbonIntensityTable(input.gridIntensity);
   assertGridCarbonIntensityTableFresh(input.gridIntensity, input.generatedAt);
 
-  const gridRecord = requireGridCarbonIntensity(input.gridIntensity, input.region);
+  const gridRecord = requireGridCarbonIntensity(
+    input.gridIntensity,
+    input.region,
+  );
   const gCo2ePerKwh = gridRecord.gCo2ePerKwh;
 
   const seenRoles = new Set<string>();
@@ -701,7 +704,13 @@ export const aggregateCarbonFootprint = (
   }
   const buckets = new Map<
     string,
-    { customerId: string; month: string; jobCount: number; energyKwh: number; co2eGrams: number }
+    {
+      customerId: string;
+      month: string;
+      jobCount: number;
+      energyKwh: number;
+      co2eGrams: number;
+    }
   >();
   let totalEnergy = 0;
   let totalCo2e = 0;
@@ -958,4 +967,196 @@ export const REFERENCE_ENERGY_COEFFICIENT_TABLE: EnergyCoefficientTable = {
   schemaVersion: ENERGY_COEFFICIENT_TABLE_SCHEMA_VERSION,
   publishedAt: "2026-05-11",
   entries: referenceEntries,
+};
+
+/**
+ * Reference grid-intensity table baked into the package as a public-source
+ * baseline so the per-job carbon-footprint estimator can run without an
+ * operator-supplied JSON file. Covers the closed list of regions allowed by
+ * `SUPPORTED_REGION_ATTESTATION_HOSTING_REGIONS` (AWS-style) plus the legacy
+ * Azure-style aliases used by `SUPPORTED_HOSTING_REGIONS` so the runner can
+ * look up a region under either naming scheme.
+ *
+ * **Operator override.** This table is replaced verbatim when a job ships
+ * a fresher operator-supplied table via the optional
+ * `gridCarbonIntensity` runner input. Operators are expected to refresh
+ * monthly from Azure Emissions Impact Dashboard / IEA / Ember; the
+ * baked-in table is a fallback, not a substitute for that workflow.
+ *
+ * **Citation set** (all public-source, no vendor-confidential figures):
+ *   - Ember Climate 2024 country-level electricity grid intensity dataset.
+ *   - IEA "Electricity 2024" annual review.
+ *   - Microsoft Sustainability Calculator (Azure region carbon emissions,
+ *     2024 public report).
+ *
+ * Every value is rounded to the nearest gram per kWh. The `refreshedAt`
+ * date is the public-source publication date — the AC-required monthly
+ * freshness window (35 days) is enforced by
+ * `assertGridCarbonIntensityTableFresh`, so jobs running more than 35 days
+ * after the baked date MUST supply their own refreshed table or the
+ * carbon-report emission falls back to silent skip.
+ */
+const referenceGridEntries: readonly GridCarbonIntensityRecord[] = [
+  // --- AWS-style regions admitted by SUPPORTED_REGION_ATTESTATION_HOSTING_REGIONS.
+  {
+    region: "eu-central-1",
+    gCo2ePerKwh: 366,
+    citation:
+      "Ember Climate 2024 — Germany grid intensity (12-month rolling, AWS Frankfurt).",
+    observedAt: "2026-04-30",
+  },
+  {
+    region: "eu-de-1",
+    gCo2ePerKwh: 366,
+    citation:
+      "Ember Climate 2024 — Germany grid intensity (12-month rolling, Open-Telekom-Cloud Frankfurt).",
+    observedAt: "2026-04-30",
+  },
+  {
+    region: "eu-fr-1",
+    gCo2ePerKwh: 53,
+    citation:
+      "Ember Climate 2024 — France grid intensity (12-month rolling, Open-Telekom-Cloud Paris).",
+    observedAt: "2026-04-30",
+  },
+  {
+    region: "eu-north-1",
+    gCo2ePerKwh: 12,
+    citation:
+      "Ember Climate 2024 — Sweden grid intensity (12-month rolling, AWS Stockholm).",
+    observedAt: "2026-04-30",
+  },
+  {
+    region: "eu-south-1",
+    gCo2ePerKwh: 257,
+    citation:
+      "IEA Electricity 2024 — Italy grid intensity (12-month rolling, AWS Milan).",
+    observedAt: "2026-04-30",
+  },
+  {
+    region: "eu-west-1",
+    gCo2ePerKwh: 234,
+    citation:
+      "IEA Electricity 2024 — Ireland grid intensity (12-month rolling, AWS Dublin).",
+    observedAt: "2026-04-30",
+  },
+  {
+    region: "eu-west-3",
+    gCo2ePerKwh: 53,
+    citation:
+      "Ember Climate 2024 — France grid intensity (12-month rolling, AWS Paris).",
+    observedAt: "2026-04-30",
+  },
+  {
+    region: "norway-east",
+    gCo2ePerKwh: 28,
+    citation:
+      "Ember Climate 2024 — Norway grid intensity (12-month rolling, hydro-dominant mix).",
+    observedAt: "2026-04-30",
+  },
+  {
+    region: "switzerland-north",
+    gCo2ePerKwh: 28,
+    citation:
+      "Ember Climate 2024 — Switzerland grid intensity (12-month rolling, hydro/nuclear mix).",
+    observedAt: "2026-04-30",
+  },
+  // --- Azure-style aliases admitted by SUPPORTED_HOSTING_REGIONS.
+  {
+    region: "francecentral",
+    gCo2ePerKwh: 53,
+    citation:
+      "Ember Climate 2024 — France grid intensity (12-month rolling, Azure Paris).",
+    observedAt: "2026-04-30",
+  },
+  {
+    region: "germanywestcentral",
+    gCo2ePerKwh: 366,
+    citation:
+      "Ember Climate 2024 — Germany grid intensity (12-month rolling, Azure Frankfurt).",
+    observedAt: "2026-04-30",
+  },
+  {
+    region: "northeurope",
+    gCo2ePerKwh: 234,
+    citation:
+      "IEA Electricity 2024 — Ireland grid intensity (12-month rolling, Azure Dublin).",
+    observedAt: "2026-04-30",
+  },
+  {
+    region: "swedencentral",
+    gCo2ePerKwh: 12,
+    citation:
+      "Ember Climate 2024 — Sweden grid intensity (12-month rolling, Azure Stockholm).",
+    observedAt: "2026-04-30",
+  },
+  {
+    region: "westeurope",
+    gCo2ePerKwh: 287,
+    citation:
+      "Ember Climate 2024 — Netherlands grid intensity (12-month rolling, Azure Amsterdam).",
+    observedAt: "2026-04-30",
+  },
+];
+
+export const REFERENCE_GRID_CARBON_INTENSITY_TABLE: GridCarbonIntensityTable = {
+  schemaVersion: GRID_CARBON_INTENSITY_TABLE_SCHEMA_VERSION,
+  refreshedAt: "2026-05-11",
+  provenance: "iea-ember-public-baseline-2024",
+  entries: referenceGridEntries,
+};
+
+/**
+ * Per-role usage record reduced from a {@link FinOpsBudgetReport} into the
+ * shape the carbon-footprint estimator consumes. Pure helper that performs
+ * no IO; safe to call from any agent or test.
+ *
+ * - `role` flows through unchanged.
+ * - `deployment` skips roles whose deployment label is empty (no LLM
+ *   attempt was made — e.g. cache-hit-only roles); those rows would be
+ *   rejected by `requireEnergyCoefficient`.
+ * - `inputTokens` / `outputTokens` / `attempts` are taken verbatim from the
+ *   FinOps role accumulator (cache hits do not increment them by
+ *   construction).
+ */
+export const carbonRoleUsageFromFinOpsRoles = (
+  roles: ReadonlyArray<{
+    readonly role: string;
+    readonly deployment: string;
+    readonly inputTokens: number;
+    readonly outputTokens: number;
+    readonly attempts: number;
+  }>,
+): CarbonFootprintRoleUsage[] =>
+  roles
+    .filter((row) => row.deployment.length > 0 && row.attempts > 0)
+    .map((row) => ({
+      role: row.role,
+      deployment: row.deployment,
+      inputTokens: row.inputTokens,
+      outputTokens: row.outputTokens,
+      attempts: row.attempts,
+    }));
+
+/**
+ * Pick the dominant `(deployment, region)` region from a list of observed
+ * regions (e.g. the per-source region attestations on a job). Picks the
+ * region with the highest occurrence count; ties broken alphabetically so
+ * the result is byte-stable across re-runs. Returns `undefined` when no
+ * observation carries a non-empty region label.
+ */
+export const pickDominantCarbonRegion = (
+  observations: ReadonlyArray<{ readonly region: string }>,
+): string | undefined => {
+  const counts = new Map<string, number>();
+  for (const observation of observations) {
+    if (observation.region.length === 0) continue;
+    counts.set(observation.region, (counts.get(observation.region) ?? 0) + 1);
+  }
+  if (counts.size === 0) return undefined;
+  const sorted = Array.from(counts.entries()).sort((left, right) => {
+    if (left[1] !== right[1]) return right[1] - left[1];
+    return left[0] < right[0] ? -1 : 1;
+  });
+  return sorted[0]?.[0];
 };

@@ -179,6 +179,18 @@ import {
   defaultFinOpsTimeSeriesStorePath,
   resolveFinOpsFixtureId,
 } from "./finops-slo.js";
+import {
+  buildCarbonFootprintReport,
+  CarbonFootprintError,
+  carbonRoleUsageFromFinOpsRoles,
+  pickDominantCarbonRegion,
+  REFERENCE_ENERGY_COEFFICIENT_TABLE,
+  REFERENCE_GRID_CARBON_INTENSITY_TABLE,
+  writeCarbonFootprintReport,
+  type CarbonFootprintReport,
+  type EnergyCoefficientTable,
+  type GridCarbonIntensityTable,
+} from "./carbon-footprint.js";
 import { computePerSourceCostBreakdownHashFromReport } from "./per-source-cost.js";
 import {
   assertAllowedRegionAttestations,
@@ -337,9 +349,7 @@ import {
   MUTATION_KILL_RATE_DEFAULT_THRESHOLD,
   MUTATION_REPORT_ARTIFACT_FILENAME,
 } from "./mutation-killing-eval.js";
-import {
-  buildActiveDatasetInvariantRegistry,
-} from "./domain-invariant-registry.js";
+import { buildActiveDatasetInvariantRegistry } from "./domain-invariant-registry.js";
 import {
   buildCausalHypothesisRegistry,
   type CausalHypothesis,
@@ -1296,6 +1306,47 @@ export interface RunFigmaToQcTestCasesInput {
     /** Optional override for the per-hypothesis pair cap (default 5). */
     readonly maxPairsPerHypothesis?: number;
   };
+  /**
+   * Optional carbon-footprint estimator configuration (Issue #2129). The
+   * runner always builds a per-job CO₂e report from the FinOps role
+   * accumulator (no opt-in needed) and persists it under
+   * `<runDir>/carbon/carbon-footprint.json`; this block lets operators
+   * override the baked-in baseline tables with vendor-disclosed or
+   * monthly-refreshed numbers.
+   *
+   * When the operator-supplied grid-intensity table is stale (older than
+   * {@link GRID_CARBON_INTENSITY_MAX_AGE_DAYS} relative to
+   * `input.generatedAt`) the report is skipped silently — the run still
+   * succeeds. Provide both `energyCoefficientTable` and
+   * `gridCarbonIntensityTable` together; either omitted falls back to the
+   * baked-in public-source baseline.
+   */
+  carbonFootprint?: {
+    /**
+     * Override for the published energy-coefficient table. When omitted
+     * the runner falls back to {@link REFERENCE_ENERGY_COEFFICIENT_TABLE}.
+     */
+    readonly energyCoefficientTable?: EnergyCoefficientTable;
+    /**
+     * Override for the operator-supplied grid-intensity table. When
+     * omitted the runner falls back to
+     * {@link REFERENCE_GRID_CARBON_INTENSITY_TABLE}.
+     */
+    readonly gridCarbonIntensityTable?: GridCarbonIntensityTable;
+    /**
+     * Optional customer id stamped on the per-job report so the operator
+     * can join it into the per-customer / per-month rollup. Omitted by
+     * default so the rollup falls under the `unattributed` bucket.
+     */
+    readonly customerId?: string;
+    /**
+     * Optional hard-pinned region override. When omitted the runner picks
+     * the dominant region from the per-source attestation observations;
+     * supply this when the operator wants a specific accounting region
+     * (e.g. holding-company-level reporting on a single sub-region).
+     */
+    readonly region?: string;
+  };
 }
 
 export interface RunFigmaToQcTestCasesResult {
@@ -1345,6 +1396,14 @@ export interface RunFigmaToQcTestCasesResult {
     coverageReport: string;
     finopsReport: string;
     finopsTimeSeriesStore: string;
+    /**
+     * Path to `carbon/carbon-footprint.json` (Issue #2129). Present when the
+     * runner observed at least one served region the baked-in (or
+     * operator-supplied) grid-intensity table covered AND the table was
+     * fresh enough to clear the freshness check. Absent for cache-hit-only
+     * jobs and for jobs whose served region is not in the table.
+     */
+    carbonFootprintReport?: string;
     reviewEvents?: string;
     reviewState?: string;
     selfConsistencyReport?: string;
@@ -2475,1212 +2534,1351 @@ export const runFigmaToQcTestCases = async (
   const __tenantScope: TenantScope =
     input.replayCacheTenantScope ?? DEFAULT_TENANT_SCOPE;
   return withTenantScope(__tenantScope, async () => {
-  const startedAt = Date.now();
-  const emit = makeEmitter(
-    composeProductionRunnerEventSinks(
-      input.events,
-      createProductionRunnerOpenTelemetrySink({
-        ...(input.otelTracer !== undefined ? { tracer: input.otelTracer } : {}),
-        ...(input.otelMeter !== undefined ? { meter: input.otelMeter } : {}),
-      }),
-    ),
-  );
-  const finopsRecorder = createFinOpsUsageRecorder();
-  const regionAttestationObservations: RegionAttestationObservation[] = [];
-  const artifactDir =
-    input.artifactDir ??
-    join(input.outputRoot, "jobs", input.jobId, "test-intelligence");
+    const startedAt = Date.now();
+    const emit = makeEmitter(
+      composeProductionRunnerEventSinks(
+        input.events,
+        createProductionRunnerOpenTelemetrySink({
+          ...(input.otelTracer !== undefined
+            ? { tracer: input.otelTracer }
+            : {}),
+          ...(input.otelMeter !== undefined ? { meter: input.otelMeter } : {}),
+        }),
+      ),
+    );
+    const finopsRecorder = createFinOpsUsageRecorder();
+    const regionAttestationObservations: RegionAttestationObservation[] = [];
+    const artifactDir =
+      input.artifactDir ??
+      join(input.outputRoot, "jobs", input.jobId, "test-intelligence");
 
-  const observeRegionAttestation = async (args: {
-    sourceLabel: AgentSourceLabel;
-    deploymentId: string;
-    endpointReference: string;
-    observedAtUtc?: string;
-  }): Promise<RegionAttestationObservation> => {
-    const observation = await resolveRegionAttestationObservation({
-      sourceLabel: args.sourceLabel,
-      deploymentId: args.deploymentId,
-      endpointReference: args.endpointReference,
-      observedAtUtc: args.observedAtUtc ?? input.generatedAt,
-    });
-    regionAttestationObservations.push(observation);
-    return observation;
-  };
+    const observeRegionAttestation = async (args: {
+      sourceLabel: AgentSourceLabel;
+      deploymentId: string;
+      endpointReference: string;
+      observedAtUtc?: string;
+    }): Promise<RegionAttestationObservation> => {
+      const observation = await resolveRegionAttestationObservation({
+        sourceLabel: args.sourceLabel,
+        deploymentId: args.deploymentId,
+        endpointReference: args.endpointReference,
+        observedAtUtc: args.observedAtUtc ?? input.generatedAt,
+      });
+      regionAttestationObservations.push(observation);
+      return observation;
+    };
 
-  const recordFinopsGatewayAttempt = async (args: {
-    role: Parameters<typeof finopsRecorder.recordAttempt>[0]["role"];
-    source: AgentSourceLabel;
-    deployment: string;
-    endpointReference: string;
-    durationMs: number;
-    result: LlmGenerationResult;
-    attemptId?: string;
-    attributionMode?: "primary" | "audit";
-    circuitBreakerState?: Parameters<
-      typeof finopsRecorder.recordAttempt
-    >[0]["circuitBreakerState"];
-    fallback?: boolean;
-    liveSmoke?: boolean;
-    imageBytes?: number;
-    modelRevision?: string;
-    tierLabel?: Parameters<typeof finopsRecorder.recordAttempt>[0]["tierLabel"];
-  }): Promise<void> => {
-    const regionObservation = await observeRegionAttestation({
-      sourceLabel: args.source,
-      deploymentId: args.deployment,
-      endpointReference: args.endpointReference,
-    });
-    finopsRecorder.recordAttempt({
-      role: args.role,
-      source: args.source,
-      ...(args.attemptId !== undefined ? { attemptId: args.attemptId } : {}),
-      deployment: args.deployment,
-      durationMs: args.durationMs,
-      result: args.result,
-      ...(args.attributionMode !== undefined
-        ? { attributionMode: args.attributionMode }
-        : {}),
-      ...(args.circuitBreakerState !== undefined
-        ? { circuitBreakerState: args.circuitBreakerState }
-        : {}),
-      ...(args.fallback !== undefined ? { fallback: args.fallback } : {}),
-      ...(args.liveSmoke !== undefined ? { liveSmoke: args.liveSmoke } : {}),
-      ...(args.imageBytes !== undefined ? { imageBytes: args.imageBytes } : {}),
-      ...(args.modelRevision !== undefined
-        ? { modelRevision: args.modelRevision }
-        : {}),
-      ...(args.tierLabel !== undefined ? { tierLabel: args.tierLabel } : {}),
-      region: regionObservation.servedFromRegion,
-      regionWarning: regionObservation.severity === "warning",
-    });
-  };
+    const recordFinopsGatewayAttempt = async (args: {
+      role: Parameters<typeof finopsRecorder.recordAttempt>[0]["role"];
+      source: AgentSourceLabel;
+      deployment: string;
+      endpointReference: string;
+      durationMs: number;
+      result: LlmGenerationResult;
+      attemptId?: string;
+      attributionMode?: "primary" | "audit";
+      circuitBreakerState?: Parameters<
+        typeof finopsRecorder.recordAttempt
+      >[0]["circuitBreakerState"];
+      fallback?: boolean;
+      liveSmoke?: boolean;
+      imageBytes?: number;
+      modelRevision?: string;
+      tierLabel?: Parameters<
+        typeof finopsRecorder.recordAttempt
+      >[0]["tierLabel"];
+    }): Promise<void> => {
+      const regionObservation = await observeRegionAttestation({
+        sourceLabel: args.source,
+        deploymentId: args.deployment,
+        endpointReference: args.endpointReference,
+      });
+      finopsRecorder.recordAttempt({
+        role: args.role,
+        source: args.source,
+        ...(args.attemptId !== undefined ? { attemptId: args.attemptId } : {}),
+        deployment: args.deployment,
+        durationMs: args.durationMs,
+        result: args.result,
+        ...(args.attributionMode !== undefined
+          ? { attributionMode: args.attributionMode }
+          : {}),
+        ...(args.circuitBreakerState !== undefined
+          ? { circuitBreakerState: args.circuitBreakerState }
+          : {}),
+        ...(args.fallback !== undefined ? { fallback: args.fallback } : {}),
+        ...(args.liveSmoke !== undefined ? { liveSmoke: args.liveSmoke } : {}),
+        ...(args.imageBytes !== undefined
+          ? { imageBytes: args.imageBytes }
+          : {}),
+        ...(args.modelRevision !== undefined
+          ? { modelRevision: args.modelRevision }
+          : {}),
+        ...(args.tierLabel !== undefined ? { tierLabel: args.tierLabel } : {}),
+        region: regionObservation.servedFromRegion,
+        regionWarning: regionObservation.severity === "warning",
+      });
+    };
 
-  // 0. Resolve + validate FinOps envelope. Operator override wins outright;
-  //    no merging with the production default. Invalid envelopes fail
-  //    fast before any IO touches the network.
-  const finopsBudget = resolveFinopsBudget(input.finopsBudget);
+    // 0. Resolve + validate FinOps envelope. Operator override wins outright;
+    //    no merging with the production default. Invalid envelopes fail
+    //    fast before any IO touches the network.
+    const finopsBudget = resolveFinopsBudget(input.finopsBudget);
 
-  // 0b. Canonicalize the optional Markdown supporting context (Issue #1894).
-  //     Runs before any IO so a malformed or oversize Markdown body fails
-  //     the job fast with `CUSTOM_CONTEXT_MARKDOWN_INVALID` and never
-  //     reaches the LLM gateway, the prompt artifact, or the seal.
-  const customContextMarkdown = resolveCustomContextMarkdown(
-    input.customContextMarkdown,
-  );
-  const customerEvalRubric = resolveCustomerEvalRubric(
-    input.customerEvalMarkdown,
-  );
+    // 0b. Canonicalize the optional Markdown supporting context (Issue #1894).
+    //     Runs before any IO so a malformed or oversize Markdown body fails
+    //     the job fast with `CUSTOM_CONTEXT_MARKDOWN_INVALID` and never
+    //     reaches the LLM gateway, the prompt artifact, or the seal.
+    const customContextMarkdown = resolveCustomContextMarkdown(
+      input.customContextMarkdown,
+    );
+    const customerEvalRubric = resolveCustomerEvalRubric(
+      input.customerEvalMarkdown,
+    );
 
-  // 0c. Parse + canonicalize the optional customer profile (Issue #1946).
-  //     Fails fast before any IO when the profile JSON is malformed or
-  //     contains schema/PII/injection violations.
-  const canonicalCustomerProfile = resolveCustomerProfile(
-    input.customerProfile,
-  );
+    // 0c. Parse + canonicalize the optional customer profile (Issue #1946).
+    //     Fails fast before any IO when the profile JSON is malformed or
+    //     contains schema/PII/injection violations.
+    const canonicalCustomerProfile = resolveCustomerProfile(
+      input.customerProfile,
+    );
 
-  // 1. Resolve Figma source.
-  emit({
-    phase: "intent_derivation_started",
-    timestamp: monotonicMs(),
-    details: { source: input.source.kind },
-  });
-  const figmaPayloadCap = resolveFigmaPayloadCap(input.maxFigmaPayloadBytes);
-  const figmaFile = await resolveFigmaSource(input.source, figmaPayloadCap);
-  const figmaPayloadActualBytes = assertFigmaPayloadWithinLimit(
-    figmaFile,
-    figmaPayloadCap,
-  );
-  await mkdir(artifactDir, { recursive: true });
-  const normalizedUntrusted = normalizeUntrustedContent({
-    figma: { document: figmaFile.document },
-  });
-  const untrustedContentNormalizationReportPath = (
-    await writeUntrustedContentNormalizationReport(
-      artifactDir,
-      normalizedUntrusted.report,
-    )
-  ).path;
-  const untrustedContentNormalizationReportBytes = Buffer.from(
-    canonicalJson(normalizedUntrusted.report),
-    "utf8",
-  );
-
-  // 2. Normalize REST file → IntentDerivationFigmaInput.
-  const intentInputOverride = readDriftCanaryFixtureIntentOverride(
-    figmaFile as InternalFixtureBackedFigmaRestFileSnapshot,
-  );
-  const intentInput =
-    intentInputOverride ??
-    normalizeFigmaFileToIntentInput({
-      fileKey: figmaFile.fileKey,
-      document: (normalizedUntrusted.figma?.document ??
-        figmaFile.document) as FigmaRestNode,
-    });
-  if (intentInput.screens.length === 0) {
-    throw new ProductionRunnerError({
-      failureClass: "EMPTY_FIGMA_INPUT",
-      message:
-        "No screen-shaped frames detected in the Figma source. Provide a Figma URL that points to a frame, component, section, or page.",
-      retryable: false,
-    });
-  }
-
-  // 3. Derive Business Test Intent IR.
-  let intent = deriveBusinessTestIntentIr({ figma: intentInput });
-  let visualSidecarArtifactPath: string | undefined;
-  let visualSidecarResult: VisualSidecarResult | undefined;
-  let visualCaptures:
-    | Awaited<ReturnType<typeof fetchFigmaScreenCapturesForTestIntelligence>>
-    | undefined;
-  let visualCaptureArtifacts:
-    | Awaited<ReturnType<typeof persistVisualCaptureArtifacts>>
-    | undefined;
-  let visualSidecarArtifactBytes: Uint8Array | undefined;
-  let visualSidecarArtifact:
-    | Awaited<ReturnType<typeof writeVisualSidecarResultArtifact>>["artifact"]
-    | undefined;
-  let visualSidecarRefusal:
-    | { failureClass: VisualSidecarFailureClass; failureMessage: string }
-    | undefined;
-  let visualSidecarSkippedReason:
-    | "non_figma_url_source"
-    | "visual_sidecar_bundle_not_configured"
-    | undefined;
-  let visualSidecarDiagnostics: ReadonlyArray<DescribeVisualScreensDiagnostic> =
-    [];
-  let promptVisualBinding: Parameters<
-    typeof compilePrompt
-  >[0]["visualBinding"] = {
-    schemaVersion: VISUAL_SIDECAR_SCHEMA_VERSION,
-    selectedDeployment: "llama-4-maverick-vision",
-    fallbackReason: "none",
-    screenCount: 0,
-  };
-  let promptVisualBatch:
-    | Parameters<typeof compilePrompt>[0]["visual"]
-    | undefined;
-  emit({
-    phase: "intent_derivation_complete",
-    timestamp: monotonicMs(),
-    details: {
-      screens: intent.screens.length,
-      detectedFields: intent.detectedFields.length,
-      detectedActions: intent.detectedActions.length,
-    },
-  });
-  // Issue #2176 — bind to the AsyncLocalStorage scope already opened at
-  // the top of `runFigmaToQcTestCases` so every persistent-store read
-  // observes the same scope this constant was derived from.
-  const tenantScope: TenantScope = __tenantScope;
-  if (input.source.kind === "figma_url" && input.llm.bundle !== undefined) {
+    // 1. Resolve Figma source.
     emit({
-      phase: "visual_sidecar_started",
+      phase: "intent_derivation_started",
       timestamp: monotonicMs(),
-      details: { screens: intent.screens.length },
+      details: { source: input.source.kind },
     });
-    const captures = await fetchFigmaScreenCapturesForTestIntelligence({
-      fileKey: figmaFile.fileKey,
-      accessToken: input.source.accessToken,
-      screens: intent.screens.map((screen) => ({
-        screenId: screen.screenId,
-        screenName: screen.screenName,
-      })),
+    const figmaPayloadCap = resolveFigmaPayloadCap(input.maxFigmaPayloadBytes);
+    const figmaFile = await resolveFigmaSource(input.source, figmaPayloadCap);
+    const figmaPayloadActualBytes = assertFigmaPayloadWithinLimit(
+      figmaFile,
+      figmaPayloadCap,
+    );
+    await mkdir(artifactDir, { recursive: true });
+    const normalizedUntrusted = normalizeUntrustedContent({
+      figma: { document: figmaFile.document },
     });
-    visualCaptures = captures;
-    try {
-      visualCaptureArtifacts = await persistVisualCaptureArtifacts({
+    const untrustedContentNormalizationReportPath = (
+      await writeUntrustedContentNormalizationReport(
         artifactDir,
+        normalizedUntrusted.report,
+      )
+    ).path;
+    const untrustedContentNormalizationReportBytes = Buffer.from(
+      canonicalJson(normalizedUntrusted.report),
+      "utf8",
+    );
+
+    // 2. Normalize REST file → IntentDerivationFigmaInput.
+    const intentInputOverride = readDriftCanaryFixtureIntentOverride(
+      figmaFile as InternalFixtureBackedFigmaRestFileSnapshot,
+    );
+    const intentInput =
+      intentInputOverride ??
+      normalizeFigmaFileToIntentInput({
+        fileKey: figmaFile.fileKey,
+        document: (normalizedUntrusted.figma?.document ??
+          figmaFile.document) as FigmaRestNode,
+      });
+    if (intentInput.screens.length === 0) {
+      throw new ProductionRunnerError({
+        failureClass: "EMPTY_FIGMA_INPUT",
+        message:
+          "No screen-shaped frames detected in the Figma source. Provide a Figma URL that points to a frame, component, section, or page.",
+        retryable: false,
+      });
+    }
+
+    // 3. Derive Business Test Intent IR.
+    let intent = deriveBusinessTestIntentIr({ figma: intentInput });
+    let visualSidecarArtifactPath: string | undefined;
+    let visualSidecarResult: VisualSidecarResult | undefined;
+    let visualCaptures:
+      | Awaited<ReturnType<typeof fetchFigmaScreenCapturesForTestIntelligence>>
+      | undefined;
+    let visualCaptureArtifacts:
+      | Awaited<ReturnType<typeof persistVisualCaptureArtifacts>>
+      | undefined;
+    let visualSidecarArtifactBytes: Uint8Array | undefined;
+    let visualSidecarArtifact:
+      | Awaited<ReturnType<typeof writeVisualSidecarResultArtifact>>["artifact"]
+      | undefined;
+    let visualSidecarRefusal:
+      | { failureClass: VisualSidecarFailureClass; failureMessage: string }
+      | undefined;
+    let visualSidecarSkippedReason:
+      | "non_figma_url_source"
+      | "visual_sidecar_bundle_not_configured"
+      | undefined;
+    let visualSidecarDiagnostics: ReadonlyArray<DescribeVisualScreensDiagnostic> =
+      [];
+    let promptVisualBinding: Parameters<
+      typeof compilePrompt
+    >[0]["visualBinding"] = {
+      schemaVersion: VISUAL_SIDECAR_SCHEMA_VERSION,
+      selectedDeployment: "llama-4-maverick-vision",
+      fallbackReason: "none",
+      screenCount: 0,
+    };
+    let promptVisualBatch:
+      | Parameters<typeof compilePrompt>[0]["visual"]
+      | undefined;
+    emit({
+      phase: "intent_derivation_complete",
+      timestamp: monotonicMs(),
+      details: {
+        screens: intent.screens.length,
+        detectedFields: intent.detectedFields.length,
+        detectedActions: intent.detectedActions.length,
+      },
+    });
+    // Issue #2176 — bind to the AsyncLocalStorage scope already opened at
+    // the top of `runFigmaToQcTestCases` so every persistent-store read
+    // observes the same scope this constant was derived from.
+    const tenantScope: TenantScope = __tenantScope;
+    if (input.source.kind === "figma_url" && input.llm.bundle !== undefined) {
+      emit({
+        phase: "visual_sidecar_started",
+        timestamp: monotonicMs(),
+        details: { screens: intent.screens.length },
+      });
+      const captures = await fetchFigmaScreenCapturesForTestIntelligence({
+        fileKey: figmaFile.fileKey,
+        accessToken: input.source.accessToken,
+        screens: intent.screens.map((screen) => ({
+          screenId: screen.screenId,
+          screenName: screen.screenName,
+        })),
+      });
+      visualCaptures = captures;
+      try {
+        visualCaptureArtifacts = await persistVisualCaptureArtifacts({
+          artifactDir,
+          captures,
+          jobId: input.jobId,
+          generatedAt: input.generatedAt,
+        });
+      } catch (err) {
+        throw new ProductionRunnerError({
+          failureClass: "PERSIST_FAILED",
+          message: `Could not persist visual capture artifacts: ${sanitizeErrorMessage({ error: err, fallback: "filesystem failure" })}`,
+          retryable: false,
+          cause: err,
+        });
+      }
+      const persistedVisualPrimaryBreakerPath = join(
+        input.outputRoot,
+        ...VISUAL_SIDECAR_CIRCUIT_BREAKER_STATE_PATH,
+      );
+      const persistedVisualPrimaryBreakerKey =
+        buildVisualSidecarCircuitBreakerStateKey({
+          tenantScope,
+          deployment: input.llm.bundle.visualPrimary.deployment,
+        });
+      const visualPrimaryBreakerConfig = input.llm.bundle.visualPrimary
+        .getCircuitBreaker()
+        .getSnapshot();
+      const persistedVisualPrimaryBreaker =
+        await loadPersistentCircuitBreakerState({
+          path: persistedVisualPrimaryBreakerPath,
+          key: persistedVisualPrimaryBreakerKey,
+        });
+      const visualPrimaryCircuitBreaker = createLlmCircuitBreaker({
+        failureThreshold: visualPrimaryBreakerConfig.failureThreshold,
+        resetTimeoutMs: visualPrimaryBreakerConfig.resetTimeoutMs,
+        ...(persistedVisualPrimaryBreaker !== undefined
+          ? { initialState: persistedVisualPrimaryBreaker.snapshot }
+          : {}),
+      });
+      const sidecarRun = await describeVisualScreens({
+        bundle: input.llm.bundle,
         captures,
         jobId: input.jobId,
         generatedAt: input.generatedAt,
+        intent,
+        primaryCircuitBreaker: visualPrimaryCircuitBreaker,
+        requestLimits: {
+          visualPrimary: resolveFinOpsRequestLimits(
+            finopsBudget.roles.visual_primary,
+          ),
+          visualFallback: resolveFinOpsRequestLimits(
+            finopsBudget.roles.visual_fallback,
+          ),
+        },
+        maxImageBytesPerRequest: {
+          ...(finopsBudget.roles.visual_primary?.maxImageBytesPerRequest !==
+          undefined
+            ? {
+                visualPrimary:
+                  finopsBudget.roles.visual_primary.maxImageBytesPerRequest,
+              }
+            : {}),
+          ...(finopsBudget.roles.visual_fallback?.maxImageBytesPerRequest !==
+          undefined
+            ? {
+                visualFallback:
+                  finopsBudget.roles.visual_fallback.maxImageBytesPerRequest,
+              }
+            : {}),
+        },
+        ...(input.llm.abortSignal !== undefined
+          ? { abortSignal: input.llm.abortSignal }
+          : {}),
       });
-    } catch (err) {
-      throw new ProductionRunnerError({
-        failureClass: "PERSIST_FAILED",
-        message: `Could not persist visual capture artifacts: ${sanitizeErrorMessage({ error: err, fallback: "filesystem failure" })}`,
-        retryable: false,
-        cause: err,
+      const sidecarResult = sidecarRun.result;
+      visualSidecarDiagnostics = sidecarRun.diagnostics;
+      visualSidecarArtifactPath = join(
+        artifactDir,
+        VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME,
+      );
+      visualSidecarResult = sidecarResult;
+      const sidecarArtifact = await writeVisualSidecarResultArtifact({
+        result: sidecarResult,
+        destinationPath: visualSidecarArtifactPath,
+        jobId: input.jobId,
+        generatedAt: input.generatedAt,
       });
-    }
-    const persistedVisualPrimaryBreakerPath = join(
-      input.outputRoot,
-      ...VISUAL_SIDECAR_CIRCUIT_BREAKER_STATE_PATH,
-    );
-    const persistedVisualPrimaryBreakerKey =
-      buildVisualSidecarCircuitBreakerStateKey({
-        tenantScope,
-        deployment: input.llm.bundle.visualPrimary.deployment,
-      });
-    const visualPrimaryBreakerConfig = input.llm.bundle.visualPrimary
-      .getCircuitBreaker()
-      .getSnapshot();
-    const persistedVisualPrimaryBreaker =
-      await loadPersistentCircuitBreakerState({
+      visualSidecarArtifact = sidecarArtifact.artifact;
+      visualSidecarArtifactBytes = sidecarArtifact.bytes;
+      // Issue #2017: persist per-attempt raw-response diagnostics atomically
+      // alongside the visual sidecar result. The relative path for each file
+      // already lives on `sidecarResult.attempts[i].rawResponseArtifactPath`.
+      if (visualSidecarDiagnostics.length > 0) {
+        await Promise.all(
+          visualSidecarDiagnostics.map((diagnostic) =>
+            writeAtomicBytes(
+              join(artifactDir, diagnostic.filename),
+              diagnostic.bytes,
+            ),
+          ),
+        );
+      }
+      await writePersistentCircuitBreakerState({
         path: persistedVisualPrimaryBreakerPath,
         key: persistedVisualPrimaryBreakerKey,
+        entry: {
+          updatedAt: input.generatedAt,
+          snapshot: toLlmCircuitPersistentState(
+            visualPrimaryCircuitBreaker.getSnapshot(),
+          ),
+        },
       });
-    const visualPrimaryCircuitBreaker = createLlmCircuitBreaker({
-      failureThreshold: visualPrimaryBreakerConfig.failureThreshold,
-      resetTimeoutMs: visualPrimaryBreakerConfig.resetTimeoutMs,
-      ...(persistedVisualPrimaryBreaker !== undefined
-        ? { initialState: persistedVisualPrimaryBreaker.snapshot }
+      if (
+        persistedVisualPrimaryBreaker?.snapshot.state === "open" &&
+        splitVisualSidecarAttempts(sidecarResult).primaryAttempt === undefined
+      ) {
+        finopsRecorder.recordCircuitBreakerDecision({
+          source: "visual_primary",
+          circuitBreakerState: "open",
+          deployment: input.llm.bundle.visualPrimary.deployment,
+        });
+      }
+      recordVisualSidecarAttempts({
+        recorder: finopsRecorder,
+        result: sidecarResult,
+      });
+      if (sidecarResult.outcome !== "success") {
+        // Issue #1772 AC #4: pre-flight failures are caller bugs and still fail
+        // the runner fast. Model-side refusals (both_sidecars_failed and
+        // friends) instead route every test case to `needs_review` via the
+        // policy gate, with the documented `VisualSidecarFailureClass` as the
+        // refusal code. The runner still publishes a complete artifact set so
+        // a reviewer can adjudicate without the visual context.
+        if (!isVisualSidecarRefusal(sidecarResult.failureClass)) {
+          throw new ProductionRunnerError({
+            failureClass: "LLM_GATEWAY_FAILED",
+            message: `Visual sidecar failed: ${sidecarResult.failureClass}`,
+            retryable: false,
+          });
+        }
+        visualSidecarRefusal = {
+          failureClass: sidecarResult.failureClass,
+          failureMessage: sidecarResult.failureMessage,
+        };
+        emit({
+          phase: "visual_sidecar_complete",
+          timestamp: monotonicMs(),
+          details: {
+            outcome: "refusal",
+            refusalCode: sidecarResult.failureClass,
+            screens: 0,
+          },
+        });
+      } else if (sidecarResult.validationReport.blocked) {
+        throw new ProductionRunnerError({
+          failureClass: "LLM_RESPONSE_INVALID",
+          message:
+            "Visual sidecar validation blocked the Figma screenshot batch before prompt compilation.",
+          retryable: false,
+        });
+      } else {
+        promptVisualBatch = sidecarResult.visual;
+        intent = deriveBusinessTestIntentIr({
+          figma: intentInput,
+          visual: promptVisualBatch,
+        });
+        promptVisualBinding = {
+          schemaVersion: VISUAL_SIDECAR_SCHEMA_VERSION,
+          selectedDeployment: sidecarResult.selectedDeployment,
+          fallbackReason: sidecarResult.fallbackReason,
+          screenCount: sidecarResult.visual.length,
+        };
+        emit({
+          phase: "visual_sidecar_complete",
+          timestamp: monotonicMs(),
+          details: {
+            selectedDeployment: sidecarResult.selectedDeployment,
+            fallbackReason: sidecarResult.fallbackReason,
+            screens: sidecarResult.visual.length,
+          },
+        });
+      }
+    } else {
+      visualSidecarSkippedReason =
+        input.source.kind !== "figma_url"
+          ? "non_figma_url_source"
+          : "visual_sidecar_bundle_not_configured";
+      emit({
+        phase: "visual_sidecar_skipped",
+        timestamp: monotonicMs(),
+        details: {
+          reason: visualSidecarSkippedReason,
+        },
+      });
+    }
+
+    if (customContextMarkdown !== undefined) {
+      const customContextCalculationStatements =
+        buildSourceScopedCalculationAssumptions({
+          sourceLabel: "custom_context_markdown",
+          text: customContextMarkdown.bodyPlain,
+        });
+      intent = {
+        ...intent,
+        assumptions: [
+          ...intent.assumptions,
+          ...customContextCalculationStatements,
+        ].sort((left, right) => left.localeCompare(right)),
+        openQuestions: [
+          ...intent.openQuestions,
+          ...customContextCalculationStatements,
+          ...buildSourceScopedValidationOpenQuestions({
+            sourceLabel: "custom_context_markdown",
+            text: customContextMarkdown.bodyPlain,
+          }),
+        ].sort((left, right) => left.localeCompare(right)),
+      };
+    }
+
+    // 4. Bound the IR for the LLM prompt. Real-world Figma files (e.g. the
+    //    customer's "Investitionsfinanzierung — Bedarfsermittlung" screen with
+    //    5600 nodes) blow the prompt past every gateway's body cap. The full
+    //    IR is still persisted as `business-intent-ir.json` for reviewers and
+    //    drives the replay-cache identity below; the wire intent is what the
+    //    model actually sees and is what the audit `promptHash` is computed
+    //    over (so replay-cache hits are coherent with what the model
+    //    received). Truncation is recorded in the IR's `assumptions` array
+    //    so reviewers can tell when the model worked from a partial slice.
+    const wireIntent = boundIntentForLlm(intent, {
+      maxFieldsPerScreen: PROMPT_MAX_FIELDS_PER_SCREEN,
+      maxActionsPerScreen: PROMPT_MAX_ACTIONS_PER_SCREEN,
+      maxValidationsPerScreen: PROMPT_MAX_VALIDATIONS_PER_SCREEN,
+      maxNavigationPerScreen: PROMPT_MAX_NAVIGATION_PER_SCREEN,
+    });
+
+    const finopsLimits = resolveFinOpsRequestLimits(
+      finopsBudget.roles.test_generation,
+    );
+
+    const draftSchema = buildDraftResponseSchema();
+    const policyProfileId =
+      typeof input.policyProfileId === "string" &&
+      input.policyProfileId.length > 0
+        ? input.policyProfileId
+        : EU_BANKING_DEFAULT_POLICY_PROFILE_ID;
+    let customerRubric:
+      | TestCasePolicyProfile
+      | { id: string; version: string; description: string } =
+      policyProfileId === EU_BANKING_DEFAULT_POLICY_PROFILE_ID
+        ? cloneEuBankingDefaultProfile()
+        : {
+            id: policyProfileId,
+            version: "runtime",
+            description: `Policy profile ${policyProfileId}`,
+          };
+    // Issue #2184 — resolve the optional tenant bundle against the active
+    // policy profile. The resolver is deep-clone safe; the merged profile
+    // replaces `customerRubric` so downstream gates pick up the additive
+    // overrides (e.g. extended `reviewOnlyRiskCategories`). The active
+    // `TenantScope` cross-check happens inside `assertTenantBundleScope`.
+    //
+    // Fail fast when a bundle is supplied but the active policy profile
+    // is a stub (non-`eu-banking-default` id without `rules`): the
+    // merge cannot run safely against a stub, and silently skipping it
+    // would let operators believe their bundle applied when it didn't.
+    const canonicalTenantBundle = parseTenantBundleInput(input.tenantBundle);
+    if (canonicalTenantBundle !== undefined && !("rules" in customerRubric)) {
+      throw new ProductionRunnerError({
+        failureClass: "TENANT_BUNDLE_INVALID",
+        message:
+          `tenantBundle rejected: active policy profile "${policyProfileId}" is not a full TestCasePolicyProfile; ` +
+          `tenant bundles can only resolve against built-in profiles that expose a complete \`rules\` surface. ` +
+          `Either pass --policy-profile eu-banking-default (or another full profile) or omit --tenant-bundle.`,
+        retryable: false,
+      });
+    }
+    const baseProfileForBundle =
+      canonicalTenantBundle !== undefined && "rules" in customerRubric
+        ? (customerRubric as TestCasePolicyProfile)
+        : undefined;
+    const resolvedTenantBundle = resolveTenantBundleAgainstProfile(
+      canonicalTenantBundle,
+      baseProfileForBundle,
+    );
+    if (resolvedTenantBundle !== undefined) {
+      customerRubric = resolvedTenantBundle.mergedPolicyProfile;
+    }
+    const policyProfileRules =
+      "rules" in customerRubric ? customerRubric.rules : undefined;
+    const policyProfileHash = createHash("sha256")
+      .update(canonicalJson(customerRubric), "utf8")
+      .digest("hex");
+    const modelRoutingPolicy = resolveActiveModelRoutingPolicy({
+      request: input,
+      policyProfileId,
+    });
+    const routingPolicyDigest =
+      computeModelRoutingPolicyDigest(modelRoutingPolicy);
+    for (const route of modelRoutingPolicy.routes) {
+      switch (route.role) {
+        case "test_generation":
+          finopsRecorder.recordRoleMetadata({
+            role: "test_generation",
+            ...(route.modelBinding.inferenceProfileId !== undefined
+              ? { deployment: route.modelBinding.inferenceProfileId }
+              : {}),
+            ...(route.modelRevision !== undefined
+              ? { modelRevision: route.modelRevision }
+              : {}),
+            tierLabel: route.tierLabel,
+          });
+          finopsRecorder.recordSourceMetadata({
+            source: "generator",
+            ...(route.modelBinding.inferenceProfileId !== undefined
+              ? { deployment: route.modelBinding.inferenceProfileId }
+              : {}),
+            ...(route.modelRevision !== undefined
+              ? { modelRevision: route.modelRevision }
+              : {}),
+            tierLabel: route.tierLabel,
+          });
+          break;
+        case "logic_judge":
+          finopsRecorder.recordSourceMetadata({
+            source: "judge_primary",
+            ...(route.modelBinding.inferenceProfileId !== undefined
+              ? { deployment: route.modelBinding.inferenceProfileId }
+              : {}),
+            ...(route.modelRevision !== undefined
+              ? { modelRevision: route.modelRevision }
+              : {}),
+            tierLabel: route.tierLabel,
+          });
+          finopsRecorder.recordSourceMetadata({
+            source: "judge_secondary",
+            ...(route.modelBinding.inferenceProfileId !== undefined
+              ? { deployment: route.modelBinding.inferenceProfileId }
+              : {}),
+            ...(route.modelRevision !== undefined
+              ? { modelRevision: route.modelRevision }
+              : {}),
+            tierLabel: route.tierLabel,
+          });
+          finopsRecorder.recordSourceMetadata({
+            source: "adversarial_critic",
+            ...(route.modelBinding.inferenceProfileId !== undefined
+              ? { deployment: route.modelBinding.inferenceProfileId }
+              : {}),
+            ...(route.modelRevision !== undefined
+              ? { modelRevision: route.modelRevision }
+              : {}),
+            tierLabel: route.tierLabel,
+          });
+          break;
+        case "coverage_planner":
+          finopsRecorder.recordSourceMetadata({
+            source: "coverage_planner",
+            ...(route.modelBinding.inferenceProfileId !== undefined
+              ? { deployment: route.modelBinding.inferenceProfileId }
+              : {}),
+            ...(route.modelRevision !== undefined
+              ? { modelRevision: route.modelRevision }
+              : {}),
+            tierLabel: route.tierLabel,
+          });
+          break;
+        case "risk_ranker":
+          finopsRecorder.recordSourceMetadata({
+            source: "risk_ranker",
+            ...(route.modelBinding.inferenceProfileId !== undefined
+              ? { deployment: route.modelBinding.inferenceProfileId }
+              : {}),
+            ...(route.modelRevision !== undefined
+              ? { modelRevision: route.modelRevision }
+              : {}),
+            tierLabel: route.tierLabel,
+          });
+          break;
+        case "visual_primary":
+          finopsRecorder.recordRoleMetadata({
+            role: "visual_primary",
+            ...(route.modelBinding.inferenceProfileId !== undefined
+              ? { deployment: route.modelBinding.inferenceProfileId }
+              : {}),
+            ...(route.modelRevision !== undefined
+              ? { modelRevision: route.modelRevision }
+              : {}),
+            tierLabel: route.tierLabel,
+          });
+          finopsRecorder.recordSourceMetadata({
+            source: "visual_primary",
+            ...(route.modelBinding.inferenceProfileId !== undefined
+              ? { deployment: route.modelBinding.inferenceProfileId }
+              : {}),
+            ...(route.modelRevision !== undefined
+              ? { modelRevision: route.modelRevision }
+              : {}),
+            tierLabel: route.tierLabel,
+          });
+          break;
+        case "visual_fallback":
+          finopsRecorder.recordRoleMetadata({
+            role: "visual_fallback",
+            ...(route.modelBinding.inferenceProfileId !== undefined
+              ? { deployment: route.modelBinding.inferenceProfileId }
+              : {}),
+            ...(route.modelRevision !== undefined
+              ? { modelRevision: route.modelRevision }
+              : {}),
+            tierLabel: route.tierLabel,
+          });
+          finopsRecorder.recordSourceMetadata({
+            source: "visual_fallback",
+            ...(route.modelBinding.inferenceProfileId !== undefined
+              ? { deployment: route.modelBinding.inferenceProfileId }
+              : {}),
+            ...(route.modelRevision !== undefined
+              ? { modelRevision: route.modelRevision }
+              : {}),
+            tierLabel: route.tierLabel,
+          });
+          break;
+        default:
+          break;
+      }
+    }
+    const activeModelBindings = applyCustomerProfileIctRef(
+      buildActiveModelBindings({
+        client: input.llm.client,
+        ...(input.llm.bundle !== undefined ? { bundle: input.llm.bundle } : {}),
+        ...(input.llm.logicJudge !== undefined
+          ? { logicJudge: input.llm.logicJudge }
+          : {}),
+        ...(input.llm.coveragePlanner !== undefined
+          ? { coveragePlanner: input.llm.coveragePlanner }
+          : {}),
+      }),
+      canonicalCustomerProfile,
+    );
+    const agentLessonsManifest = await scanLessons({
+      runDir: artifactDir,
+      nowMs: Date.parse(input.generatedAt),
+    });
+    const activeAgentLessons = selectRelevantLessons({
+      manifest: agentLessonsManifest,
+      query: {
+        tokens: [buildAgentLessonsQuery(wireIntent)],
+        policyProfileId,
+      },
+    });
+
+    // 5. Compile prompt.
+    const figmaSourceContentHash = createHash("sha256")
+      .update(canonicalJson({ figma: intentInput }), "utf8")
+      .digest("hex");
+    const compiledCustomContext = buildCompiledCustomContext(
+      customContextMarkdown,
+      canonicalCustomerProfile,
+      resolvedTenantBundle,
+    );
+    // Build a source-mix plan whenever we have either custom markdown context or
+    // a customer profile with glossary / few-shot content, so the [5]
+    // CustomerDomainContext section is included in the compiled prompt.
+    const hasCustomDomainContext =
+      customContextMarkdown !== undefined ||
+      (canonicalCustomerProfile !== undefined &&
+        (canonicalCustomerProfile.glossary.length > 0 ||
+          canonicalCustomerProfile.fewShotExamples.length > 0 ||
+          canonicalCustomerProfile.riskTaxonomyOverrides.length > 0 ||
+          canonicalCustomerProfile.policyOverrides.length > 0)) ||
+      (resolvedTenantBundle !== undefined &&
+        (resolvedTenantBundle.bundle.terminologyGlossary.length > 0 ||
+          resolvedTenantBundle.bundle.riskClassTaxonomy.length > 0 ||
+          resolvedTenantBundle.bundle.testCaseNamingConvention !== undefined));
+    const compiledSourceMixPlan = hasCustomDomainContext
+      ? buildFigmaWithCustomMarkdownSourceMixPlan({
+          figmaSourceContentHash,
+          markdownContentHash:
+            customContextMarkdown?.markdownContentHash ??
+            canonicalCustomerProfile?.contentHash ??
+            figmaSourceContentHash,
+          plainContentHash:
+            customContextMarkdown?.plainContentHash ??
+            canonicalCustomerProfile?.contentHash ??
+            figmaSourceContentHash,
+        })
+      : undefined;
+    const semanticEvidenceSourceEnvelope = buildSemanticEvidenceSourceEnvelope({
+      baseEnvelope: wireIntent.sourceEnvelope,
+      figmaSourceContentHash,
+      customContextMarkdown,
+      generatedAt: input.generatedAt,
+    });
+    const testDesignModel = buildTestDesignModel({
+      jobId: input.jobId,
+      intent: wireIntent,
+      ...(promptVisualBatch !== undefined ? { visual: promptVisualBatch } : {}),
+      ...(semanticEvidenceSourceEnvelope !== undefined
+        ? { sourceEnvelope: semanticEvidenceSourceEnvelope }
         : {}),
     });
-    const sidecarRun = await describeVisualScreens({
-      bundle: input.llm.bundle,
-      captures,
+    const workflowTopology = buildWorkflowTopology({
+      model: testDesignModel,
+      ...(customContextMarkdown?.bodyPlain !== undefined
+        ? { customContextMarkdown: customContextMarkdown.bodyPlain }
+        : {}),
+    });
+    const coveragePlannerClient =
+      input.llm.bundle?.coveragePlanner ?? input.llm.coveragePlanner;
+    const coveragePlannerStartedAt =
+      coveragePlannerClient === undefined ? undefined : Date.now();
+    const coveragePlanResult = await buildCoveragePlanWithAugmentation({
+      model: testDesignModel,
+      workflowTopology,
+      ...(compiledSourceMixPlan !== undefined
+        ? { sourceMixPlan: compiledSourceMixPlan }
+        : {}),
+      policyProfile: customerRubric as Record<string, unknown>,
+      ...(coveragePlannerClient !== undefined
+        ? {
+            plannerClient: coveragePlannerClient,
+            ...(finopsBudget.roles.test_generation?.maxInputTokensPerRequest !==
+            undefined
+              ? {
+                  maxInputTokens:
+                    finopsBudget.roles.test_generation.maxInputTokensPerRequest,
+                }
+              : {}),
+            ...(finopsBudget.roles.test_generation
+              ?.maxOutputTokensPerRequest !== undefined
+              ? {
+                  maxOutputTokens:
+                    finopsBudget.roles.test_generation
+                      .maxOutputTokensPerRequest,
+                }
+              : {}),
+            ...(finopsBudget.roles.test_generation?.maxWallClockMsPerRequest !==
+            undefined
+              ? {
+                  maxWallClockMs:
+                    finopsBudget.roles.test_generation.maxWallClockMsPerRequest,
+                }
+              : {}),
+            ...(finopsBudget.roles.test_generation?.maxRetriesPerRequest !==
+            undefined
+              ? {
+                  maxRetries:
+                    finopsBudget.roles.test_generation.maxRetriesPerRequest,
+                }
+              : {}),
+            ...(input.llm.abortSignal !== undefined
+              ? { abortSignal: input.llm.abortSignal }
+              : {}),
+          }
+        : {}),
+    });
+    if (
+      coveragePlannerClient !== undefined &&
+      coveragePlannerStartedAt !== undefined &&
+      coveragePlanResult.gatewayResult !== undefined
+    ) {
+      await recordFinopsGatewayAttempt({
+        role: "test_generation",
+        source: "coverage_planner",
+        attributionMode: "audit",
+        deployment:
+          coveragePlanResult.gatewayResult.outcome === "success"
+            ? coveragePlanResult.gatewayResult.modelDeployment
+            : coveragePlannerClient.deployment,
+        endpointReference: coveragePlannerClient.operatorEndpointReference,
+        durationMs: Date.now() - coveragePlannerStartedAt,
+        result: coveragePlanResult.gatewayResult,
+      });
+    }
+    const riskRankerClient =
+      input.llm.bundle?.riskRanker ?? input.llm.riskRanker;
+    const riskRankerStartedAt =
+      riskRankerClient === undefined ? undefined : Date.now();
+    const riskRankingResult = await buildRiskRankingWithAugmentation({
       jobId: input.jobId,
-      generatedAt: input.generatedAt,
-      intent,
-      primaryCircuitBreaker: visualPrimaryCircuitBreaker,
-      requestLimits: {
-        visualPrimary: resolveFinOpsRequestLimits(
-          finopsBudget.roles.visual_primary,
-        ),
-        visualFallback: resolveFinOpsRequestLimits(
-          finopsBudget.roles.visual_fallback,
-        ),
-      },
-      maxImageBytesPerRequest: {
-        ...(finopsBudget.roles.visual_primary?.maxImageBytesPerRequest !==
-        undefined
+      coveragePlan: coveragePlanResult.plan,
+      policyProfile: customerRubric as Record<string, unknown>,
+      ...(riskRankerClient !== undefined
+        ? {
+            rankerClient: riskRankerClient,
+            ...(finopsBudget.roles.test_generation?.maxInputTokensPerRequest !==
+            undefined
+              ? {
+                  maxInputTokens:
+                    finopsBudget.roles.test_generation.maxInputTokensPerRequest,
+                }
+              : {}),
+            ...(finopsBudget.roles.test_generation
+              ?.maxOutputTokensPerRequest !== undefined
+              ? {
+                  maxOutputTokens:
+                    finopsBudget.roles.test_generation
+                      .maxOutputTokensPerRequest,
+                }
+              : {}),
+            ...(finopsBudget.roles.test_generation?.maxWallClockMsPerRequest !==
+            undefined
+              ? {
+                  maxWallClockMs:
+                    finopsBudget.roles.test_generation.maxWallClockMsPerRequest,
+                }
+              : {}),
+            ...(finopsBudget.roles.test_generation?.maxRetriesPerRequest !==
+            undefined
+              ? {
+                  maxRetries:
+                    finopsBudget.roles.test_generation.maxRetriesPerRequest,
+                }
+              : {}),
+            ...(input.llm.abortSignal !== undefined
+              ? { abortSignal: input.llm.abortSignal }
+              : {}),
+          }
+        : {}),
+    });
+    if (
+      riskRankerClient !== undefined &&
+      riskRankerStartedAt !== undefined &&
+      riskRankingResult.gatewayResult !== undefined
+    ) {
+      await recordFinopsGatewayAttempt({
+        role: "test_generation",
+        source: "risk_ranker",
+        attributionMode: "audit",
+        deployment:
+          riskRankingResult.gatewayResult.outcome === "success"
+            ? riskRankingResult.gatewayResult.modelDeployment
+            : riskRankerClient.deployment,
+        endpointReference: riskRankerClient.operatorEndpointReference,
+        durationMs: Date.now() - riskRankerStartedAt,
+        result: riskRankingResult.gatewayResult,
+      });
+    }
+    const requestedDiversityPasses = resolveDiversityPassCount({
+      generation: input.generation,
+      policyRules: policyProfileRules,
+    });
+    const diversityPasses =
+      requestedDiversityPasses > 1 &&
+      input.generation?.diversityPasses === undefined &&
+      !input.llm.client.declaredCapabilities.seedSupport
+        ? 1
+        : requestedDiversityPasses;
+    if (
+      requestedDiversityPasses > 1 &&
+      input.generation?.diversityPasses !== undefined &&
+      !input.llm.client.declaredCapabilities.seedSupport
+    ) {
+      throw new ProductionRunnerError({
+        failureClass: "LLM_GATEWAY_FAILED",
+        message: `runFigmaToQcTestCases: generation.diversityPasses=${String(requestedDiversityPasses)} requires a generator gateway client with seed support.`,
+        retryable: false,
+      });
+    }
+    const generationPasses = resolveGenerationPasses(diversityPasses);
+
+    // 6. Build the draft request using the compiler-owned schema hint and
+    //    deterministic suffix layout.
+    // FinOps-resolved per-request limits override the legacy llm.* fields.
+    const effectiveMaxInputTokens = finopsLimits.maxInputTokens;
+    const effectiveMaxOutputTokens =
+      finopsLimits.maxOutputTokens ?? input.llm.maxOutputTokens;
+    const effectiveMaxWallClockMs =
+      finopsLimits.maxWallClockMs ?? input.llm.maxWallClockMs;
+    const effectiveMaxRetries = finopsLimits.maxRetries;
+
+    // 5.5. Replay cache (Issues #1739, #1944). Check before any LLM dispatch.
+    // On a hit the generate callback is never invoked and tokens are saved
+    // entirely. The tenant scope partitions the cache directory so two
+    // tenants cannot share entries even with identical key digests.
+    const replayCache: ReplayCache =
+      input.replayCache ??
+      createPersistentReplayCache(
+        join(input.outputRoot, "test-intelligence", "replay-cache"),
+        { tenantScope },
+      );
+    // Declared here so the generate callback can set them via closure on the
+    // cache-miss path; all remain undefined on cache hits (same as mode="off").
+    let harnessSummary: ProductionRunnerHarnessSummary | undefined;
+    let harnessArtifactPath: string | undefined;
+    let capturedLlmResult: LlmGenerationResult | undefined;
+    let capturedLlmDurationMs = 0;
+    let capturedLlmInputTokens = 0;
+    let capturedLlmOutputTokens = 0;
+    const harnessMode: ProductionRunnerHarnessMode =
+      input.harness?.mode ?? "off";
+    const harnessRoleStepId =
+      input.harness?.roleStepId ?? PRODUCTION_RUNNER_HARNESS_ROLE_STEP_ID;
+    const harnessTestDepth: AgentHarnessTestDepth =
+      input.harness?.testDepth ?? "standard";
+    // Issue #1898: Logic-Judge defaults to ON. Callers that need the
+    // legacy single-pass behaviour (deterministic generator-only
+    // classification) must pass `logicJudge: { enabled: false }`
+    // explicitly. The judge dispatches a second LLM call and is
+    // attributed to FinOps source `judge_primary`.
+    //
+    // Issue #1932 — cross-model voting: when the operator wires a
+    // `bundle.logicJudge` slot the judge runs on a dedicated gateway
+    // (typically a different model family from the generator) so a
+    // self-consistency bias from the generator cannot be amplified by
+    // reusing the same model on the judge. When the slot is absent the
+    // judge falls back to `input.llm.client` so existing operator
+    // configurations keep working unchanged.
+    const logicJudgeEnabled = input.logicJudge?.enabled !== false;
+    const logicJudgeClient: LlmGatewayClient =
+      input.llm.bundle?.logicJudge ?? input.llm.logicJudge ?? input.llm.client;
+    const crossFamilyGeneratorClient =
+      input.llm.bundle?.testGenerationSecondary;
+    const adversarialCriticEnabled =
+      logicJudgeEnabled &&
+      (input.llm.bundle?.logicJudge !== undefined ||
+        input.llm.logicJudge !== undefined);
+
+    const compileGenerationPass = (
+      pass: GenerationPassConfig,
+      extraSuffixSections: readonly CompilePromptSuffixSection[] = [],
+      generationClient: LlmGatewayClient = input.llm.client,
+    ) => {
+      const compiled = compilePrompt({
+        jobId: input.jobId,
+        intent: wireIntent,
+        ...(promptVisualBatch !== undefined
+          ? { visual: promptVisualBatch }
+          : {}),
+        ...(activeAgentLessons.length > 0
+          ? { agentLessons: activeAgentLessons }
+          : {}),
+        modelBinding: {
+          modelRevision: generationClient.modelRevision,
+          gatewayRelease: generationClient.gatewayRelease,
+          ...(pass.seed !== undefined ? { seed: pass.seed } : {}),
+        },
+        routingPolicyDigest,
+        policyBundleVersion: POLICY_BUNDLE_VERSION,
+        roleStepId: "test_generation",
+        customerRubric,
+        testDesignModel,
+        workflowTopology,
+        coveragePlan: coveragePlanResult.plan,
+        riskRanking: riskRankingResult.ranking,
+        responseSchema: draftSchema,
+        responseSchemaName: "workspace-dev-production-runner-draft-list-v1",
+        outputSchemaHintLabel: "ProductionRunnerDraftResponse",
+        suffixSections: [
+          ...buildPromptSuffixSections(
+            wireIntent,
+            policyProfileId,
+            hasCustomDomainContext,
+            customerEvalRubric,
+            pass.diversityBias,
+          ),
+          ...extraSuffixSections,
+        ],
+        visualBinding: promptVisualBinding,
+        ...(compiledCustomContext !== undefined
+          ? { customContext: compiledCustomContext }
+          : {}),
+        ...(compiledSourceMixPlan !== undefined
+          ? { sourceMixPlan: compiledSourceMixPlan }
+          : {}),
+        ...(finopsLimits.maxInputTokens !== undefined
           ? {
-              visualPrimary:
-                finopsBudget.roles.visual_primary.maxImageBytesPerRequest,
+              contextBudget: {
+                roleStepId: "test_generation",
+                maxInputTokens: finopsLimits.maxInputTokens,
+              },
             }
           : {}),
-        ...(finopsBudget.roles.visual_fallback?.maxImageBytesPerRequest !==
-        undefined
-          ? {
-              visualFallback:
-                finopsBudget.roles.visual_fallback.maxImageBytesPerRequest,
-            }
-          : {}),
+      });
+      if (compiled.contextBudgetReport?.action === "needs_review") {
+        throw new ProductionRunnerError({
+          failureClass: "FINOPS_BUDGET_INVALID",
+          message:
+            `context budget analyzer could not fit the test_generation prompt within maxInputTokens ` +
+            `${compiled.contextBudgetReport.maxInputTokens}`,
+          retryable: false,
+        });
+      }
+      return compiled;
+    };
+
+    const buildGenerationRequest = (
+      compiled: ReturnType<typeof compileGenerationPass>,
+    ): LlmGenerationRequest & {
+      onInFlightDedupHit?: (source: AgentSourceLabel) => void;
+    } => ({
+      jobId: compiled.request.jobId,
+      systemPrompt: compiled.request.systemPrompt,
+      userPrompt: compiled.request.userPrompt,
+      responseSchema: draftSchema,
+      responseSchemaName: "workspace-dev-production-runner-draft-list-v1",
+      inFlightDedup: {
+        source: "generator",
+        inputHash: compiled.request.hashes.inputHash,
+        promptHash: compiled.request.hashes.promptHash,
+        modelBinding: canonicalJson(compiled.request.modelBinding),
+        schemaHash: compiled.request.hashes.schemaHash,
+        policyProfileHash,
       },
+      onInFlightDedupHit: (source) =>
+        finopsRecorder.recordInFlightDedupHit(source),
+      ...(compiled.request.modelBinding.seed !== undefined
+        ? { seed: compiled.request.modelBinding.seed }
+        : {}),
+      ...(effectiveMaxInputTokens !== undefined
+        ? { maxInputTokens: effectiveMaxInputTokens }
+        : {}),
+      ...(effectiveMaxOutputTokens !== undefined
+        ? { maxOutputTokens: effectiveMaxOutputTokens }
+        : {}),
+      ...(effectiveMaxWallClockMs !== undefined
+        ? { maxWallClockMs: effectiveMaxWallClockMs }
+        : {}),
+      ...(effectiveMaxRetries !== undefined
+        ? { maxRetries: effectiveMaxRetries }
+        : {}),
       ...(input.llm.abortSignal !== undefined
         ? { abortSignal: input.llm.abortSignal }
         : {}),
     });
-    const sidecarResult = sidecarRun.result;
-    visualSidecarDiagnostics = sidecarRun.diagnostics;
-    visualSidecarArtifactPath = join(
-      artifactDir,
-      VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME,
-    );
-    visualSidecarResult = sidecarResult;
-    const sidecarArtifact = await writeVisualSidecarResultArtifact({
-      result: sidecarResult,
-      destinationPath: visualSidecarArtifactPath,
-      jobId: input.jobId,
-      generatedAt: input.generatedAt,
-    });
-    visualSidecarArtifact = sidecarArtifact.artifact;
-    visualSidecarArtifactBytes = sidecarArtifact.bytes;
-    // Issue #2017: persist per-attempt raw-response diagnostics atomically
-    // alongside the visual sidecar result. The relative path for each file
-    // already lives on `sidecarResult.attempts[i].rawResponseArtifactPath`.
-    if (visualSidecarDiagnostics.length > 0) {
-      await Promise.all(
-        visualSidecarDiagnostics.map((diagnostic) =>
-          writeAtomicBytes(
-            join(artifactDir, diagnostic.filename),
-            diagnostic.bytes,
-          ),
-        ),
+
+    const executeGenerationPass = async (inputPass: {
+      client?: LlmGatewayClient;
+      pass: GenerationPassConfig;
+      extraSuffixSections?: readonly CompilePromptSuffixSection[];
+      emitPrimaryPromptCompiled: boolean;
+      recordHarnessAttempt: boolean;
+    }) => {
+      const generationClient = inputPass.client ?? input.llm.client;
+      const compiled = compileGenerationPass(
+        inputPass.pass,
+        inputPass.extraSuffixSections,
+        generationClient,
       );
-    }
-    await writePersistentCircuitBreakerState({
-      path: persistedVisualPrimaryBreakerPath,
-      key: persistedVisualPrimaryBreakerKey,
-      entry: {
-        updatedAt: input.generatedAt,
-        snapshot: toLlmCircuitPersistentState(
-          visualPrimaryCircuitBreaker.getSnapshot(),
-        ),
-      },
-    });
-    if (
-      persistedVisualPrimaryBreaker?.snapshot.state === "open" &&
-      splitVisualSidecarAttempts(sidecarResult).primaryAttempt === undefined
-    ) {
-      finopsRecorder.recordCircuitBreakerDecision({
-        source: "visual_primary",
-        circuitBreakerState: "open",
-        deployment: input.llm.bundle.visualPrimary.deployment,
-      });
-    }
-    recordVisualSidecarAttempts({
-      recorder: finopsRecorder,
-      result: sidecarResult,
-    });
-    if (sidecarResult.outcome !== "success") {
-      // Issue #1772 AC #4: pre-flight failures are caller bugs and still fail
-      // the runner fast. Model-side refusals (both_sidecars_failed and
-      // friends) instead route every test case to `needs_review` via the
-      // policy gate, with the documented `VisualSidecarFailureClass` as the
-      // refusal code. The runner still publishes a complete artifact set so
-      // a reviewer can adjudicate without the visual context.
-      if (!isVisualSidecarRefusal(sidecarResult.failureClass)) {
-        throw new ProductionRunnerError({
-          failureClass: "LLM_GATEWAY_FAILED",
-          message: `Visual sidecar failed: ${sidecarResult.failureClass}`,
-          retryable: false,
+      if (inputPass.emitPrimaryPromptCompiled) {
+        emit({
+          phase: "prompt_compiled",
+          timestamp: monotonicMs(),
+          details: {
+            promptHash: compiled.request.hashes.promptHash,
+            schemaHash: compiled.request.hashes.schemaHash,
+            maxOutputTokens: effectiveMaxOutputTokens,
+            maxWallClockMs: effectiveMaxWallClockMs,
+          },
         });
       }
-      visualSidecarRefusal = {
-        failureClass: sidecarResult.failureClass,
-        failureMessage: sidecarResult.failureMessage,
-      };
-      emit({
-        phase: "visual_sidecar_complete",
-        timestamp: monotonicMs(),
-        details: {
-          outcome: "refusal",
-          refusalCode: sidecarResult.failureClass,
-          screens: 0,
-        },
-      });
-    } else if (sidecarResult.validationReport.blocked) {
-      throw new ProductionRunnerError({
-        failureClass: "LLM_RESPONSE_INVALID",
-        message:
-          "Visual sidecar validation blocked the Figma screenshot batch before prompt compilation.",
-        retryable: false,
-      });
-    } else {
-      promptVisualBatch = sidecarResult.visual;
-      intent = deriveBusinessTestIntentIr({
-        figma: intentInput,
-        visual: promptVisualBatch,
-      });
-      promptVisualBinding = {
-        schemaVersion: VISUAL_SIDECAR_SCHEMA_VERSION,
-        selectedDeployment: sidecarResult.selectedDeployment,
-        fallbackReason: sidecarResult.fallbackReason,
-        screenCount: sidecarResult.visual.length,
-      };
-      emit({
-        phase: "visual_sidecar_complete",
-        timestamp: monotonicMs(),
-        details: {
-          selectedDeployment: sidecarResult.selectedDeployment,
-          fallbackReason: sidecarResult.fallbackReason,
-          screens: sidecarResult.visual.length,
-        },
-      });
-    }
-  } else {
-    visualSidecarSkippedReason =
-      input.source.kind !== "figma_url"
-        ? "non_figma_url_source"
-        : "visual_sidecar_bundle_not_configured";
-    emit({
-      phase: "visual_sidecar_skipped",
-      timestamp: monotonicMs(),
-      details: {
-        reason: visualSidecarSkippedReason,
-      },
-    });
-  }
-
-  if (customContextMarkdown !== undefined) {
-    const customContextCalculationStatements =
-      buildSourceScopedCalculationAssumptions({
-        sourceLabel: "custom_context_markdown",
-        text: customContextMarkdown.bodyPlain,
-      });
-    intent = {
-      ...intent,
-      assumptions: [
-        ...intent.assumptions,
-        ...customContextCalculationStatements,
-      ].sort((left, right) => left.localeCompare(right)),
-      openQuestions: [
-        ...intent.openQuestions,
-        ...customContextCalculationStatements,
-        ...buildSourceScopedValidationOpenQuestions({
-          sourceLabel: "custom_context_markdown",
-          text: customContextMarkdown.bodyPlain,
-        }),
-      ].sort((left, right) => left.localeCompare(right)),
-    };
-  }
-
-  // 4. Bound the IR for the LLM prompt. Real-world Figma files (e.g. the
-  //    customer's "Investitionsfinanzierung — Bedarfsermittlung" screen with
-  //    5600 nodes) blow the prompt past every gateway's body cap. The full
-  //    IR is still persisted as `business-intent-ir.json` for reviewers and
-  //    drives the replay-cache identity below; the wire intent is what the
-  //    model actually sees and is what the audit `promptHash` is computed
-  //    over (so replay-cache hits are coherent with what the model
-  //    received). Truncation is recorded in the IR's `assumptions` array
-  //    so reviewers can tell when the model worked from a partial slice.
-  const wireIntent = boundIntentForLlm(intent, {
-    maxFieldsPerScreen: PROMPT_MAX_FIELDS_PER_SCREEN,
-    maxActionsPerScreen: PROMPT_MAX_ACTIONS_PER_SCREEN,
-    maxValidationsPerScreen: PROMPT_MAX_VALIDATIONS_PER_SCREEN,
-    maxNavigationPerScreen: PROMPT_MAX_NAVIGATION_PER_SCREEN,
-  });
-
-  const finopsLimits = resolveFinOpsRequestLimits(
-    finopsBudget.roles.test_generation,
-  );
-
-  const draftSchema = buildDraftResponseSchema();
-  const policyProfileId =
-    typeof input.policyProfileId === "string" &&
-    input.policyProfileId.length > 0
-      ? input.policyProfileId
-      : EU_BANKING_DEFAULT_POLICY_PROFILE_ID;
-  let customerRubric:
-    | TestCasePolicyProfile
-    | { id: string; version: string; description: string } =
-    policyProfileId === EU_BANKING_DEFAULT_POLICY_PROFILE_ID
-      ? cloneEuBankingDefaultProfile()
-      : {
-          id: policyProfileId,
-          version: "runtime",
-          description: `Policy profile ${policyProfileId}`,
-        };
-  // Issue #2184 — resolve the optional tenant bundle against the active
-  // policy profile. The resolver is deep-clone safe; the merged profile
-  // replaces `customerRubric` so downstream gates pick up the additive
-  // overrides (e.g. extended `reviewOnlyRiskCategories`). The active
-  // `TenantScope` cross-check happens inside `assertTenantBundleScope`.
-  //
-  // Fail fast when a bundle is supplied but the active policy profile
-  // is a stub (non-`eu-banking-default` id without `rules`): the
-  // merge cannot run safely against a stub, and silently skipping it
-  // would let operators believe their bundle applied when it didn't.
-  const canonicalTenantBundle = parseTenantBundleInput(input.tenantBundle);
-  if (canonicalTenantBundle !== undefined && !("rules" in customerRubric)) {
-    throw new ProductionRunnerError({
-      failureClass: "TENANT_BUNDLE_INVALID",
-      message:
-        `tenantBundle rejected: active policy profile "${policyProfileId}" is not a full TestCasePolicyProfile; ` +
-        `tenant bundles can only resolve against built-in profiles that expose a complete \`rules\` surface. ` +
-        `Either pass --policy-profile eu-banking-default (or another full profile) or omit --tenant-bundle.`,
-      retryable: false,
-    });
-  }
-  const baseProfileForBundle =
-    canonicalTenantBundle !== undefined && "rules" in customerRubric
-      ? (customerRubric as TestCasePolicyProfile)
-      : undefined;
-  const resolvedTenantBundle = resolveTenantBundleAgainstProfile(
-    canonicalTenantBundle,
-    baseProfileForBundle,
-  );
-  if (resolvedTenantBundle !== undefined) {
-    customerRubric = resolvedTenantBundle.mergedPolicyProfile;
-  }
-  const policyProfileRules =
-    "rules" in customerRubric ? customerRubric.rules : undefined;
-  const policyProfileHash = createHash("sha256")
-    .update(canonicalJson(customerRubric), "utf8")
-    .digest("hex");
-  const modelRoutingPolicy = resolveActiveModelRoutingPolicy({
-    request: input,
-    policyProfileId,
-  });
-  const routingPolicyDigest =
-    computeModelRoutingPolicyDigest(modelRoutingPolicy);
-  for (const route of modelRoutingPolicy.routes) {
-    switch (route.role) {
-      case "test_generation":
-        finopsRecorder.recordRoleMetadata({
-          role: "test_generation",
-          ...(route.modelBinding.inferenceProfileId !== undefined
-            ? { deployment: route.modelBinding.inferenceProfileId }
-            : {}),
-          ...(route.modelRevision !== undefined
-            ? { modelRevision: route.modelRevision }
-            : {}),
-          tierLabel: route.tierLabel,
-        });
-        finopsRecorder.recordSourceMetadata({
-          source: "generator",
-          ...(route.modelBinding.inferenceProfileId !== undefined
-            ? { deployment: route.modelBinding.inferenceProfileId }
-            : {}),
-          ...(route.modelRevision !== undefined
-            ? { modelRevision: route.modelRevision }
-            : {}),
-          tierLabel: route.tierLabel,
-        });
-        break;
-      case "logic_judge":
-        finopsRecorder.recordSourceMetadata({
-          source: "judge_primary",
-          ...(route.modelBinding.inferenceProfileId !== undefined
-            ? { deployment: route.modelBinding.inferenceProfileId }
-            : {}),
-          ...(route.modelRevision !== undefined
-            ? { modelRevision: route.modelRevision }
-            : {}),
-          tierLabel: route.tierLabel,
-        });
-        finopsRecorder.recordSourceMetadata({
-          source: "judge_secondary",
-          ...(route.modelBinding.inferenceProfileId !== undefined
-            ? { deployment: route.modelBinding.inferenceProfileId }
-            : {}),
-          ...(route.modelRevision !== undefined
-            ? { modelRevision: route.modelRevision }
-            : {}),
-          tierLabel: route.tierLabel,
-        });
-        finopsRecorder.recordSourceMetadata({
-          source: "adversarial_critic",
-          ...(route.modelBinding.inferenceProfileId !== undefined
-            ? { deployment: route.modelBinding.inferenceProfileId }
-            : {}),
-          ...(route.modelRevision !== undefined
-            ? { modelRevision: route.modelRevision }
-            : {}),
-          tierLabel: route.tierLabel,
-        });
-        break;
-      case "coverage_planner":
-        finopsRecorder.recordSourceMetadata({
-          source: "coverage_planner",
-          ...(route.modelBinding.inferenceProfileId !== undefined
-            ? { deployment: route.modelBinding.inferenceProfileId }
-            : {}),
-          ...(route.modelRevision !== undefined
-            ? { modelRevision: route.modelRevision }
-            : {}),
-          tierLabel: route.tierLabel,
-        });
-        break;
-      case "risk_ranker":
-        finopsRecorder.recordSourceMetadata({
-          source: "risk_ranker",
-          ...(route.modelBinding.inferenceProfileId !== undefined
-            ? { deployment: route.modelBinding.inferenceProfileId }
-            : {}),
-          ...(route.modelRevision !== undefined
-            ? { modelRevision: route.modelRevision }
-            : {}),
-          tierLabel: route.tierLabel,
-        });
-        break;
-      case "visual_primary":
-        finopsRecorder.recordRoleMetadata({
-          role: "visual_primary",
-          ...(route.modelBinding.inferenceProfileId !== undefined
-            ? { deployment: route.modelBinding.inferenceProfileId }
-            : {}),
-          ...(route.modelRevision !== undefined
-            ? { modelRevision: route.modelRevision }
-            : {}),
-          tierLabel: route.tierLabel,
-        });
-        finopsRecorder.recordSourceMetadata({
-          source: "visual_primary",
-          ...(route.modelBinding.inferenceProfileId !== undefined
-            ? { deployment: route.modelBinding.inferenceProfileId }
-            : {}),
-          ...(route.modelRevision !== undefined
-            ? { modelRevision: route.modelRevision }
-            : {}),
-          tierLabel: route.tierLabel,
-        });
-        break;
-      case "visual_fallback":
-        finopsRecorder.recordRoleMetadata({
-          role: "visual_fallback",
-          ...(route.modelBinding.inferenceProfileId !== undefined
-            ? { deployment: route.modelBinding.inferenceProfileId }
-            : {}),
-          ...(route.modelRevision !== undefined
-            ? { modelRevision: route.modelRevision }
-            : {}),
-          tierLabel: route.tierLabel,
-        });
-        finopsRecorder.recordSourceMetadata({
-          source: "visual_fallback",
-          ...(route.modelBinding.inferenceProfileId !== undefined
-            ? { deployment: route.modelBinding.inferenceProfileId }
-            : {}),
-          ...(route.modelRevision !== undefined
-            ? { modelRevision: route.modelRevision }
-            : {}),
-          tierLabel: route.tierLabel,
-        });
-        break;
-      default:
-        break;
-    }
-  }
-  const activeModelBindings = applyCustomerProfileIctRef(
-    buildActiveModelBindings({
-      client: input.llm.client,
-      ...(input.llm.bundle !== undefined ? { bundle: input.llm.bundle } : {}),
-      ...(input.llm.logicJudge !== undefined
-        ? { logicJudge: input.llm.logicJudge }
-        : {}),
-      ...(input.llm.coveragePlanner !== undefined
-        ? { coveragePlanner: input.llm.coveragePlanner }
-        : {}),
-    }),
-    canonicalCustomerProfile,
-  );
-  const agentLessonsManifest = await scanLessons({
-    runDir: artifactDir,
-    nowMs: Date.parse(input.generatedAt),
-  });
-  const activeAgentLessons = selectRelevantLessons({
-    manifest: agentLessonsManifest,
-    query: {
-      tokens: [buildAgentLessonsQuery(wireIntent)],
-      policyProfileId,
-    },
-  });
-
-  // 5. Compile prompt.
-  const figmaSourceContentHash = createHash("sha256")
-    .update(canonicalJson({ figma: intentInput }), "utf8")
-    .digest("hex");
-  const compiledCustomContext = buildCompiledCustomContext(
-    customContextMarkdown,
-    canonicalCustomerProfile,
-    resolvedTenantBundle,
-  );
-  // Build a source-mix plan whenever we have either custom markdown context or
-  // a customer profile with glossary / few-shot content, so the [5]
-  // CustomerDomainContext section is included in the compiled prompt.
-  const hasCustomDomainContext =
-    customContextMarkdown !== undefined ||
-    (canonicalCustomerProfile !== undefined &&
-      (canonicalCustomerProfile.glossary.length > 0 ||
-        canonicalCustomerProfile.fewShotExamples.length > 0 ||
-        canonicalCustomerProfile.riskTaxonomyOverrides.length > 0 ||
-        canonicalCustomerProfile.policyOverrides.length > 0)) ||
-    (resolvedTenantBundle !== undefined &&
-      (resolvedTenantBundle.bundle.terminologyGlossary.length > 0 ||
-        resolvedTenantBundle.bundle.riskClassTaxonomy.length > 0 ||
-        resolvedTenantBundle.bundle.testCaseNamingConvention !== undefined));
-  const compiledSourceMixPlan = hasCustomDomainContext
-    ? buildFigmaWithCustomMarkdownSourceMixPlan({
-        figmaSourceContentHash,
-        markdownContentHash:
-          customContextMarkdown?.markdownContentHash ??
-          canonicalCustomerProfile?.contentHash ??
-          figmaSourceContentHash,
-        plainContentHash:
-          customContextMarkdown?.plainContentHash ??
-          canonicalCustomerProfile?.contentHash ??
-          figmaSourceContentHash,
-      })
-    : undefined;
-  const semanticEvidenceSourceEnvelope = buildSemanticEvidenceSourceEnvelope({
-    baseEnvelope: wireIntent.sourceEnvelope,
-    figmaSourceContentHash,
-    customContextMarkdown,
-    generatedAt: input.generatedAt,
-  });
-  const testDesignModel = buildTestDesignModel({
-    jobId: input.jobId,
-    intent: wireIntent,
-    ...(promptVisualBatch !== undefined ? { visual: promptVisualBatch } : {}),
-    ...(semanticEvidenceSourceEnvelope !== undefined
-      ? { sourceEnvelope: semanticEvidenceSourceEnvelope }
-      : {}),
-  });
-  const workflowTopology = buildWorkflowTopology({
-    model: testDesignModel,
-    ...(customContextMarkdown?.bodyPlain !== undefined
-      ? { customContextMarkdown: customContextMarkdown.bodyPlain }
-      : {}),
-  });
-  const coveragePlannerClient =
-    input.llm.bundle?.coveragePlanner ?? input.llm.coveragePlanner;
-  const coveragePlannerStartedAt =
-    coveragePlannerClient === undefined ? undefined : Date.now();
-  const coveragePlanResult = await buildCoveragePlanWithAugmentation({
-    model: testDesignModel,
-    workflowTopology,
-    ...(compiledSourceMixPlan !== undefined
-      ? { sourceMixPlan: compiledSourceMixPlan }
-      : {}),
-    policyProfile: customerRubric as Record<string, unknown>,
-    ...(coveragePlannerClient !== undefined
-      ? {
-          plannerClient: coveragePlannerClient,
-          ...(finopsBudget.roles.test_generation?.maxInputTokensPerRequest !==
-          undefined
-            ? {
-                maxInputTokens:
-                  finopsBudget.roles.test_generation.maxInputTokensPerRequest,
-              }
-            : {}),
-          ...(finopsBudget.roles.test_generation?.maxOutputTokensPerRequest !==
-          undefined
-            ? {
-                maxOutputTokens:
-                  finopsBudget.roles.test_generation.maxOutputTokensPerRequest,
-              }
-            : {}),
-          ...(finopsBudget.roles.test_generation?.maxWallClockMsPerRequest !==
-          undefined
-            ? {
-                maxWallClockMs:
-                  finopsBudget.roles.test_generation.maxWallClockMsPerRequest,
-              }
-            : {}),
-          ...(finopsBudget.roles.test_generation?.maxRetriesPerRequest !==
-          undefined
-            ? {
-                maxRetries:
-                  finopsBudget.roles.test_generation.maxRetriesPerRequest,
-              }
-            : {}),
-          ...(input.llm.abortSignal !== undefined
-            ? { abortSignal: input.llm.abortSignal }
-            : {}),
-        }
-      : {}),
-  });
-  if (
-    coveragePlannerClient !== undefined &&
-    coveragePlannerStartedAt !== undefined &&
-    coveragePlanResult.gatewayResult !== undefined
-  ) {
-    await recordFinopsGatewayAttempt({
-      role: "test_generation",
-      source: "coverage_planner",
-      attributionMode: "audit",
-      deployment:
-        coveragePlanResult.gatewayResult.outcome === "success"
-          ? coveragePlanResult.gatewayResult.modelDeployment
-          : coveragePlannerClient.deployment,
-      endpointReference: coveragePlannerClient.operatorEndpointReference,
-      durationMs: Date.now() - coveragePlannerStartedAt,
-      result: coveragePlanResult.gatewayResult,
-    });
-  }
-  const riskRankerClient = input.llm.bundle?.riskRanker ?? input.llm.riskRanker;
-  const riskRankerStartedAt =
-    riskRankerClient === undefined ? undefined : Date.now();
-  const riskRankingResult = await buildRiskRankingWithAugmentation({
-    jobId: input.jobId,
-    coveragePlan: coveragePlanResult.plan,
-    policyProfile: customerRubric as Record<string, unknown>,
-    ...(riskRankerClient !== undefined
-      ? {
-          rankerClient: riskRankerClient,
-          ...(finopsBudget.roles.test_generation?.maxInputTokensPerRequest !==
-          undefined
-            ? {
-                maxInputTokens:
-                  finopsBudget.roles.test_generation.maxInputTokensPerRequest,
-              }
-            : {}),
-          ...(finopsBudget.roles.test_generation?.maxOutputTokensPerRequest !==
-          undefined
-            ? {
-                maxOutputTokens:
-                  finopsBudget.roles.test_generation.maxOutputTokensPerRequest,
-              }
-            : {}),
-          ...(finopsBudget.roles.test_generation?.maxWallClockMsPerRequest !==
-          undefined
-            ? {
-                maxWallClockMs:
-                  finopsBudget.roles.test_generation.maxWallClockMsPerRequest,
-              }
-            : {}),
-          ...(finopsBudget.roles.test_generation?.maxRetriesPerRequest !==
-          undefined
-            ? {
-                maxRetries:
-                  finopsBudget.roles.test_generation.maxRetriesPerRequest,
-              }
-            : {}),
-          ...(input.llm.abortSignal !== undefined
-            ? { abortSignal: input.llm.abortSignal }
-            : {}),
-        }
-      : {}),
-  });
-  if (
-    riskRankerClient !== undefined &&
-    riskRankerStartedAt !== undefined &&
-    riskRankingResult.gatewayResult !== undefined
-  ) {
-    await recordFinopsGatewayAttempt({
-      role: "test_generation",
-      source: "risk_ranker",
-      attributionMode: "audit",
-      deployment:
-        riskRankingResult.gatewayResult.outcome === "success"
-          ? riskRankingResult.gatewayResult.modelDeployment
-          : riskRankerClient.deployment,
-      endpointReference: riskRankerClient.operatorEndpointReference,
-      durationMs: Date.now() - riskRankerStartedAt,
-      result: riskRankingResult.gatewayResult,
-    });
-  }
-  const requestedDiversityPasses = resolveDiversityPassCount({
-    generation: input.generation,
-    policyRules: policyProfileRules,
-  });
-  const diversityPasses =
-    requestedDiversityPasses > 1 &&
-    input.generation?.diversityPasses === undefined &&
-    !input.llm.client.declaredCapabilities.seedSupport
-      ? 1
-      : requestedDiversityPasses;
-  if (
-    requestedDiversityPasses > 1 &&
-    input.generation?.diversityPasses !== undefined &&
-    !input.llm.client.declaredCapabilities.seedSupport
-  ) {
-    throw new ProductionRunnerError({
-      failureClass: "LLM_GATEWAY_FAILED",
-      message: `runFigmaToQcTestCases: generation.diversityPasses=${String(requestedDiversityPasses)} requires a generator gateway client with seed support.`,
-      retryable: false,
-    });
-  }
-  const generationPasses = resolveGenerationPasses(diversityPasses);
-
-  // 6. Build the draft request using the compiler-owned schema hint and
-  //    deterministic suffix layout.
-  // FinOps-resolved per-request limits override the legacy llm.* fields.
-  const effectiveMaxInputTokens = finopsLimits.maxInputTokens;
-  const effectiveMaxOutputTokens =
-    finopsLimits.maxOutputTokens ?? input.llm.maxOutputTokens;
-  const effectiveMaxWallClockMs =
-    finopsLimits.maxWallClockMs ?? input.llm.maxWallClockMs;
-  const effectiveMaxRetries = finopsLimits.maxRetries;
-
-  // 5.5. Replay cache (Issues #1739, #1944). Check before any LLM dispatch.
-  // On a hit the generate callback is never invoked and tokens are saved
-  // entirely. The tenant scope partitions the cache directory so two
-  // tenants cannot share entries even with identical key digests.
-  const replayCache: ReplayCache =
-    input.replayCache ??
-    createPersistentReplayCache(
-      join(input.outputRoot, "test-intelligence", "replay-cache"),
-      { tenantScope },
-    );
-  // Declared here so the generate callback can set them via closure on the
-  // cache-miss path; all remain undefined on cache hits (same as mode="off").
-  let harnessSummary: ProductionRunnerHarnessSummary | undefined;
-  let harnessArtifactPath: string | undefined;
-  let capturedLlmResult: LlmGenerationResult | undefined;
-  let capturedLlmDurationMs = 0;
-  let capturedLlmInputTokens = 0;
-  let capturedLlmOutputTokens = 0;
-  const harnessMode: ProductionRunnerHarnessMode = input.harness?.mode ?? "off";
-  const harnessRoleStepId =
-    input.harness?.roleStepId ?? PRODUCTION_RUNNER_HARNESS_ROLE_STEP_ID;
-  const harnessTestDepth: AgentHarnessTestDepth =
-    input.harness?.testDepth ?? "standard";
-  // Issue #1898: Logic-Judge defaults to ON. Callers that need the
-  // legacy single-pass behaviour (deterministic generator-only
-  // classification) must pass `logicJudge: { enabled: false }`
-  // explicitly. The judge dispatches a second LLM call and is
-  // attributed to FinOps source `judge_primary`.
-  //
-  // Issue #1932 — cross-model voting: when the operator wires a
-  // `bundle.logicJudge` slot the judge runs on a dedicated gateway
-  // (typically a different model family from the generator) so a
-  // self-consistency bias from the generator cannot be amplified by
-  // reusing the same model on the judge. When the slot is absent the
-  // judge falls back to `input.llm.client` so existing operator
-  // configurations keep working unchanged.
-  const logicJudgeEnabled = input.logicJudge?.enabled !== false;
-  const logicJudgeClient: LlmGatewayClient =
-    input.llm.bundle?.logicJudge ?? input.llm.logicJudge ?? input.llm.client;
-  const crossFamilyGeneratorClient = input.llm.bundle?.testGenerationSecondary;
-  const adversarialCriticEnabled =
-    logicJudgeEnabled &&
-    (input.llm.bundle?.logicJudge !== undefined ||
-      input.llm.logicJudge !== undefined);
-
-  const compileGenerationPass = (
-    pass: GenerationPassConfig,
-    extraSuffixSections: readonly CompilePromptSuffixSection[] = [],
-    generationClient: LlmGatewayClient = input.llm.client,
-  ) => {
-    const compiled = compilePrompt({
-      jobId: input.jobId,
-      intent: wireIntent,
-      ...(promptVisualBatch !== undefined ? { visual: promptVisualBatch } : {}),
-      ...(activeAgentLessons.length > 0
-        ? { agentLessons: activeAgentLessons }
-        : {}),
-      modelBinding: {
-        modelRevision: generationClient.modelRevision,
-        gatewayRelease: generationClient.gatewayRelease,
-        ...(pass.seed !== undefined ? { seed: pass.seed } : {}),
-      },
-      routingPolicyDigest,
-      policyBundleVersion: POLICY_BUNDLE_VERSION,
-      roleStepId: "test_generation",
-      customerRubric,
-      testDesignModel,
-      workflowTopology,
-      coveragePlan: coveragePlanResult.plan,
-      riskRanking: riskRankingResult.ranking,
-      responseSchema: draftSchema,
-      responseSchemaName: "workspace-dev-production-runner-draft-list-v1",
-      outputSchemaHintLabel: "ProductionRunnerDraftResponse",
-      suffixSections: [
-        ...buildPromptSuffixSections(
-          wireIntent,
-          policyProfileId,
-          hasCustomDomainContext,
-          customerEvalRubric,
-          pass.diversityBias,
-        ),
-        ...extraSuffixSections,
-      ],
-      visualBinding: promptVisualBinding,
-      ...(compiledCustomContext !== undefined
-        ? { customContext: compiledCustomContext }
-        : {}),
-      ...(compiledSourceMixPlan !== undefined
-        ? { sourceMixPlan: compiledSourceMixPlan }
-        : {}),
-      ...(finopsLimits.maxInputTokens !== undefined
-        ? {
-            contextBudget: {
-              roleStepId: "test_generation",
-              maxInputTokens: finopsLimits.maxInputTokens,
-            },
-          }
-        : {}),
-    });
-    if (compiled.contextBudgetReport?.action === "needs_review") {
-      throw new ProductionRunnerError({
-        failureClass: "FINOPS_BUDGET_INVALID",
-        message:
-          `context budget analyzer could not fit the test_generation prompt within maxInputTokens ` +
-          `${compiled.contextBudgetReport.maxInputTokens}`,
-        retryable: false,
-      });
-    }
-    return compiled;
-  };
-
-  const buildGenerationRequest = (
-    compiled: ReturnType<typeof compileGenerationPass>,
-  ): LlmGenerationRequest & {
-    onInFlightDedupHit?: (source: AgentSourceLabel) => void;
-  } => ({
-    jobId: compiled.request.jobId,
-    systemPrompt: compiled.request.systemPrompt,
-    userPrompt: compiled.request.userPrompt,
-    responseSchema: draftSchema,
-    responseSchemaName: "workspace-dev-production-runner-draft-list-v1",
-    inFlightDedup: {
-      source: "generator",
-      inputHash: compiled.request.hashes.inputHash,
-      promptHash: compiled.request.hashes.promptHash,
-      modelBinding: canonicalJson(compiled.request.modelBinding),
-      schemaHash: compiled.request.hashes.schemaHash,
-      policyProfileHash,
-    },
-    onInFlightDedupHit: (source) =>
-      finopsRecorder.recordInFlightDedupHit(source),
-    ...(compiled.request.modelBinding.seed !== undefined
-      ? { seed: compiled.request.modelBinding.seed }
-      : {}),
-    ...(effectiveMaxInputTokens !== undefined
-      ? { maxInputTokens: effectiveMaxInputTokens }
-      : {}),
-    ...(effectiveMaxOutputTokens !== undefined
-      ? { maxOutputTokens: effectiveMaxOutputTokens }
-      : {}),
-    ...(effectiveMaxWallClockMs !== undefined
-      ? { maxWallClockMs: effectiveMaxWallClockMs }
-      : {}),
-    ...(effectiveMaxRetries !== undefined
-      ? { maxRetries: effectiveMaxRetries }
-      : {}),
-    ...(input.llm.abortSignal !== undefined
-      ? { abortSignal: input.llm.abortSignal }
-      : {}),
-  });
-
-  const executeGenerationPass = async (inputPass: {
-    client?: LlmGatewayClient;
-    pass: GenerationPassConfig;
-    extraSuffixSections?: readonly CompilePromptSuffixSection[];
-    emitPrimaryPromptCompiled: boolean;
-    recordHarnessAttempt: boolean;
-  }) => {
-    const generationClient = inputPass.client ?? input.llm.client;
-    const compiled = compileGenerationPass(
-      inputPass.pass,
-      inputPass.extraSuffixSections,
-      generationClient,
-    );
-    if (inputPass.emitPrimaryPromptCompiled) {
-      emit({
-        phase: "prompt_compiled",
-        timestamp: monotonicMs(),
-        details: {
-          promptHash: compiled.request.hashes.promptHash,
-          schemaHash: compiled.request.hashes.schemaHash,
-          maxOutputTokens: effectiveMaxOutputTokens,
-          maxWallClockMs: effectiveMaxWallClockMs,
-        },
-      });
-    }
-    const generationRequest = buildGenerationRequest(compiled);
-    const generationCacheKey =
-      generationClient.constrainedDecoding === undefined
-        ? compiled.cacheKey
-        : {
-            ...compiled.cacheKey,
-            constrainedDecodingAdapterId:
-              generationClient.constrainedDecoding.adapterId,
-            ...(generationClient.constrainedDecoding.adapterVersion !==
-            undefined
-              ? {
-                  constrainedDecodingAdapterVersion:
-                    generationClient.constrainedDecoding.adapterVersion,
-                }
-              : {}),
-            ...(generationClient.constrainedDecoding.fallbackReason !==
-            undefined
-              ? {
-                  constrainedDecodingFallbackReason:
-                    generationClient.constrainedDecoding.fallbackReason,
-                }
-              : {}),
-          };
-    let cacheExecResult: Awaited<ReturnType<typeof executeWithReplayCache>>;
-    try {
-      cacheExecResult = await executeWithReplayCache({
-        cache: replayCache,
-        cacheKey: generationCacheKey,
-        generate: async () => {
-          emit({
-            phase: "llm_gateway_request",
-            timestamp: monotonicMs(),
-            details: {
-              role: "test_generation",
-              deployment: generationClient.deployment,
-              ...(inputPass.pass.passId !== undefined
-                ? { passId: inputPass.pass.passId }
-                : {}),
-            },
-          });
-          const llmResult = await generationClient.generate(generationRequest);
-          if (
-            capturedLlmResult === undefined ||
-            inputPass.pass.passId === undefined ||
-            inputPass.pass.passId === "a"
-          ) {
-            capturedLlmResult = llmResult;
-          }
-          const llmDurationMs = Date.now() - startedAt;
-          capturedLlmDurationMs += llmDurationMs;
-          if (llmResult.outcome === "success") {
-            capturedLlmInputTokens += llmResult.usage.inputTokens ?? 0;
-            capturedLlmOutputTokens += llmResult.usage.outputTokens ?? 0;
-          }
-          emit({
-            phase: "llm_gateway_response",
-            timestamp: monotonicMs(),
-            details: {
-              outcome: llmResult.outcome,
-              ...(inputPass.pass.passId !== undefined
-                ? { passId: inputPass.pass.passId }
-                : {}),
-              ...(llmResult.outcome === "success"
+      const generationRequest = buildGenerationRequest(compiled);
+      const generationCacheKey =
+        generationClient.constrainedDecoding === undefined
+          ? compiled.cacheKey
+          : {
+              ...compiled.cacheKey,
+              constrainedDecodingAdapterId:
+                generationClient.constrainedDecoding.adapterId,
+              ...(generationClient.constrainedDecoding.adapterVersion !==
+              undefined
                 ? {
-                    inputTokens: llmResult.usage.inputTokens,
-                    outputTokens: llmResult.usage.outputTokens,
-                    finishReason: llmResult.finishReason,
+                    constrainedDecodingAdapterVersion:
+                      generationClient.constrainedDecoding.adapterVersion,
                   }
-                : { errorClass: llmResult.errorClass }),
-            },
-          });
-
-          const attemptOutcome = await classifyLlmAttempt({
-            llmResult,
-            gatewayRelease: generationClient.gatewayRelease,
-            finopsRecorder,
-            llmDurationMs,
-            recordGatewayAttempt: async ({
-              deployment,
-              durationMs,
-              result,
-              attemptId,
-              liveSmoke,
-            }) =>
-              recordFinopsGatewayAttempt({
+                : {}),
+              ...(generationClient.constrainedDecoding.fallbackReason !==
+              undefined
+                ? {
+                    constrainedDecodingFallbackReason:
+                      generationClient.constrainedDecoding.fallbackReason,
+                  }
+                : {}),
+            };
+      let cacheExecResult: Awaited<ReturnType<typeof executeWithReplayCache>>;
+      try {
+        cacheExecResult = await executeWithReplayCache({
+          cache: replayCache,
+          cacheKey: generationCacheKey,
+          generate: async () => {
+            emit({
+              phase: "llm_gateway_request",
+              timestamp: monotonicMs(),
+              details: {
                 role: "test_generation",
-                source: "generator",
+                deployment: generationClient.deployment,
+                ...(inputPass.pass.passId !== undefined
+                  ? { passId: inputPass.pass.passId }
+                  : {}),
+              },
+            });
+            const llmResult =
+              await generationClient.generate(generationRequest);
+            if (
+              capturedLlmResult === undefined ||
+              inputPass.pass.passId === undefined ||
+              inputPass.pass.passId === "a"
+            ) {
+              capturedLlmResult = llmResult;
+            }
+            const llmDurationMs = Date.now() - startedAt;
+            capturedLlmDurationMs += llmDurationMs;
+            if (llmResult.outcome === "success") {
+              capturedLlmInputTokens += llmResult.usage.inputTokens ?? 0;
+              capturedLlmOutputTokens += llmResult.usage.outputTokens ?? 0;
+            }
+            emit({
+              phase: "llm_gateway_response",
+              timestamp: monotonicMs(),
+              details: {
+                outcome: llmResult.outcome,
+                ...(inputPass.pass.passId !== undefined
+                  ? { passId: inputPass.pass.passId }
+                  : {}),
+                ...(llmResult.outcome === "success"
+                  ? {
+                      inputTokens: llmResult.usage.inputTokens,
+                      outputTokens: llmResult.usage.outputTokens,
+                      finishReason: llmResult.finishReason,
+                    }
+                  : { errorClass: llmResult.errorClass }),
+              },
+            });
+
+            const attemptOutcome = await classifyLlmAttempt({
+              llmResult,
+              gatewayRelease: generationClient.gatewayRelease,
+              finopsRecorder,
+              llmDurationMs,
+              recordGatewayAttempt: async ({
                 deployment,
-                endpointReference: generationClient.operatorEndpointReference,
                 durationMs,
                 result,
-                ...(attemptId !== undefined ? { attemptId } : {}),
+                attemptId,
                 liveSmoke,
-              }),
-            ...(diversityPasses > 1
-              ? { attemptId: inputPass.pass.roleRunId }
-              : {}),
-          });
-
-          if (inputPass.recordHarnessAttempt && harnessMode !== "off") {
-            const harnessAttemptResult = buildHarnessAttemptResult({
-              hashes: compiled.request.hashes,
-              judgeAccepted: attemptOutcome.kind === "ok",
-              errorClass:
-                attemptOutcome.kind === "ok"
-                  ? "none"
-                  : attemptOutcome.errorClass,
-              llmDurationMs,
-              llmInputTokens:
-                llmResult.outcome === "success"
-                  ? (llmResult.usage.inputTokens ?? 0)
-                  : 0,
-              llmOutputTokens:
-                llmResult.outcome === "success"
-                  ? (llmResult.usage.outputTokens ?? 0)
-                  : 0,
+              }) =>
+                recordFinopsGatewayAttempt({
+                  role: "test_generation",
+                  source: "generator",
+                  deployment,
+                  endpointReference: generationClient.operatorEndpointReference,
+                  durationMs,
+                  result,
+                  ...(attemptId !== undefined ? { attemptId } : {}),
+                  liveSmoke,
+                }),
+              ...(diversityPasses > 1
+                ? { attemptId: inputPass.pass.roleRunId }
+                : {}),
             });
-            const harnessRunResult: RunAgentHarnessStepResult =
-              await runAgentHarnessStep({
-                runDir: artifactDir,
-                jobId: input.jobId,
-                role: "generator",
-                roleStepId: harnessRoleStepId,
-                testDepth: harnessTestDepth,
-                executeAttempt: async () => harnessAttemptResult,
-              });
-            harnessArtifactPath = harnessRunResult.artifactPath;
-            harnessSummary = {
-              mode: harnessMode,
-              outcome: harnessRunResult.outcome,
-              mappedJobStatus: harnessRunResult.mappedJobStatus,
-              errorClass: harnessRunResult.artifact.errorClass,
-              attemptsConsumed: harnessRunResult.artifact.attemptsConsumed,
-              maxAttemptsAllowed: harnessRunResult.artifact.maxAttemptsAllowed,
-              artifactPath: harnessRunResult.artifactPath,
-            };
-          }
 
-          if (attemptOutcome.kind === "error") {
-            if (
-              llmResult.outcome !== "success" &&
-              llmResult.errorClass === "canceled"
-            ) {
-              emit({
-                phase: "cancelled",
-                timestamp: monotonicMs(),
-                details: { reason: "llm_gateway_canceled" },
+            if (inputPass.recordHarnessAttempt && harnessMode !== "off") {
+              const harnessAttemptResult = buildHarnessAttemptResult({
+                hashes: compiled.request.hashes,
+                judgeAccepted: attemptOutcome.kind === "ok",
+                errorClass:
+                  attemptOutcome.kind === "ok"
+                    ? "none"
+                    : attemptOutcome.errorClass,
+                llmDurationMs,
+                llmInputTokens:
+                  llmResult.outcome === "success"
+                    ? (llmResult.usage.inputTokens ?? 0)
+                    : 0,
+                llmOutputTokens:
+                  llmResult.outcome === "success"
+                    ? (llmResult.usage.outputTokens ?? 0)
+                    : 0,
               });
+              const harnessRunResult: RunAgentHarnessStepResult =
+                await runAgentHarnessStep({
+                  runDir: artifactDir,
+                  jobId: input.jobId,
+                  role: "generator",
+                  roleStepId: harnessRoleStepId,
+                  testDepth: harnessTestDepth,
+                  executeAttempt: async () => harnessAttemptResult,
+                });
+              harnessArtifactPath = harnessRunResult.artifactPath;
+              harnessSummary = {
+                mode: harnessMode,
+                outcome: harnessRunResult.outcome,
+                mappedJobStatus: harnessRunResult.mappedJobStatus,
+                errorClass: harnessRunResult.artifact.errorClass,
+                attemptsConsumed: harnessRunResult.artifact.attemptsConsumed,
+                maxAttemptsAllowed:
+                  harnessRunResult.artifact.maxAttemptsAllowed,
+                artifactPath: harnessRunResult.artifactPath,
+              };
             }
-            throw attemptOutcome.error;
+
+            if (attemptOutcome.kind === "error") {
+              if (
+                llmResult.outcome !== "success" &&
+                llmResult.errorClass === "canceled"
+              ) {
+                emit({
+                  phase: "cancelled",
+                  timestamp: monotonicMs(),
+                  details: { reason: "llm_gateway_canceled" },
+                });
+              }
+              throw attemptOutcome.error;
+            }
+            const audit: GeneratedTestCaseAuditMetadata = {
+              jobId: input.jobId,
+              generatedAt: input.generatedAt,
+              contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+              schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+              promptTemplateVersion: TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
+              redactionPolicyVersion: REDACTION_POLICY_VERSION,
+              visualSidecarSchemaVersion: VISUAL_SIDECAR_SCHEMA_VERSION,
+              cacheHit: false,
+              cacheKey: compiled.request.hashes.cacheKey,
+              inputHash: compiled.request.hashes.inputHash,
+              promptHash: compiled.request.hashes.promptHash,
+              schemaHash: compiled.request.hashes.schemaHash,
+              truncatedInstructionCount: 0,
+            };
+            const testCases = attemptOutcome.drafts.map((draft, index) =>
+              stampGeneratedTestCase({
+                draft,
+                jobId: input.jobId,
+                index,
+                audit,
+                intent,
+                ...(inputPass.pass.identitySalt !== undefined
+                  ? { identitySalt: inputPass.pass.identitySalt }
+                  : {}),
+              }),
+            );
+            testCases.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+            return {
+              schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+              jobId: input.jobId,
+              testCases,
+            };
+          },
+        });
+      } catch (err) {
+        if (err instanceof ReplayCacheValidationError) {
+          throw new ProductionRunnerError({
+            failureClass: "PERSIST_FAILED",
+            message:
+              "Persistent replay cache entry failed validation; refusing to reuse corrupted cached output.",
+            retryable: false,
+            cause: err,
+          });
+        }
+        throw err;
+      }
+
+      if (cacheExecResult.cacheHit) {
+        await observeRegionAttestation({
+          sourceLabel: "generator",
+          deploymentId: input.llm.client.deployment,
+          endpointReference: input.llm.client.operatorEndpointReference,
+          observedAtUtc: input.generatedAt,
+        });
+        emit({
+          phase: "replay_cache_hit",
+          timestamp: monotonicMs(),
+          details: {
+            key: cacheExecResult.key,
+            testCaseCount: cacheExecResult.testCases.testCases.length,
+            ...(inputPass.pass.passId !== undefined
+              ? { passId: inputPass.pass.passId }
+              : {}),
+          },
+        });
+      }
+      return { compiled, cacheExecResult, pass: inputPass.pass };
+    };
+
+    const regenerateWithSuffixSections = async (inputRegeneration: {
+      suffixSections: readonly CompilePromptSuffixSection[];
+    }): Promise<{
+      list: GeneratedTestCaseList;
+      selfConsistencyReport?: SelfConsistencyReport;
+      llmResult: LlmGenerationResult;
+      llmDurationMs: number;
+      inputTokens: number;
+      outputTokens: number;
+      hashes: {
+        readonly inputHash: string;
+        readonly promptHash: string;
+        readonly schemaHash: string;
+        readonly cacheKey: string;
+      };
+    }> => {
+      const repairPassResults = await Promise.all(
+        generationPasses.map(async (pass) => {
+          const compiled = compileGenerationPass(
+            pass,
+            inputRegeneration.suffixSections,
+          );
+          const request = buildGenerationRequest(compiled);
+          request.maxRetries = 0;
+          const requestStartedAt = Date.now();
+          const llmResult = await input.llm.client.generate(request);
+          const llmDurationMs = Date.now() - requestStartedAt;
+          await recordFinopsGatewayAttempt({
+            role: "test_generation",
+            source: "generator",
+            ...(diversityPasses > 1 ? { attemptId: pass.roleRunId } : {}),
+            deployment:
+              llmResult.outcome === "success"
+                ? llmResult.modelDeployment
+                : input.llm.client.deployment,
+            endpointReference: input.llm.client.operatorEndpointReference,
+            durationMs: llmDurationMs,
+            result: llmResult,
+          });
+          if (llmResult.outcome !== "success") {
+            throw new ProductionRunnerError({
+              failureClass: "LLM_GATEWAY_FAILED",
+              message: `Generator regeneration failed: ${llmResult.errorClass}`,
+              retryable: false,
+            });
+          }
+          const validation = validateLlmDraftResponse(llmResult.content);
+          if (!validation.ok) {
+            throw new ProductionRunnerError({
+              failureClass: "LLM_RESPONSE_INVALID",
+              message: `Generator regeneration returned an invalid payload: ${validation.message}`,
+              retryable: false,
+            });
           }
           const audit: GeneratedTestCaseAuditMetadata = {
             jobId: input.jobId,
@@ -3697,1033 +3895,405 @@ export const runFigmaToQcTestCases = async (
             schemaHash: compiled.request.hashes.schemaHash,
             truncatedInstructionCount: 0,
           };
-          const testCases = attemptOutcome.drafts.map((draft, index) =>
+          const cases = validation.value.testCases.map((draft, index) =>
             stampGeneratedTestCase({
               draft,
               jobId: input.jobId,
               index,
               audit,
               intent,
-              ...(inputPass.pass.identitySalt !== undefined
-                ? { identitySalt: inputPass.pass.identitySalt }
+              ...(pass.identitySalt !== undefined
+                ? { identitySalt: pass.identitySalt }
                 : {}),
             }),
           );
-          testCases.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+          cases.sort((left, right) =>
+            left.id < right.id ? -1 : left.id > right.id ? 1 : 0,
+          );
           return {
-            schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
-            jobId: input.jobId,
-            testCases,
+            list: {
+              schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+              jobId: input.jobId,
+              testCases: cases,
+            },
+            llmResult,
+            llmDurationMs,
+            inputTokens: llmResult.usage.inputTokens ?? 0,
+            outputTokens: llmResult.usage.outputTokens ?? 0,
+            hashes: {
+              inputHash: compiled.request.hashes.inputHash,
+              promptHash: compiled.request.hashes.promptHash,
+              schemaHash: compiled.request.hashes.schemaHash,
+              cacheKey: compiled.request.hashes.cacheKey,
+            },
           };
-        },
-      });
-    } catch (err) {
-      if (err instanceof ReplayCacheValidationError) {
-        throw new ProductionRunnerError({
-          failureClass: "PERSIST_FAILED",
-          message:
-            "Persistent replay cache entry failed validation; refusing to reuse corrupted cached output.",
-          retryable: false,
-          cause: err,
-        });
-      }
-      throw err;
-    }
-
-    if (cacheExecResult.cacheHit) {
-      await observeRegionAttestation({
-        sourceLabel: "generator",
-        deploymentId: input.llm.client.deployment,
-        endpointReference: input.llm.client.operatorEndpointReference,
-        observedAtUtc: input.generatedAt,
-      });
-      emit({
-        phase: "replay_cache_hit",
-        timestamp: monotonicMs(),
-        details: {
-          key: cacheExecResult.key,
-          testCaseCount: cacheExecResult.testCases.testCases.length,
-          ...(inputPass.pass.passId !== undefined
-            ? { passId: inputPass.pass.passId }
-            : {}),
-        },
-      });
-    }
-    return { compiled, cacheExecResult, pass: inputPass.pass };
-  };
-
-  const regenerateWithSuffixSections = async (inputRegeneration: {
-    suffixSections: readonly CompilePromptSuffixSection[];
-  }): Promise<{
-    list: GeneratedTestCaseList;
-    selfConsistencyReport?: SelfConsistencyReport;
-    llmResult: LlmGenerationResult;
-    llmDurationMs: number;
-    inputTokens: number;
-    outputTokens: number;
-    hashes: {
-      readonly inputHash: string;
-      readonly promptHash: string;
-      readonly schemaHash: string;
-      readonly cacheKey: string;
-    };
-  }> => {
-    const repairPassResults = await Promise.all(
-      generationPasses.map(async (pass) => {
-        const compiled = compileGenerationPass(
-          pass,
-          inputRegeneration.suffixSections,
-        );
-        const request = buildGenerationRequest(compiled);
-        request.maxRetries = 0;
-        const requestStartedAt = Date.now();
-        const llmResult = await input.llm.client.generate(request);
-        const llmDurationMs = Date.now() - requestStartedAt;
-        await recordFinopsGatewayAttempt({
-          role: "test_generation",
-          source: "generator",
-          ...(diversityPasses > 1 ? { attemptId: pass.roleRunId } : {}),
-          deployment:
-            llmResult.outcome === "success"
-              ? llmResult.modelDeployment
-              : input.llm.client.deployment,
-          endpointReference: input.llm.client.operatorEndpointReference,
-          durationMs: llmDurationMs,
-          result: llmResult,
-        });
-        if (llmResult.outcome !== "success") {
-          throw new ProductionRunnerError({
-            failureClass: "LLM_GATEWAY_FAILED",
-            message: `Generator regeneration failed: ${llmResult.errorClass}`,
-            retryable: false,
-          });
-        }
-        const validation = validateLlmDraftResponse(llmResult.content);
-        if (!validation.ok) {
-          throw new ProductionRunnerError({
-            failureClass: "LLM_RESPONSE_INVALID",
-            message: `Generator regeneration returned an invalid payload: ${validation.message}`,
-            retryable: false,
-          });
-        }
-        const audit: GeneratedTestCaseAuditMetadata = {
-          jobId: input.jobId,
-          generatedAt: input.generatedAt,
-          contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
-          schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
-          promptTemplateVersion: TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
-          redactionPolicyVersion: REDACTION_POLICY_VERSION,
-          visualSidecarSchemaVersion: VISUAL_SIDECAR_SCHEMA_VERSION,
-          cacheHit: false,
-          cacheKey: compiled.request.hashes.cacheKey,
-          inputHash: compiled.request.hashes.inputHash,
-          promptHash: compiled.request.hashes.promptHash,
-          schemaHash: compiled.request.hashes.schemaHash,
-          truncatedInstructionCount: 0,
-        };
-        const cases = validation.value.testCases.map((draft, index) =>
-          stampGeneratedTestCase({
-            draft,
-            jobId: input.jobId,
-            index,
-            audit,
-            intent,
-            ...(pass.identitySalt !== undefined
-              ? { identitySalt: pass.identitySalt }
-              : {}),
-          }),
-        );
-        cases.sort((left, right) =>
-          left.id < right.id ? -1 : left.id > right.id ? 1 : 0,
-        );
-        return {
-          list: {
-            schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
-            jobId: input.jobId,
-            testCases: cases,
-          },
-          llmResult,
-          llmDurationMs,
-          inputTokens: llmResult.usage.inputTokens ?? 0,
-          outputTokens: llmResult.usage.outputTokens ?? 0,
-          hashes: {
-            inputHash: compiled.request.hashes.inputHash,
-            promptHash: compiled.request.hashes.promptHash,
-            schemaHash: compiled.request.hashes.schemaHash,
-            cacheKey: compiled.request.hashes.cacheKey,
-          },
-        };
-      }),
-    );
-    const merged = mergeGenerationPassLists(
-      repairPassResults.map((pass) => pass.list),
-    );
-    return {
-      list: merged.list,
-      ...(merged.selfConsistencyReport !== undefined
-        ? { selfConsistencyReport: merged.selfConsistencyReport }
-        : {}),
-      llmResult: repairPassResults[0]!.llmResult,
-      llmDurationMs: repairPassResults.reduce(
-        (sum, pass) => sum + pass.llmDurationMs,
-        0,
-      ),
-      inputTokens: repairPassResults.reduce(
-        (sum, pass) => sum + pass.inputTokens,
-        0,
-      ),
-      outputTokens: repairPassResults.reduce(
-        (sum, pass) => sum + pass.outputTokens,
-        0,
-      ),
-      hashes: repairPassResults[0]!.hashes,
-    };
-  };
-
-  const mergeGenerationPassLists = (
-    lists: readonly GeneratedTestCaseList[],
-    options?: {
-      readonly arbitrationTriggered?: boolean;
-      readonly disagreementRoute?: SelfConsistencyDisagreementRoute;
-    },
-  ): {
-    list: GeneratedTestCaseList;
-    selfConsistencyReport?: SelfConsistencyReport;
-  } => {
-    if (lists.length === 1) {
-      return { list: lists[0]! };
-    }
-    if (lists.length === 2) {
+        }),
+      );
+      const merged = mergeGenerationPassLists(
+        repairPassResults.map((pass) => pass.list),
+      );
       return {
-        list: mergeGeneratedTestCaseLists([lists[0]!, lists[1]!]),
+        list: merged.list,
+        ...(merged.selfConsistencyReport !== undefined
+          ? { selfConsistencyReport: merged.selfConsistencyReport }
+          : {}),
+        llmResult: repairPassResults[0]!.llmResult,
+        llmDurationMs: repairPassResults.reduce(
+          (sum, pass) => sum + pass.llmDurationMs,
+          0,
+        ),
+        inputTokens: repairPassResults.reduce(
+          (sum, pass) => sum + pass.inputTokens,
+          0,
+        ),
+        outputTokens: repairPassResults.reduce(
+          (sum, pass) => sum + pass.outputTokens,
+          0,
+        ),
+        hashes: repairPassResults[0]!.hashes,
       };
-    }
-    const voted = voteGeneratedTestCaseSamples({
-      jobId: input.jobId,
-      generatedAt: input.generatedAt,
-      lists,
-      ...(options?.disagreementRoute !== undefined
-        ? { disagreementRoute: options.disagreementRoute }
-        : {}),
-      ...(options?.arbitrationTriggered ? { arbitrationTriggered: true } : {}),
-    });
-    return {
-      list: voted.merged,
-      selfConsistencyReport: voted.report,
     };
-  };
 
-  const generationExecutions = await Promise.all(
-    generationPasses.map((pass, index) =>
-      executeGenerationPass({
-        pass,
-        emitPrimaryPromptCompiled: index === 0,
-        recordHarnessAttempt: diversityPasses === 1,
-      }),
-    ),
-  );
-  const compiled = generationExecutions[0]!.compiled;
-  let generationCacheHit = generationExecutions.every(
-    (execution) => execution.cacheExecResult.cacheHit,
-  );
-  const initialGenerationMerge = mergeGenerationPassLists(
-    generationExecutions.map(
-      (execution) => execution.cacheExecResult.testCases,
-    ),
-    {
-      disagreementRoute:
-        diversityPasses === 3 && crossFamilyGeneratorClient !== undefined
-          ? "cross_family_arbitration"
-          : "human_review",
-    },
-  );
-  let selfConsistencyReport = initialGenerationMerge.selfConsistencyReport;
-  let generatedList: GeneratedTestCaseList = initialGenerationMerge.list;
-  const weakConsensusDetected =
-    diversityPasses === 3 &&
-    selfConsistencyReport?.targets.some(
-      (target) => target.consensusStrength === "weak_consensus",
-    ) === true;
-  if (weakConsensusDetected && crossFamilyGeneratorClient !== undefined) {
-    const arbitrationExecution = await executeGenerationPass({
-      client: crossFamilyGeneratorClient,
-      pass: {
-        roleRunId: CROSS_FAMILY_ARBITRATION_ROLE_RUN_ID,
-        identitySalt: CROSS_FAMILY_ARBITRATION_ROLE_RUN_ID,
+    const mergeGenerationPassLists = (
+      lists: readonly GeneratedTestCaseList[],
+      options?: {
+        readonly arbitrationTriggered?: boolean;
+        readonly disagreementRoute?: SelfConsistencyDisagreementRoute;
       },
-      emitPrimaryPromptCompiled: false,
-      recordHarnessAttempt: false,
-    });
-    generationExecutions.push(arbitrationExecution);
-    generationCacheHit =
-      generationCacheHit && arbitrationExecution.cacheExecResult.cacheHit;
-    const arbitratedMerge = mergeGenerationPassLists(
+    ): {
+      list: GeneratedTestCaseList;
+      selfConsistencyReport?: SelfConsistencyReport;
+    } => {
+      if (lists.length === 1) {
+        return { list: lists[0]! };
+      }
+      if (lists.length === 2) {
+        return {
+          list: mergeGeneratedTestCaseLists([lists[0]!, lists[1]!]),
+        };
+      }
+      const voted = voteGeneratedTestCaseSamples({
+        jobId: input.jobId,
+        generatedAt: input.generatedAt,
+        lists,
+        ...(options?.disagreementRoute !== undefined
+          ? { disagreementRoute: options.disagreementRoute }
+          : {}),
+        ...(options?.arbitrationTriggered
+          ? { arbitrationTriggered: true }
+          : {}),
+      });
+      return {
+        list: voted.merged,
+        selfConsistencyReport: voted.report,
+      };
+    };
+
+    const generationExecutions = await Promise.all(
+      generationPasses.map((pass, index) =>
+        executeGenerationPass({
+          pass,
+          emitPrimaryPromptCompiled: index === 0,
+          recordHarnessAttempt: diversityPasses === 1,
+        }),
+      ),
+    );
+    const compiled = generationExecutions[0]!.compiled;
+    let generationCacheHit = generationExecutions.every(
+      (execution) => execution.cacheExecResult.cacheHit,
+    );
+    const initialGenerationMerge = mergeGenerationPassLists(
       generationExecutions.map(
         (execution) => execution.cacheExecResult.testCases,
       ),
       {
-        arbitrationTriggered: true,
-        disagreementRoute: "human_review",
+        disagreementRoute:
+          diversityPasses === 3 && crossFamilyGeneratorClient !== undefined
+            ? "cross_family_arbitration"
+            : "human_review",
       },
     );
-    selfConsistencyReport = arbitratedMerge.selfConsistencyReport;
-    generatedList = arbitratedMerge.list;
-  }
-  generatedList = stabilizeGeneratedListForAcceptance({
-    list: generatedList,
-    model: compiled.artifacts.payload.testDesignModel!,
-    jobId: input.jobId,
-  });
-  generatedList = {
-    ...generatedList,
-    testCases: generatedList.testCases.map((testCase) =>
-      enrichWorkflowTopologyCoverage({
-        testCase,
-        workflowTopology,
-      }),
-    ),
-  };
-  const baselineGeneratedList = generatedList;
-  const adversarialCriticRoundArtifacts: AdversarialCriticRoundArtifact[] = [];
-  const adversarialCriticProvenanceRounds: Array<{
-    round: number;
-    artifactFilename: string;
-    domain: string;
-    findings: readonly AdversarialCriticFinding[];
-    regeneratedListHash?: string;
-    generatedCaseCount?: number;
-  }> = [];
-  const adversarialCriticSeenKeys = new Set<string>();
-  const adversarialCriticDomain =
-    resolveAdversarialCriticDomainFromList(generatedList);
-  let adversarialCriticStopReason:
-    | "converged_no_new_findings"
-    | "critic_failed"
-    | "max_rounds_reached"
-    | "no_rounds_needed" = "no_rounds_needed";
-  let adversarialCriticTraceArtifact:
-    | AdversarialCriticTraceArtifact
-    | undefined;
-  if (adversarialCriticEnabled) {
-    const adversarialCriticBudgetLimits = resolveAdversarialCriticBudgetLimits(
-      finopsBudget.roles.test_generation,
-    );
-    for (let round = 1; round <= ADVERSARIAL_CRITIC_MAX_ROUNDS; round += 1) {
-      const criticRound = await runAdversarialCriticRound({
-        jobId: input.jobId,
-        round,
-        domain: adversarialCriticDomain,
-        client: logicJudgeClient,
-        intent,
-        generatedList,
-        coveragePlan: coveragePlanResult.plan,
-        riskRanking: riskRankingResult.ranking,
-        ...(adversarialCriticBudgetLimits.maxInputTokens !== undefined
-          ? {
-              maxInputTokens: adversarialCriticBudgetLimits.maxInputTokens,
-            }
-          : {}),
-        ...(adversarialCriticBudgetLimits.maxOutputTokens !== undefined
-          ? {
-              maxOutputTokens: adversarialCriticBudgetLimits.maxOutputTokens,
-            }
-          : {}),
-        ...(adversarialCriticBudgetLimits.maxWallClockMs !== undefined
-          ? {
-              maxWallClockMs: adversarialCriticBudgetLimits.maxWallClockMs,
-            }
-          : {}),
-        ...(adversarialCriticBudgetLimits.maxRetries !== undefined
-          ? {
-              maxRetries: adversarialCriticBudgetLimits.maxRetries,
-            }
-          : {}),
-        ...(input.llm.abortSignal !== undefined
-          ? { abortSignal: input.llm.abortSignal }
-          : {}),
-      });
-      await recordFinopsGatewayAttempt({
-        role: "test_generation",
-        source: "adversarial_critic",
-        attributionMode: "audit",
-        deployment:
-          criticRound.gatewayResult.outcome === "success"
-            ? criticRound.gatewayResult.modelDeployment
-            : logicJudgeClient.deployment,
-        endpointReference: logicJudgeClient.operatorEndpointReference,
-        durationMs: criticRound.artifact.llmGateway.durationMs,
-        result: criticRound.gatewayResult,
-      });
-      const uniqueFindings = dedupeAdversarialFindings({
-        findings: criticRound.findings,
-        seenKeys: adversarialCriticSeenKeys,
-      });
-      const normalizedArtifact: AdversarialCriticRoundArtifact = {
-        ...criticRound.artifact,
-        outputs: {
-          findingCount: uniqueFindings.length,
-          dedupeKeys: uniqueFindings.map(computeAdversarialFindingDedupeKey),
-          findings: uniqueFindings,
+    let selfConsistencyReport = initialGenerationMerge.selfConsistencyReport;
+    let generatedList: GeneratedTestCaseList = initialGenerationMerge.list;
+    const weakConsensusDetected =
+      diversityPasses === 3 &&
+      selfConsistencyReport?.targets.some(
+        (target) => target.consensusStrength === "weak_consensus",
+      ) === true;
+    if (weakConsensusDetected && crossFamilyGeneratorClient !== undefined) {
+      const arbitrationExecution = await executeGenerationPass({
+        client: crossFamilyGeneratorClient,
+        pass: {
+          roleRunId: CROSS_FAMILY_ARBITRATION_ROLE_RUN_ID,
+          identitySalt: CROSS_FAMILY_ARBITRATION_ROLE_RUN_ID,
         },
-      };
-      const roundArtifactFilename = `agent-role-runs/${ADVERSARIAL_CRITIC_ROUND_ARTIFACT_PREFIX}${normalizedArtifact.round}.json`;
-      adversarialCriticRoundArtifacts.push(normalizedArtifact);
-      const provenanceRound: {
-        round: number;
-        artifactFilename: string;
-        domain: string;
-        findings: readonly AdversarialCriticFinding[];
-        regeneratedListHash?: string;
-        generatedCaseCount?: number;
-      } = {
-        round: normalizedArtifact.round,
-        artifactFilename: roundArtifactFilename,
-        domain: normalizedArtifact.domain,
-        findings: normalizedArtifact.outputs.findings,
-      };
-      adversarialCriticProvenanceRounds.push(provenanceRound);
-      await writeAdversarialCriticRoundArtifact({
-        runDir: artifactDir,
-        artifact: normalizedArtifact,
+        emitPrimaryPromptCompiled: false,
+        recordHarnessAttempt: false,
       });
-      if (normalizedArtifact.llmGateway.outcome === "error") {
-        adversarialCriticStopReason = "critic_failed";
-        break;
-      }
-      if (uniqueFindings.length === 0) {
-        adversarialCriticStopReason = "converged_no_new_findings";
-        break;
-      }
-      for (const finding of uniqueFindings) {
-        adversarialCriticSeenKeys.add(
-          computeAdversarialFindingDedupeKey(finding),
-        );
-      }
-      const regeneration = await regenerateWithSuffixSections({
-        suffixSections: [
-          {
-            kind: "json",
-            label: `AdversarialFindings (round ${round})`,
-            jsonPayload: uniqueFindings,
-          },
-          {
-            kind: "repair_instructions",
-            label: `AdversarialRepairInstructions (round ${round})`,
-            jsonPayload: buildAdversarialRepairInstructions(uniqueFindings),
-          },
-          {
-            kind: "json",
-            label: `NegativeCoverageAccounting (round ${round})`,
-            jsonPayload: computeNegativeCoverageAccounting({
-              baselineList: baselineGeneratedList,
-              finalList: generatedList,
-            }),
-          },
-        ],
-      });
-      generatedList = stabilizeGeneratedListForAcceptance({
-        list: regenerateWithAdversarialCaseCountCeiling({
-          list: regeneration.list,
-          maxCaseCount: baselineGeneratedList.testCases.length,
-        }),
-        model: compiled.artifacts.payload.testDesignModel!,
-        jobId: input.jobId,
-      });
-      if (regeneration.selfConsistencyReport !== undefined) {
-        selfConsistencyReport = regeneration.selfConsistencyReport;
-      }
-      generatedList = {
-        ...generatedList,
-        testCases: generatedList.testCases.map((testCase) =>
-          enrichWorkflowTopologyCoverage({
-            testCase,
-            workflowTopology,
-          }),
+      generationExecutions.push(arbitrationExecution);
+      generationCacheHit =
+        generationCacheHit && arbitrationExecution.cacheExecResult.cacheHit;
+      const arbitratedMerge = mergeGenerationPassLists(
+        generationExecutions.map(
+          (execution) => execution.cacheExecResult.testCases,
         ),
-      };
-      provenanceRound.regeneratedListHash = sha256Hex(generatedList);
-      provenanceRound.generatedCaseCount = generatedList.testCases.length;
-      if (round === ADVERSARIAL_CRITIC_MAX_ROUNDS) {
-        adversarialCriticStopReason = "max_rounds_reached";
-      }
+        {
+          arbitrationTriggered: true,
+          disagreementRoute: "human_review",
+        },
+      );
+      selfConsistencyReport = arbitratedMerge.selfConsistencyReport;
+      generatedList = arbitratedMerge.list;
     }
-    adversarialCriticTraceArtifact = {
-      schemaVersion: "1.0.0",
+    generatedList = stabilizeGeneratedListForAcceptance({
+      list: generatedList,
+      model: compiled.artifacts.payload.testDesignModel!,
       jobId: input.jobId,
-      domain: adversarialCriticDomain,
-      roundsExecuted: adversarialCriticRoundArtifacts.length,
-      stopReason: adversarialCriticStopReason,
-      negativeCoverage: computeNegativeCoverageAccounting({
-        baselineList: baselineGeneratedList,
-        finalList: generatedList,
-      }),
-      rounds: adversarialCriticRoundArtifacts.map((artifact) => ({
-        round: artifact.round,
-        findingCount: artifact.outputs.findingCount,
-        dedupeKeys: artifact.outputs.dedupeKeys,
-      })),
-    };
-    await writeAdversarialCriticTraceArtifact({
-      runDir: artifactDir,
-      artifact: adversarialCriticTraceArtifact,
     });
-  }
-  // Issue #2053 — evaluate the `G-NEG-CASE` quality gate against the
-  // resolved policy-profile config (with the optional CLI override
-  // applied on top). The result is persisted into `policy-report.json`
-  // unconditionally so audit can distinguish skip from pass; enforcement
-  // is deferred until after every artifact is sealed so a failure still
-  // leaves a complete evidence bundle on disk.
-  const negativeCaseLiftConfig = resolveNegativeCaseLiftConfig({
-    profileRules: policyProfileRules,
-    override: input.qualityGates?.negativeCaseLift,
-  });
-  const negativeCaseLiftGateResult = evaluateNegativeCaseLiftGate({
-    config: negativeCaseLiftConfig,
-    adversarialCriticEnabled,
-    traceArtifact: adversarialCriticTraceArtifact,
-  });
-  const logicJudgeCache = createFileSystemLogicJudgeCache(
-    join(input.outputRoot, "test-intelligence", "replay-cache", "logic-judge"),
-    { tenantScope },
-  );
-  const logicJudgeKnownNavigationIds = wireIntent.detectedNavigation.map(
-    (navigation) => navigation.id,
-  );
-  const customerRubricRules =
-    "rules" in customerRubric ? customerRubric.rules : undefined;
-  const logicJudgeCoverageThresholds: LogicJudgeCoverageThresholds = {
-    ...(customerRubricRules?.fieldCoverageRatioMin !== undefined
-      ? { fieldCoverageRatioMin: customerRubricRules.fieldCoverageRatioMin }
-      : {}),
-    ...(customerRubricRules?.actionCoverageRatioMin !== undefined
-      ? { actionCoverageRatioMin: customerRubricRules.actionCoverageRatioMin }
-      : {}),
-  };
-  const logicJudgeTechniqueCoverageMinimum =
-    customerRubricRules?.techniqueCoverageMinimum;
-  let logicJudgeResult: RunLogicJudgeResult = logicJudgeEnabled
-    ? await runLogicJudge({
-        jobId: input.jobId,
-        generatedAt: input.generatedAt,
-        testDesignModel: compiled.artifacts.payload.testDesignModel!,
-        coveragePlan: compiled.artifacts.payload.coveragePlan!,
-        generatedTestCases: generatedList,
-        client: logicJudgeClient,
-        cache: logicJudgeCache,
-        knownNavigationIds: logicJudgeKnownNavigationIds,
-        coverageThresholds: logicJudgeCoverageThresholds,
-        ...(logicJudgeTechniqueCoverageMinimum !== undefined
-          ? { techniqueCoverageMinimum: logicJudgeTechniqueCoverageMinimum }
-          : {}),
-        ...(finopsBudget.roles.test_generation?.maxInputTokensPerRequest !==
-        undefined
-          ? {
-              maxInputTokens:
-                finopsBudget.roles.test_generation.maxInputTokensPerRequest,
-            }
-          : {}),
-        ...(finopsBudget.roles.test_generation?.maxOutputTokensPerRequest !==
-        undefined
-          ? {
-              maxOutputTokens:
-                finopsBudget.roles.test_generation.maxOutputTokensPerRequest,
-            }
-          : {}),
-        ...(finopsBudget.roles.test_generation?.maxWallClockMsPerRequest !==
-        undefined
-          ? {
-              maxWallClockMs:
-                finopsBudget.roles.test_generation.maxWallClockMsPerRequest,
-            }
-          : {}),
-        ...(finopsBudget.roles.test_generation?.maxRetriesPerRequest !==
-        undefined
-          ? {
-              maxRetries:
-                finopsBudget.roles.test_generation.maxRetriesPerRequest,
-            }
-          : {}),
-      })
-    : {
-        cacheHit: false,
-        promptArtifact: {
-          jobId: input.jobId,
-          systemPrompt: "",
-          userPrompt: "",
-          responseSchemaName: "logic-judge-disabled",
-          responseSchema: {},
-          hashes: {
-            promptHash: "logic-judge-disabled",
-            schemaHash: "logic-judge-disabled",
-            inputHash: "logic-judge-disabled",
-            cacheKeyDigest: "logic-judge-disabled",
-          },
-          modelBinding: {
-            deployment: logicJudgeClient.deployment,
-            modelRevision: logicJudgeClient.modelRevision,
-            gatewayRelease: logicJudgeClient.gatewayRelease,
-          },
-        },
-        verdict: {
-          schemaVersion: LOGIC_JUDGE_VERDICT_SCHEMA_VERSION,
-          contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
-          promptTemplateVersion: LOGIC_JUDGE_PROMPT_TEMPLATE_VERSION,
-          generatedAt: input.generatedAt,
-          jobId: input.jobId,
-          cacheHit: false,
-          cacheKeyDigest: "logic-judge-disabled",
-          modelDeployment: logicJudgeClient.deployment,
-          modelRevision: logicJudgeClient.modelRevision,
-          gatewayRelease: logicJudgeClient.gatewayRelease,
-          verdict: "accept" as const,
-          findings: [],
-          repairInstructions: [],
-        },
-      };
-  if (logicJudgeResult.gatewayResult !== undefined) {
-    await recordFinopsGatewayAttempt({
-      role: "test_generation",
-      source: "judge_primary",
-      attributionMode: "audit",
-      deployment:
-        logicJudgeResult.gatewayResult.outcome === "success"
-          ? logicJudgeResult.gatewayResult.modelDeployment
-          : logicJudgeClient.deployment,
-      endpointReference: logicJudgeClient.operatorEndpointReference,
-      durationMs: 0,
-      result: logicJudgeResult.gatewayResult,
-    });
-  }
-
-  const a11yJudgeCache = createFileSystemA11yJudgeCache(
-    join(input.outputRoot, "test-intelligence", "replay-cache", "a11y-judge"),
-    { tenantScope },
-  );
-  let a11yJudgeResult: RunA11yJudgeResult | undefined =
-    visualCaptures !== undefined &&
-    visualSidecarRefusal === undefined &&
-    input.llm.bundle?.a11yJudge !== undefined
-      ? await runA11yJudge({
-          jobId: input.jobId,
-          generatedAt: input.generatedAt,
-          intent,
-          captures: visualCaptures,
-          generatedTestCases: generatedList,
-          bundle: input.llm.bundle,
-          cache: a11yJudgeCache,
-          ...(finopsBudget.roles.visual_primary?.maxInputTokensPerRequest !==
-          undefined
-            ? {
-                maxInputTokens:
-                  finopsBudget.roles.visual_primary.maxInputTokensPerRequest,
-              }
-            : {}),
-          ...(finopsBudget.roles.visual_primary?.maxOutputTokensPerRequest !==
-          undefined
-            ? {
-                maxOutputTokens:
-                  finopsBudget.roles.visual_primary.maxOutputTokensPerRequest,
-              }
-            : {}),
-          ...(finopsBudget.roles.visual_primary?.maxWallClockMsPerRequest !==
-          undefined
-            ? {
-                maxWallClockMs:
-                  finopsBudget.roles.visual_primary.maxWallClockMsPerRequest,
-              }
-            : {}),
-          ...(finopsBudget.roles.visual_primary?.maxRetriesPerRequest !==
-          undefined
-            ? {
-                maxRetries:
-                  finopsBudget.roles.visual_primary.maxRetriesPerRequest,
-              }
-            : {}),
-        })
-      : undefined;
-  if (a11yJudgeResult?.gatewayResult !== undefined) {
-    await recordFinopsGatewayAttempt({
-      role: "visual_primary",
-      source: "judge_secondary",
-      attributionMode: "audit",
-      deployment:
-        a11yJudgeResult.gatewayResult.outcome === "success"
-          ? a11yJudgeResult.gatewayResult.modelDeployment
-          : input.llm.bundle!.a11yJudge!.deployment,
-      endpointReference: input.llm.bundle!.a11yJudge!.operatorEndpointReference,
-      durationMs: 0,
-      result: a11yJudgeResult.gatewayResult,
-    });
-  }
-
-  const faithfulnessJudgeCache = createFileSystemFaithfulnessJudgeCache(
-    join(
-      input.outputRoot,
-      "test-intelligence",
-      "replay-cache",
-      "faithfulness-judge",
-    ),
-    { tenantScope },
-  );
-  let faithfulnessJudgeResult: RunFaithfulnessJudgeResult | undefined =
-    visualCaptures !== undefined &&
-    visualSidecarRefusal === undefined &&
-    input.llm.bundle !== undefined
-      ? await runFaithfulnessJudge({
-          jobId: input.jobId,
-          generatedAt: input.generatedAt,
-          captures: visualCaptures,
-          generatedTestCases: generatedList,
-          bundle: input.llm.bundle,
-          cache: faithfulnessJudgeCache,
-          ...(finopsBudget.roles.visual_primary?.maxInputTokensPerRequest !==
-          undefined
-            ? {
-                maxInputTokens:
-                  finopsBudget.roles.visual_primary.maxInputTokensPerRequest,
-              }
-            : {}),
-          ...(finopsBudget.roles.visual_primary?.maxOutputTokensPerRequest !==
-          undefined
-            ? {
-                maxOutputTokens:
-                  finopsBudget.roles.visual_primary.maxOutputTokensPerRequest,
-              }
-            : {}),
-          ...(finopsBudget.roles.visual_primary?.maxWallClockMsPerRequest !==
-          undefined
-            ? {
-                maxWallClockMs:
-                  finopsBudget.roles.visual_primary.maxWallClockMsPerRequest,
-              }
-            : {}),
-          ...(finopsBudget.roles.visual_primary?.maxRetriesPerRequest !==
-          undefined
-            ? {
-                maxRetries:
-                  finopsBudget.roles.visual_primary.maxRetriesPerRequest,
-              }
-            : {}),
-        })
-      : undefined;
-  for (const attempt of faithfulnessJudgeResult?.attempts ?? []) {
-    await recordFinopsGatewayAttempt({
-      role: attempt.role,
-      source: "judge_secondary",
-      attributionMode: "audit",
-      deployment:
-        attempt.result.outcome === "success"
-          ? attempt.result.modelDeployment
-          : attempt.role === "visual_primary"
-            ? input.llm.bundle!.visualPrimary.deployment
-            : input.llm.bundle!.visualFallback.deployment,
-      endpointReference:
-        attempt.role === "visual_primary"
-          ? input.llm.bundle!.visualPrimary.operatorEndpointReference
-          : input.llm.bundle!.visualFallback.operatorEndpointReference,
-      durationMs: 0,
-      result: attempt.result,
-    });
-  }
-  const buildCurrentJudgeConsensus = (
-    repairHistory?: Partial<JudgeConsensusRepairHistory>,
-  ): JudgeConsensusVerdict =>
-    buildJudgeConsensus({
-      jobId: input.jobId,
-      generatedAt: input.generatedAt,
-      panel: [
-        buildLogicJudgeConsensusEntry(logicJudgeResult.verdict),
-        ...(isA11yJudgeAvailableForConsensus(a11yJudgeResult)
-          ? [buildA11yJudgeConsensusEntry(a11yJudgeResult.verdict)]
-          : []),
-        ...(faithfulnessJudgeResult !== undefined
-          ? [
-              buildFaithfulnessJudgeConsensusEntry(
-                faithfulnessJudgeResult.verdict,
-              ),
-            ]
-          : []),
-      ],
-      ...(repairHistory !== undefined ? { repairHistory } : {}),
-    });
-  let judgeConsensusResult = buildCurrentJudgeConsensus();
-  const initialJudgeConsensusResult = judgeConsensusResult;
-  let judgeConsensusDisposition = resolveJudgeConsensusDisposition({
-    verdict: judgeConsensusResult,
-    generatedTestCases: generatedList,
-    logicJudgeDeployment: logicJudgeClient.deployment,
-  });
-  // 7b. Repair loop (Issue #1900, Issue #1928). When the judge panel did
-  //     not unanimously accept the initial output — including the case
-  //     where a judge returned `reject` — consolidate the union of
-  //     `repairInstructions`, re-invoke the generator with the augmented
-  //     prompt, and re-run both judges, bounded by `maxRepairIterations`.
-  //     Issue #1928: live runs showed the Logic-Judge frequently emits
-  //     `reject` for recoverable structured-output schema violations from
-  //     the generator LLM; gating repair on `repair`-only verdicts
-  //     silently disabled the recovery mechanism. The repair driver
-  //     terminates as soon as the panel reaches `accept` (logic-judge
-  //     accepts and the faithfulness-judge either accepts or is not
-  //     run for that iteration) or any judge in a post-iteration
-  //     verdict round returns `reject` (logic-judge `reject` always
-  //     terminates; faithfulness-judge `reject` terminates when it is
-  //     run).
-  //     Per-iteration artifacts (`agent-role-runs/repair_planner_iter_K.json`
-  //     and `agent-role-runs/test_generation_repair_iter_K.json`) are written
-  //     by the loop driver. Token spend is attributed to FinOps role
-  //     `test_generation` (source `generator`) for the regenerator and
-  //     `judge_primary` / `judge_secondary` for the re-runs.
-  const initialJudgeAccepted = isJudgeConsensusAcceptedForRun(
-    judgeConsensusDisposition.disposition,
-  );
-  let repairLoopResult: RepairLoopResult | undefined;
-  if (
-    !initialJudgeAccepted &&
-    judgeConsensusDisposition.disposition === "needs_review"
-  ) {
-    judgeConsensusResult = buildCurrentJudgeConsensus({
-      attempted: false,
-      repairIterationCount: 0,
-      finalOutcome: "needs_review",
-      historicalFindings: initialJudgeConsensusResult.activeFindings,
-      historicalRepairInstructions:
-        initialJudgeConsensusResult.repairInstructions,
-    });
-    judgeConsensusDisposition = resolveJudgeConsensusDisposition({
-      verdict: judgeConsensusResult,
-      generatedTestCases: generatedList,
-      logicJudgeDeployment: logicJudgeClient.deployment,
-    });
-  } else if (!initialJudgeAccepted) {
-    const maxRepairIterations =
-      input.harness?.maxRepairIterations ?? REPAIR_LOOP_DEFAULT_MAX_ITERATIONS;
-    const faithfulnessSnapshot = faithfulnessJudgeResult;
-    const a11ySnapshot = a11yJudgeResult;
-    let latestRepairLogicJudgeResult: RunLogicJudgeResult | undefined;
-    let latestRepairA11yJudgeResult: RunA11yJudgeResult | undefined;
-    // Issue #2016: hand the FinOps generator-side budget to the repair
-    // loop so it can stop *before* the next regeneration would breach
-    // `maxTotalOutputTokens` or `maxAttempts` on the test_generation
-    // role. The initial generator pass has already been recorded by
-    // this point; we hand its cumulative output / attempt count in as
-    // `initialGenerator*` so the guard's projection is honest about
-    // pre-loop spend.
-    const testGenerationRoleBudget = finopsBudget.roles.test_generation;
-    const initialGeneratorAttempts = generationPasses.length;
-    const repairLoopBudgetGuard: RepairLoopBudgetGuard | undefined =
-      testGenerationRoleBudget !== undefined &&
-      (testGenerationRoleBudget.maxTotalOutputTokens !== undefined ||
-        testGenerationRoleBudget.maxAttempts !== undefined)
-        ? {
-            initialGeneratorOutputTokens: capturedLlmOutputTokens,
-            initialGeneratorAttempts,
-            ...(testGenerationRoleBudget.maxTotalOutputTokens !== undefined
-              ? {
-                  maxGeneratorOutputTokens:
-                    testGenerationRoleBudget.maxTotalOutputTokens,
-                }
-              : {}),
-            ...(testGenerationRoleBudget.maxAttempts !== undefined
-              ? { maxGeneratorAttempts: testGenerationRoleBudget.maxAttempts }
-              : {}),
-            ...(testGenerationRoleBudget.maxOutputTokensPerRequest !== undefined
-              ? {
-                  expectedNextOutputTokens:
-                    testGenerationRoleBudget.maxOutputTokensPerRequest,
-                }
-              : {}),
-          }
-        : undefined;
-    repairLoopResult = await runRepairLoop({
-      jobId: input.jobId,
-      runDir: artifactDir,
-      initialList: generatedList,
-      initialLogicVerdict: mergeA11yIntoLogicVerdict(
-        logicJudgeResult.verdict,
-        isA11yJudgeAvailableForConsensus(a11ySnapshot)
-          ? a11ySnapshot.verdict
-          : undefined,
+    generatedList = {
+      ...generatedList,
+      testCases: generatedList.testCases.map((testCase) =>
+        enrichWorkflowTopologyCoverage({
+          testCase,
+          workflowTopology,
+        }),
       ),
-      ...(faithfulnessSnapshot !== undefined
-        ? { initialFaithfulnessVerdict: faithfulnessSnapshot.verdict }
-        : {}),
-      maxRepairIterations,
-      softFailOnIterationError: true,
-      ...(repairLoopBudgetGuard !== undefined
-        ? { budget: repairLoopBudgetGuard }
-        : {}),
-      regenerate: async ({
-        previousList,
-        repairInstructions,
-        truncatedInstructionCount,
-        iteration,
-      }) => {
-        const targetedCaseIds = [
-          ...new Set(
-            repairInstructions
-              .map((instruction) => instruction.testCaseId)
-              .filter((testCaseId) => testCaseId !== "$job"),
-          ),
-        ].sort((left, right) => left.localeCompare(right));
-        const repairContextList =
-          targetedCaseIds.length === 0
-            ? {
-                ...previousList,
-                testCases: previousList.testCases.slice(0, 3),
-              }
-            : {
-                ...previousList,
-                testCases: previousList.testCases.filter((testCase) =>
-                  targetedCaseIds.includes(testCase.id),
-                ),
-              };
-        const repairSuffixSections: readonly CompilePromptSuffixSection[] = [
-          {
-            kind: "repair_instructions",
-            label: `RepairInstructions (iteration ${iteration})`,
-            jsonPayload: repairInstructions,
-          },
-          {
-            kind: "json",
-            label: `PreviousGeneratedTestCasesNeedingRepair (iteration ${iteration})`,
-            jsonPayload: repairContextList,
-          },
-        ];
-        const repairPassResults = await Promise.all(
-          generationPasses.map(async (pass) => {
-            const repairCompiled = compileGenerationPass(
-              pass,
-              repairSuffixSections,
-            );
-            const repairRequest = buildGenerationRequest(repairCompiled);
-            repairRequest.maxRetries = 0;
-            const startedAtRepair = Date.now();
-            const llmResult = await input.llm.client.generate(repairRequest);
-            const llmDurationMs = Date.now() - startedAtRepair;
-            await recordFinopsGatewayAttempt({
-              role: "test_generation",
-              source: "generator",
-              ...(diversityPasses > 1 ? { attemptId: pass.roleRunId } : {}),
-              deployment:
-                llmResult.outcome === "success"
-                  ? llmResult.modelDeployment
-                  : input.llm.client.deployment,
-              endpointReference: input.llm.client.operatorEndpointReference,
-              durationMs: llmDurationMs,
-              result: llmResult,
-            });
-            if (llmResult.outcome !== "success") {
-              throw new ProductionRunnerError({
-                failureClass: "LLM_GATEWAY_FAILED",
-                message: `Repair iteration ${iteration} generator failed: ${llmResult.errorClass}`,
-                retryable: false,
-              });
-            }
-            const repairValidation = validateLlmDraftResponse(
-              llmResult.content,
-            );
-            if (!repairValidation.ok) {
-              throw new ProductionRunnerError({
-                failureClass: "LLM_RESPONSE_INVALID",
-                message: `Repair iteration ${iteration} returned an invalid payload: ${repairValidation.message}`,
-                retryable: false,
-              });
-            }
-            const repairAudit: GeneratedTestCaseAuditMetadata = {
-              jobId: input.jobId,
-              generatedAt: input.generatedAt,
-              contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
-              schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
-              promptTemplateVersion: TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
-              redactionPolicyVersion: REDACTION_POLICY_VERSION,
-              visualSidecarSchemaVersion: VISUAL_SIDECAR_SCHEMA_VERSION,
-              cacheHit: false,
-              cacheKey: repairCompiled.request.hashes.cacheKey,
-              inputHash: repairCompiled.request.hashes.inputHash,
-              promptHash: repairCompiled.request.hashes.promptHash,
-              schemaHash: repairCompiled.request.hashes.schemaHash,
-              truncatedInstructionCount,
-            };
-            const repairCases = repairValidation.value.testCases.map(
-              (draft, index) =>
-                stampGeneratedTestCase({
-                  draft,
-                  jobId: input.jobId,
-                  index,
-                  audit: repairAudit,
-                  intent,
-                  ...(pass.identitySalt !== undefined
-                    ? { identitySalt: pass.identitySalt }
-                    : {}),
-                }),
-            );
-            repairCases.sort((a, b) =>
-              a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
-            );
-            const repairList: GeneratedTestCaseList = {
-              schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
-              jobId: input.jobId,
-              testCases: repairCases,
-            };
-            return {
-              list: stabilizeGeneratedListForAcceptance({
-                list: repairList,
-                model: compiled.artifacts.payload.testDesignModel!,
-                jobId: input.jobId,
-              }),
-              llmResult,
-              llmDurationMs,
-              inputTokens: llmResult.usage.inputTokens ?? 0,
-              outputTokens: llmResult.usage.outputTokens ?? 0,
-              hashes: {
-                inputHash: repairCompiled.request.hashes.inputHash,
-                promptHash: repairCompiled.request.hashes.promptHash,
-                schemaHash: repairCompiled.request.hashes.schemaHash,
-                cacheKey: repairCompiled.request.hashes.cacheKey,
-              },
-            };
-          }),
+    };
+    const baselineGeneratedList = generatedList;
+    const adversarialCriticRoundArtifacts: AdversarialCriticRoundArtifact[] =
+      [];
+    const adversarialCriticProvenanceRounds: Array<{
+      round: number;
+      artifactFilename: string;
+      domain: string;
+      findings: readonly AdversarialCriticFinding[];
+      regeneratedListHash?: string;
+      generatedCaseCount?: number;
+    }> = [];
+    const adversarialCriticSeenKeys = new Set<string>();
+    const adversarialCriticDomain =
+      resolveAdversarialCriticDomainFromList(generatedList);
+    let adversarialCriticStopReason:
+      | "converged_no_new_findings"
+      | "critic_failed"
+      | "max_rounds_reached"
+      | "no_rounds_needed" = "no_rounds_needed";
+    let adversarialCriticTraceArtifact:
+      | AdversarialCriticTraceArtifact
+      | undefined;
+    if (adversarialCriticEnabled) {
+      const adversarialCriticBudgetLimits =
+        resolveAdversarialCriticBudgetLimits(
+          finopsBudget.roles.test_generation,
         );
-        return {
-          list: (() => {
-            const merged = mergeGenerationPassLists(
-              repairPassResults.map((pass) => pass.list),
-            );
-            if (merged.selfConsistencyReport !== undefined) {
-              selfConsistencyReport = merged.selfConsistencyReport;
-            }
-            return merged.list;
-          })(),
-          llmResult: repairPassResults[0]!.llmResult,
-          llmDurationMs: repairPassResults.reduce(
-            (sum, pass) => sum + pass.llmDurationMs,
-            0,
-          ),
-          inputTokens: repairPassResults.reduce(
-            (sum, pass) => sum + pass.inputTokens,
-            0,
-          ),
-          outputTokens: repairPassResults.reduce(
-            (sum, pass) => sum + pass.outputTokens,
-            0,
-          ),
-          hashes: repairPassResults[0]!.hashes,
+      for (let round = 1; round <= ADVERSARIAL_CRITIC_MAX_ROUNDS; round += 1) {
+        const criticRound = await runAdversarialCriticRound({
+          jobId: input.jobId,
+          round,
+          domain: adversarialCriticDomain,
+          client: logicJudgeClient,
+          intent,
+          generatedList,
+          coveragePlan: coveragePlanResult.plan,
+          riskRanking: riskRankingResult.ranking,
+          ...(adversarialCriticBudgetLimits.maxInputTokens !== undefined
+            ? {
+                maxInputTokens: adversarialCriticBudgetLimits.maxInputTokens,
+              }
+            : {}),
+          ...(adversarialCriticBudgetLimits.maxOutputTokens !== undefined
+            ? {
+                maxOutputTokens: adversarialCriticBudgetLimits.maxOutputTokens,
+              }
+            : {}),
+          ...(adversarialCriticBudgetLimits.maxWallClockMs !== undefined
+            ? {
+                maxWallClockMs: adversarialCriticBudgetLimits.maxWallClockMs,
+              }
+            : {}),
+          ...(adversarialCriticBudgetLimits.maxRetries !== undefined
+            ? {
+                maxRetries: adversarialCriticBudgetLimits.maxRetries,
+              }
+            : {}),
+          ...(input.llm.abortSignal !== undefined
+            ? { abortSignal: input.llm.abortSignal }
+            : {}),
+        });
+        await recordFinopsGatewayAttempt({
+          role: "test_generation",
+          source: "adversarial_critic",
+          attributionMode: "audit",
+          deployment:
+            criticRound.gatewayResult.outcome === "success"
+              ? criticRound.gatewayResult.modelDeployment
+              : logicJudgeClient.deployment,
+          endpointReference: logicJudgeClient.operatorEndpointReference,
+          durationMs: criticRound.artifact.llmGateway.durationMs,
+          result: criticRound.gatewayResult,
+        });
+        const uniqueFindings = dedupeAdversarialFindings({
+          findings: criticRound.findings,
+          seenKeys: adversarialCriticSeenKeys,
+        });
+        const normalizedArtifact: AdversarialCriticRoundArtifact = {
+          ...criticRound.artifact,
+          outputs: {
+            findingCount: uniqueFindings.length,
+            dedupeKeys: uniqueFindings.map(computeAdversarialFindingDedupeKey),
+            findings: uniqueFindings,
+          },
         };
-      },
-      runLogicJudge: async ({ list }) => {
-        const repairLogicResult = await runLogicJudge({
+        const roundArtifactFilename = `agent-role-runs/${ADVERSARIAL_CRITIC_ROUND_ARTIFACT_PREFIX}${normalizedArtifact.round}.json`;
+        adversarialCriticRoundArtifacts.push(normalizedArtifact);
+        const provenanceRound: {
+          round: number;
+          artifactFilename: string;
+          domain: string;
+          findings: readonly AdversarialCriticFinding[];
+          regeneratedListHash?: string;
+          generatedCaseCount?: number;
+        } = {
+          round: normalizedArtifact.round,
+          artifactFilename: roundArtifactFilename,
+          domain: normalizedArtifact.domain,
+          findings: normalizedArtifact.outputs.findings,
+        };
+        adversarialCriticProvenanceRounds.push(provenanceRound);
+        await writeAdversarialCriticRoundArtifact({
+          runDir: artifactDir,
+          artifact: normalizedArtifact,
+        });
+        if (normalizedArtifact.llmGateway.outcome === "error") {
+          adversarialCriticStopReason = "critic_failed";
+          break;
+        }
+        if (uniqueFindings.length === 0) {
+          adversarialCriticStopReason = "converged_no_new_findings";
+          break;
+        }
+        for (const finding of uniqueFindings) {
+          adversarialCriticSeenKeys.add(
+            computeAdversarialFindingDedupeKey(finding),
+          );
+        }
+        const regeneration = await regenerateWithSuffixSections({
+          suffixSections: [
+            {
+              kind: "json",
+              label: `AdversarialFindings (round ${round})`,
+              jsonPayload: uniqueFindings,
+            },
+            {
+              kind: "repair_instructions",
+              label: `AdversarialRepairInstructions (round ${round})`,
+              jsonPayload: buildAdversarialRepairInstructions(uniqueFindings),
+            },
+            {
+              kind: "json",
+              label: `NegativeCoverageAccounting (round ${round})`,
+              jsonPayload: computeNegativeCoverageAccounting({
+                baselineList: baselineGeneratedList,
+                finalList: generatedList,
+              }),
+            },
+          ],
+        });
+        generatedList = stabilizeGeneratedListForAcceptance({
+          list: regenerateWithAdversarialCaseCountCeiling({
+            list: regeneration.list,
+            maxCaseCount: baselineGeneratedList.testCases.length,
+          }),
+          model: compiled.artifacts.payload.testDesignModel!,
+          jobId: input.jobId,
+        });
+        if (regeneration.selfConsistencyReport !== undefined) {
+          selfConsistencyReport = regeneration.selfConsistencyReport;
+        }
+        generatedList = {
+          ...generatedList,
+          testCases: generatedList.testCases.map((testCase) =>
+            enrichWorkflowTopologyCoverage({
+              testCase,
+              workflowTopology,
+            }),
+          ),
+        };
+        provenanceRound.regeneratedListHash = sha256Hex(generatedList);
+        provenanceRound.generatedCaseCount = generatedList.testCases.length;
+        if (round === ADVERSARIAL_CRITIC_MAX_ROUNDS) {
+          adversarialCriticStopReason = "max_rounds_reached";
+        }
+      }
+      adversarialCriticTraceArtifact = {
+        schemaVersion: "1.0.0",
+        jobId: input.jobId,
+        domain: adversarialCriticDomain,
+        roundsExecuted: adversarialCriticRoundArtifacts.length,
+        stopReason: adversarialCriticStopReason,
+        negativeCoverage: computeNegativeCoverageAccounting({
+          baselineList: baselineGeneratedList,
+          finalList: generatedList,
+        }),
+        rounds: adversarialCriticRoundArtifacts.map((artifact) => ({
+          round: artifact.round,
+          findingCount: artifact.outputs.findingCount,
+          dedupeKeys: artifact.outputs.dedupeKeys,
+        })),
+      };
+      await writeAdversarialCriticTraceArtifact({
+        runDir: artifactDir,
+        artifact: adversarialCriticTraceArtifact,
+      });
+    }
+    // Issue #2053 — evaluate the `G-NEG-CASE` quality gate against the
+    // resolved policy-profile config (with the optional CLI override
+    // applied on top). The result is persisted into `policy-report.json`
+    // unconditionally so audit can distinguish skip from pass; enforcement
+    // is deferred until after every artifact is sealed so a failure still
+    // leaves a complete evidence bundle on disk.
+    const negativeCaseLiftConfig = resolveNegativeCaseLiftConfig({
+      profileRules: policyProfileRules,
+      override: input.qualityGates?.negativeCaseLift,
+    });
+    const negativeCaseLiftGateResult = evaluateNegativeCaseLiftGate({
+      config: negativeCaseLiftConfig,
+      adversarialCriticEnabled,
+      traceArtifact: adversarialCriticTraceArtifact,
+    });
+    const logicJudgeCache = createFileSystemLogicJudgeCache(
+      join(
+        input.outputRoot,
+        "test-intelligence",
+        "replay-cache",
+        "logic-judge",
+      ),
+      { tenantScope },
+    );
+    const logicJudgeKnownNavigationIds = wireIntent.detectedNavigation.map(
+      (navigation) => navigation.id,
+    );
+    const customerRubricRules =
+      "rules" in customerRubric ? customerRubric.rules : undefined;
+    const logicJudgeCoverageThresholds: LogicJudgeCoverageThresholds = {
+      ...(customerRubricRules?.fieldCoverageRatioMin !== undefined
+        ? { fieldCoverageRatioMin: customerRubricRules.fieldCoverageRatioMin }
+        : {}),
+      ...(customerRubricRules?.actionCoverageRatioMin !== undefined
+        ? { actionCoverageRatioMin: customerRubricRules.actionCoverageRatioMin }
+        : {}),
+    };
+    const logicJudgeTechniqueCoverageMinimum =
+      customerRubricRules?.techniqueCoverageMinimum;
+    let logicJudgeResult: RunLogicJudgeResult = logicJudgeEnabled
+      ? await runLogicJudge({
           jobId: input.jobId,
           generatedAt: input.generatedAt,
           testDesignModel: compiled.artifacts.payload.testDesignModel!,
           coveragePlan: compiled.artifacts.payload.coveragePlan!,
-          generatedTestCases: list,
+          generatedTestCases: generatedList,
           client: logicJudgeClient,
-          // Per-iteration regen produces a unique input hash; bypass the
-          // disk-backed cache and use a fresh in-memory cache so deterministic
-          // repeat-iteration mocks (test fixtures) can still hit byte-stable
-          // verdicts without poisoning the shared logic-judge cache.
-          cache: createMemoryLogicJudgeCache(),
+          cache: logicJudgeCache,
           knownNavigationIds: logicJudgeKnownNavigationIds,
           coverageThresholds: logicJudgeCoverageThresholds,
           ...(logicJudgeTechniqueCoverageMinimum !== undefined
@@ -4757,925 +4327,1522 @@ export const runFigmaToQcTestCases = async (
                   finopsBudget.roles.test_generation.maxRetriesPerRequest,
               }
             : {}),
-        });
-        if (repairLogicResult.gatewayResult !== undefined) {
-          await recordFinopsGatewayAttempt({
-            role: "test_generation",
-            source: "judge_primary",
-            attributionMode: "audit",
-            deployment:
-              repairLogicResult.gatewayResult.outcome === "success"
-                ? repairLogicResult.gatewayResult.modelDeployment
-                : logicJudgeClient.deployment,
-            endpointReference: logicJudgeClient.operatorEndpointReference,
-            durationMs: 0,
-            result: repairLogicResult.gatewayResult,
-          });
-        }
-        const repairA11yResult =
-          visualCaptures !== undefined &&
-          input.llm.bundle?.a11yJudge !== undefined
-            ? await runA11yJudge({
-                jobId: input.jobId,
-                generatedAt: input.generatedAt,
-                intent,
-                captures: visualCaptures,
-                generatedTestCases: list,
-                bundle: input.llm.bundle,
-                cache: createMemoryA11yJudgeCache(),
-                ...(finopsBudget.roles.visual_primary
-                  ?.maxInputTokensPerRequest !== undefined
-                  ? {
-                      maxInputTokens:
-                        finopsBudget.roles.visual_primary
-                          .maxInputTokensPerRequest,
-                    }
-                  : {}),
-                ...(finopsBudget.roles.visual_primary
-                  ?.maxOutputTokensPerRequest !== undefined
-                  ? {
-                      maxOutputTokens:
-                        finopsBudget.roles.visual_primary
-                          .maxOutputTokensPerRequest,
-                    }
-                  : {}),
-                ...(finopsBudget.roles.visual_primary
-                  ?.maxWallClockMsPerRequest !== undefined
-                  ? {
-                      maxWallClockMs:
-                        finopsBudget.roles.visual_primary
-                          .maxWallClockMsPerRequest,
-                    }
-                  : {}),
-                ...(finopsBudget.roles.visual_primary?.maxRetriesPerRequest !==
-                undefined
-                  ? {
-                      maxRetries:
-                        finopsBudget.roles.visual_primary.maxRetriesPerRequest,
-                    }
-                  : {}),
-              })
-            : undefined;
-        if (repairA11yResult?.gatewayResult !== undefined) {
-          await recordFinopsGatewayAttempt({
-            role: "visual_primary",
-            source: "judge_secondary",
-            attributionMode: "audit",
-            deployment:
-              repairA11yResult.gatewayResult.outcome === "success"
-                ? repairA11yResult.gatewayResult.modelDeployment
-                : input.llm.bundle!.a11yJudge!.deployment,
-            endpointReference:
-              input.llm.bundle!.a11yJudge!.operatorEndpointReference,
-            durationMs: 0,
-            result: repairA11yResult.gatewayResult,
-          });
-        }
-        latestRepairLogicJudgeResult = repairLogicResult;
-        latestRepairA11yJudgeResult = repairA11yResult;
-        const usage =
-          repairLogicResult.gatewayResult?.outcome === "success"
-            ? repairLogicResult.gatewayResult.usage
-            : { inputTokens: 0, outputTokens: 0 };
-        const a11yUsage =
-          repairA11yResult?.gatewayResult?.outcome === "success"
-            ? repairA11yResult.gatewayResult.usage
-            : { inputTokens: 0, outputTokens: 0 };
-        return {
-          verdict: mergeA11yIntoLogicVerdict(
-            repairLogicResult.verdict,
-            isA11yJudgeAvailableForConsensus(repairA11yResult)
-              ? repairA11yResult.verdict
-              : undefined,
-          ),
-          inputTokens: (usage.inputTokens ?? 0) + (a11yUsage.inputTokens ?? 0),
-          outputTokens:
-            (usage.outputTokens ?? 0) + (a11yUsage.outputTokens ?? 0),
-        };
-      },
-      ...(faithfulnessSnapshot !== undefined &&
-      visualCaptures !== undefined &&
-      input.llm.bundle !== undefined
-        ? {
-            runFaithfulnessJudge: async ({ list }) => {
-              const repairFaithResult = await runFaithfulnessJudge({
-                jobId: input.jobId,
-                generatedAt: input.generatedAt,
-                captures: visualCaptures,
-                generatedTestCases: list,
-                bundle: input.llm.bundle!,
-                cache: createMemoryFaithfulnessJudgeCache(),
-                ...(finopsBudget.roles.visual_primary
-                  ?.maxInputTokensPerRequest !== undefined
-                  ? {
-                      maxInputTokens:
-                        finopsBudget.roles.visual_primary
-                          .maxInputTokensPerRequest,
-                    }
-                  : {}),
-                ...(finopsBudget.roles.visual_primary
-                  ?.maxOutputTokensPerRequest !== undefined
-                  ? {
-                      maxOutputTokens:
-                        finopsBudget.roles.visual_primary
-                          .maxOutputTokensPerRequest,
-                    }
-                  : {}),
-                ...(finopsBudget.roles.visual_primary
-                  ?.maxWallClockMsPerRequest !== undefined
-                  ? {
-                      maxWallClockMs:
-                        finopsBudget.roles.visual_primary
-                          .maxWallClockMsPerRequest,
-                    }
-                  : {}),
-                ...(finopsBudget.roles.visual_primary?.maxRetriesPerRequest !==
-                undefined
-                  ? {
-                      maxRetries:
-                        finopsBudget.roles.visual_primary.maxRetriesPerRequest,
-                    }
-                  : {}),
-              });
-              for (const attempt of repairFaithResult.attempts) {
-                await recordFinopsGatewayAttempt({
-                  role: attempt.role,
-                  source: "judge_secondary",
-                  attributionMode: "audit",
-                  deployment:
-                    attempt.result.outcome === "success"
-                      ? attempt.result.modelDeployment
-                      : attempt.role === "visual_primary"
-                        ? input.llm.bundle!.visualPrimary.deployment
-                        : input.llm.bundle!.visualFallback.deployment,
-                  endpointReference:
-                    attempt.role === "visual_primary"
-                      ? input.llm.bundle!.visualPrimary.operatorEndpointReference
-                      : input.llm.bundle!.visualFallback
-                          .operatorEndpointReference,
-                  durationMs: 0,
-                  result: attempt.result,
-                });
-              }
-              const totalUsage = repairFaithResult.attempts.reduce(
-                (acc, attempt) => {
-                  if (attempt.result.outcome === "success") {
-                    acc.inputTokens += attempt.result.usage.inputTokens ?? 0;
-                    acc.outputTokens += attempt.result.usage.outputTokens ?? 0;
-                  }
-                  return acc;
-                },
-                { inputTokens: 0, outputTokens: 0 },
-              );
-              return {
-                verdict: repairFaithResult.verdict,
-                inputTokens: totalUsage.inputTokens,
-                outputTokens: totalUsage.outputTokens,
-              };
+        })
+      : {
+          cacheHit: false,
+          promptArtifact: {
+            jobId: input.jobId,
+            systemPrompt: "",
+            userPrompt: "",
+            responseSchemaName: "logic-judge-disabled",
+            responseSchema: {},
+            hashes: {
+              promptHash: "logic-judge-disabled",
+              schemaHash: "logic-judge-disabled",
+              inputHash: "logic-judge-disabled",
+              cacheKeyDigest: "logic-judge-disabled",
             },
-          }
-        : {}),
-      onIterationComplete: (record) => {
-        emit({
-          phase: "repair_loop_iteration",
-          timestamp: monotonicMs(),
-          details: {
-            iteration: record.iteration,
-            logicVerdict: record.logicVerdict,
-            faithfulnessVerdict: record.faithfulnessVerdict,
-            generatedCaseCount: record.generatedCaseCount,
-            inputTokens: record.inputTokens,
-            outputTokens: record.outputTokens,
+            modelBinding: {
+              deployment: logicJudgeClient.deployment,
+              modelRevision: logicJudgeClient.modelRevision,
+              gatewayRelease: logicJudgeClient.gatewayRelease,
+            },
           },
-        });
-      },
-    });
-    generatedList = repairLoopResult.finalList;
-    if (latestRepairLogicJudgeResult !== undefined) {
-      logicJudgeResult = latestRepairLogicJudgeResult;
-    } else {
-      logicJudgeResult = {
-        ...logicJudgeResult,
-        verdict: repairLoopResult.finalLogicVerdict,
-      };
+          verdict: {
+            schemaVersion: LOGIC_JUDGE_VERDICT_SCHEMA_VERSION,
+            contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+            promptTemplateVersion: LOGIC_JUDGE_PROMPT_TEMPLATE_VERSION,
+            generatedAt: input.generatedAt,
+            jobId: input.jobId,
+            cacheHit: false,
+            cacheKeyDigest: "logic-judge-disabled",
+            modelDeployment: logicJudgeClient.deployment,
+            modelRevision: logicJudgeClient.modelRevision,
+            gatewayRelease: logicJudgeClient.gatewayRelease,
+            verdict: "accept" as const,
+            findings: [],
+            repairInstructions: [],
+          },
+        };
+    if (logicJudgeResult.gatewayResult !== undefined) {
+      await recordFinopsGatewayAttempt({
+        role: "test_generation",
+        source: "judge_primary",
+        attributionMode: "audit",
+        deployment:
+          logicJudgeResult.gatewayResult.outcome === "success"
+            ? logicJudgeResult.gatewayResult.modelDeployment
+            : logicJudgeClient.deployment,
+        endpointReference: logicJudgeClient.operatorEndpointReference,
+        durationMs: 0,
+        result: logicJudgeResult.gatewayResult,
+      });
     }
-    if (
-      repairLoopResult.finalFaithfulnessVerdict !== undefined &&
-      faithfulnessJudgeResult !== undefined
-    ) {
-      faithfulnessJudgeResult = {
-        ...faithfulnessJudgeResult,
-        verdict: repairLoopResult.finalFaithfulnessVerdict,
-      };
+
+    const a11yJudgeCache = createFileSystemA11yJudgeCache(
+      join(input.outputRoot, "test-intelligence", "replay-cache", "a11y-judge"),
+      { tenantScope },
+    );
+    let a11yJudgeResult: RunA11yJudgeResult | undefined =
+      visualCaptures !== undefined &&
+      visualSidecarRefusal === undefined &&
+      input.llm.bundle?.a11yJudge !== undefined
+        ? await runA11yJudge({
+            jobId: input.jobId,
+            generatedAt: input.generatedAt,
+            intent,
+            captures: visualCaptures,
+            generatedTestCases: generatedList,
+            bundle: input.llm.bundle,
+            cache: a11yJudgeCache,
+            ...(finopsBudget.roles.visual_primary?.maxInputTokensPerRequest !==
+            undefined
+              ? {
+                  maxInputTokens:
+                    finopsBudget.roles.visual_primary.maxInputTokensPerRequest,
+                }
+              : {}),
+            ...(finopsBudget.roles.visual_primary?.maxOutputTokensPerRequest !==
+            undefined
+              ? {
+                  maxOutputTokens:
+                    finopsBudget.roles.visual_primary.maxOutputTokensPerRequest,
+                }
+              : {}),
+            ...(finopsBudget.roles.visual_primary?.maxWallClockMsPerRequest !==
+            undefined
+              ? {
+                  maxWallClockMs:
+                    finopsBudget.roles.visual_primary.maxWallClockMsPerRequest,
+                }
+              : {}),
+            ...(finopsBudget.roles.visual_primary?.maxRetriesPerRequest !==
+            undefined
+              ? {
+                  maxRetries:
+                    finopsBudget.roles.visual_primary.maxRetriesPerRequest,
+                }
+              : {}),
+          })
+        : undefined;
+    if (a11yJudgeResult?.gatewayResult !== undefined) {
+      await recordFinopsGatewayAttempt({
+        role: "visual_primary",
+        source: "judge_secondary",
+        attributionMode: "audit",
+        deployment:
+          a11yJudgeResult.gatewayResult.outcome === "success"
+            ? a11yJudgeResult.gatewayResult.modelDeployment
+            : input.llm.bundle!.a11yJudge!.deployment,
+        endpointReference:
+          input.llm.bundle!.a11yJudge!.operatorEndpointReference,
+        durationMs: 0,
+        result: a11yJudgeResult.gatewayResult,
+      });
     }
-    if (latestRepairA11yJudgeResult !== undefined) {
-      a11yJudgeResult = latestRepairA11yJudgeResult;
+
+    const faithfulnessJudgeCache = createFileSystemFaithfulnessJudgeCache(
+      join(
+        input.outputRoot,
+        "test-intelligence",
+        "replay-cache",
+        "faithfulness-judge",
+      ),
+      { tenantScope },
+    );
+    let faithfulnessJudgeResult: RunFaithfulnessJudgeResult | undefined =
+      visualCaptures !== undefined &&
+      visualSidecarRefusal === undefined &&
+      input.llm.bundle !== undefined
+        ? await runFaithfulnessJudge({
+            jobId: input.jobId,
+            generatedAt: input.generatedAt,
+            captures: visualCaptures,
+            generatedTestCases: generatedList,
+            bundle: input.llm.bundle,
+            cache: faithfulnessJudgeCache,
+            ...(finopsBudget.roles.visual_primary?.maxInputTokensPerRequest !==
+            undefined
+              ? {
+                  maxInputTokens:
+                    finopsBudget.roles.visual_primary.maxInputTokensPerRequest,
+                }
+              : {}),
+            ...(finopsBudget.roles.visual_primary?.maxOutputTokensPerRequest !==
+            undefined
+              ? {
+                  maxOutputTokens:
+                    finopsBudget.roles.visual_primary.maxOutputTokensPerRequest,
+                }
+              : {}),
+            ...(finopsBudget.roles.visual_primary?.maxWallClockMsPerRequest !==
+            undefined
+              ? {
+                  maxWallClockMs:
+                    finopsBudget.roles.visual_primary.maxWallClockMsPerRequest,
+                }
+              : {}),
+            ...(finopsBudget.roles.visual_primary?.maxRetriesPerRequest !==
+            undefined
+              ? {
+                  maxRetries:
+                    finopsBudget.roles.visual_primary.maxRetriesPerRequest,
+                }
+              : {}),
+          })
+        : undefined;
+    for (const attempt of faithfulnessJudgeResult?.attempts ?? []) {
+      await recordFinopsGatewayAttempt({
+        role: attempt.role,
+        source: "judge_secondary",
+        attributionMode: "audit",
+        deployment:
+          attempt.result.outcome === "success"
+            ? attempt.result.modelDeployment
+            : attempt.role === "visual_primary"
+              ? input.llm.bundle!.visualPrimary.deployment
+              : input.llm.bundle!.visualFallback.deployment,
+        endpointReference:
+          attempt.role === "visual_primary"
+            ? input.llm.bundle!.visualPrimary.operatorEndpointReference
+            : input.llm.bundle!.visualFallback.operatorEndpointReference,
+        durationMs: 0,
+        result: attempt.result,
+      });
     }
-    judgeConsensusResult = buildCurrentJudgeConsensus({
-      attempted: true,
-      repairIterationCount: repairLoopResult.repairIterationCount,
-      finalOutcome: repairLoopResult.outcome,
-      historicalFindings: initialJudgeConsensusResult.activeFindings,
-      historicalRepairInstructions:
-        initialJudgeConsensusResult.repairInstructions,
-    });
-    judgeConsensusDisposition = resolveJudgeConsensusDisposition({
+    const buildCurrentJudgeConsensus = (
+      repairHistory?: Partial<JudgeConsensusRepairHistory>,
+    ): JudgeConsensusVerdict =>
+      buildJudgeConsensus({
+        jobId: input.jobId,
+        generatedAt: input.generatedAt,
+        panel: [
+          buildLogicJudgeConsensusEntry(logicJudgeResult.verdict),
+          ...(isA11yJudgeAvailableForConsensus(a11yJudgeResult)
+            ? [buildA11yJudgeConsensusEntry(a11yJudgeResult.verdict)]
+            : []),
+          ...(faithfulnessJudgeResult !== undefined
+            ? [
+                buildFaithfulnessJudgeConsensusEntry(
+                  faithfulnessJudgeResult.verdict,
+                ),
+              ]
+            : []),
+        ],
+        ...(repairHistory !== undefined ? { repairHistory } : {}),
+      });
+    let judgeConsensusResult = buildCurrentJudgeConsensus();
+    const initialJudgeConsensusResult = judgeConsensusResult;
+    let judgeConsensusDisposition = resolveJudgeConsensusDisposition({
       verdict: judgeConsensusResult,
       generatedTestCases: generatedList,
       logicJudgeDeployment: logicJudgeClient.deployment,
     });
-  }
-
-  const judgeAccepted = isJudgeConsensusAcceptedForRun(
-    judgeConsensusDisposition.disposition,
-  );
-
-  if (harnessMode !== "off" && judgeAccepted && harnessSummary === undefined) {
-    const harnessAttemptResult = buildHarnessAttemptResult({
-      hashes: compiled.request.hashes,
-      judgeAccepted,
-      errorClass: "none",
-      llmDurationMs: capturedLlmDurationMs,
-      llmInputTokens: capturedLlmInputTokens,
-      llmOutputTokens: capturedLlmOutputTokens,
-    });
-    const harnessRunResult: RunAgentHarnessStepResult =
-      await runAgentHarnessStep({
-        runDir: artifactDir,
-        jobId: input.jobId,
-        role: "generator",
-        roleStepId: harnessRoleStepId,
-        testDepth: harnessTestDepth,
-        executeAttempt: async () => harnessAttemptResult,
-      });
-    harnessArtifactPath = harnessRunResult.artifactPath;
-    harnessSummary = {
-      mode: harnessMode,
-      outcome: harnessRunResult.outcome,
-      mappedJobStatus: harnessRunResult.mappedJobStatus,
-      errorClass: harnessRunResult.artifact.errorClass,
-      attemptsConsumed: harnessRunResult.artifact.attemptsConsumed,
-      maxAttemptsAllowed: harnessRunResult.artifact.maxAttemptsAllowed,
-      artifactPath: harnessRunResult.artifactPath,
-    };
-  }
-
-  if (harnessMode !== "off" && !judgeAccepted) {
-    // Issue #1939: when the repair loop aborts because two consecutive
-    // iterations produced the same verdict signature, surface that as
-    // `convergence_stalled` on the harness summary instead of the
-    // generic `judge_rejection` so operators can distinguish "the
-    // judges keep rejecting" from "the LLM is stuck on the same error
-    // class".
-    // Issue #2016: budget_exhausted is also a "stop without judge accept"
-    // outcome — surface it as the same convergence_stalled errorClass on
-    // the harness summary so the harness state machine recognises the
-    // stop-condition lane and does not treat it as a generic rejection.
-    const stalled =
-      repairLoopResult?.outcome === "convergence_stalled" ||
-      repairLoopResult?.outcome === "budget_exhausted";
-    const harnessAttemptResult = buildHarnessAttemptResult({
-      hashes: compiled.request.hashes,
-      judgeAccepted,
-      errorClass: stalled ? "convergence_stalled" : "judge_rejection",
-      llmDurationMs: capturedLlmDurationMs,
-      llmInputTokens: capturedLlmInputTokens,
-      llmOutputTokens: capturedLlmOutputTokens,
-    });
-    const harnessRunResult: RunAgentHarnessStepResult =
-      await runAgentHarnessStep({
-        runDir: artifactDir,
-        jobId: input.jobId,
-        role: "generator",
-        roleStepId: harnessRoleStepId,
-        testDepth: harnessTestDepth,
-        executeAttempt: async () => harnessAttemptResult,
-      });
-    harnessArtifactPath = harnessRunResult.artifactPath;
-    harnessSummary = {
-      mode: harnessMode,
-      outcome: harnessRunResult.outcome,
-      mappedJobStatus: harnessRunResult.mappedJobStatus,
-      errorClass: harnessRunResult.artifact.errorClass,
-      attemptsConsumed: harnessRunResult.artifact.attemptsConsumed,
-      maxAttemptsAllowed: harnessRunResult.artifact.maxAttemptsAllowed,
-      artifactPath: harnessRunResult.artifactPath,
-    };
-  }
-
-  // 8. Validation pipeline.
-  emit({ phase: "validation_started", timestamp: monotonicMs() });
-  const policyOverridesForValidation:
-    | ReadonlyArray<{
-        ruleId: string;
-        severity: "error" | "warning";
-        threshold?: number;
-      }>
-    | undefined =
-    canonicalCustomerProfile?.policyOverrides !== undefined &&
-    canonicalCustomerProfile.policyOverrides.some(
-      (override) => override.severity !== "info",
-    )
-      ? canonicalCustomerProfile.policyOverrides.filter(
-          (
-            override,
-          ): override is {
-            ruleId: string;
-            severity: "error" | "warning";
-            threshold?: number;
-          } => override.severity !== "info",
-        )
-      : undefined;
-  const validation = runValidationPipeline({
-    jobId: input.jobId,
-    generatedAt: input.generatedAt,
-    list: generatedList,
-    intent,
-    coveragePlan: coveragePlanResult.plan,
-    workflowTopology,
-    ...(policyOverridesForValidation !== undefined
-      ? { policyOverrides: policyOverridesForValidation }
-      : {}),
-    ...(faithfulnessJudgeResult !== undefined
-      ? { faithfulnessVerdict: faithfulnessJudgeResult.verdict }
-      : {}),
-    ...(a11yJudgeResult !== undefined
-      ? { a11yVerdict: a11yJudgeResult.verdict }
-      : {}),
-    ...("rules" in customerRubric ? { profile: customerRubric } : {}),
-    ...(promptVisualBatch !== undefined ? { visual: promptVisualBatch } : {}),
-    ...(promptVisualBatch !== undefined
-      ? {
-          primaryVisualDeployment: "llama-4-maverick-vision" as const,
-        }
-      : {}),
-    ...(visualSidecarRefusal !== undefined ? { visualSidecarRefusal } : {}),
-    untrustedContentReport: normalizedUntrusted.report,
-    activeModelBindings,
-  });
-  const blocked = validation.blocked || !judgeAccepted;
-  emit({
-    phase: "validation_complete",
-    timestamp: monotonicMs(),
-    details: {
-      blocked,
-      errorCount: validation.validation.errorCount,
-      warningCount: validation.validation.warningCount,
-      cases: validation.generatedTestCases.testCases.length,
-    },
-  });
-  emit({
-    phase: "policy_decision",
-    timestamp: monotonicMs(),
-    details: {
-      blocked,
-      profileId: validation.policy.policyProfileId,
-      approved: validation.policy.approvedCount,
-      blockedCount: validation.policy.blockedCount,
-      needsReview: validation.policy.needsReviewCount,
-    },
-  });
-
-  // 9. Persist artifacts.
-  emit({ phase: "export_started", timestamp: monotonicMs() });
-  await mkdir(artifactDir, { recursive: true });
-  const intentPath = join(artifactDir, "business-intent-ir.json");
-  const compiledPromptPath = join(artifactDir, "compiled-prompt.json");
-  const customerEvalRubricPath =
-    customerEvalRubric === undefined
-      ? undefined
-      : join(artifactDir, "customer-eval-rubric.json");
-  const tenantBundleResolvedPath =
-    resolvedTenantBundle === undefined
-      ? undefined
-      : join(artifactDir, TENANT_BUNDLE_RESOLVED_ARTIFACT_FILENAME);
-  const logicJudgeCompiledPromptPath = join(
-    artifactDir,
-    LOGIC_JUDGE_COMPILED_PROMPT_ARTIFACT_FILENAME,
-  );
-  const logicJudgeVerdictPath = join(
-    artifactDir,
-    "agent-role-runs",
-    LOGIC_JUDGE_VERDICT_ARTIFACT_FILENAME,
-  );
-  const judgeConsensusPath = join(
-    artifactDir,
-    JUDGE_CONSENSUS_ARTIFACT_FILENAME,
-  );
-  const runQualityPath = join(artifactDir, RUN_QUALITY_ARTIFACT_FILENAME);
-  const selfConsistencyReportPath =
-    selfConsistencyReport === undefined
-      ? undefined
-      : join(artifactDir, SELF_CONSISTENCY_REPORT_ARTIFACT_FILENAME);
-  const faithfulnessJudgeCompiledPromptPath =
-    faithfulnessJudgeResult === undefined
-      ? undefined
-      : join(artifactDir, FAITHFULNESS_JUDGE_COMPILED_PROMPT_ARTIFACT_FILENAME);
-  const faithfulnessJudgeVerdictPath =
-    faithfulnessJudgeResult === undefined
-      ? undefined
-      : join(
-          artifactDir,
-          "agent-role-runs",
-          FAITHFULNESS_VERDICT_ARTIFACT_FILENAME,
-        );
-  // Issue #2066 — per-run tier report. Computed only when the verdict
-  // carries `stepVerdicts`; legacy verdicts persisted under schema 1.0.0
-  // skip this artifact (the gate falls back to the case-level score).
-  const faithfulnessTierReportArtifact =
-    faithfulnessJudgeResult === undefined
-      ? undefined
-      : resolveFaithfulnessTierReport(
-          faithfulnessJudgeResult.verdict,
-          validation.generatedTestCases,
-          policyOverridesForValidation,
-        );
-  const faithfulnessTierReportPath =
-    faithfulnessTierReportArtifact === undefined
-      ? undefined
-      : join(artifactDir, FAITHFULNESS_TIER_REPORT_ARTIFACT_FILENAME);
-  const confidenceCalibration = await loadCaseConfidenceCalibration({
-    datasetRoot: input.outputRoot,
-    generatedAt: input.generatedAt,
-    currentRunId: basename(artifactDir),
-  });
-  const calibratedGeneratedTestCases = applyCaseConfidenceCalibration({
-    list: validation.generatedTestCases,
-    curve: confidenceCalibration.curve,
-    judgeConsensus: judgeConsensusResult,
-    ...(selfConsistencyReport !== undefined ? { selfConsistencyReport } : {}),
-    ...(validation.testDataOracleReport !== undefined
-      ? { oracleReport: validation.testDataOracleReport }
-      : {}),
-    ...(faithfulnessTierReportArtifact !== undefined
-      ? { faithfulnessTierReport: faithfulnessTierReportArtifact }
-      : {}),
-    acceptedAnchors: confidenceCalibration.acceptedAnchors,
-    excludedRunId: basename(artifactDir),
-  });
-  const confidenceSummary = summarizeCaseConfidenceDistribution(
-    calibratedGeneratedTestCases,
-  );
-  // Issue #2068 — per-run technique-quota report. Built upstream by the
-  // validation pipeline when a CoveragePlan is supplied so reviewers
-  // can audit the tier-elastic quota path even when the gate passes.
-  const techniqueQuotaReportArtifact = validation.techniqueQuota;
-  const techniqueQuotaReportPath =
-    techniqueQuotaReportArtifact === undefined
-      ? undefined
-      : join(artifactDir, TECHNIQUE_QUOTA_REPORT_ARTIFACT_FILENAME);
-  const a11yJudgeVerdictPath =
-    a11yJudgeResult === undefined
-      ? undefined
-      : join(
-          artifactDir,
-          "agent-role-runs",
-          A11Y_JUDGE_VERDICT_ARTIFACT_FILENAME,
-        );
-  const generatedPath = join(
-    artifactDir,
-    GENERATED_TESTCASES_ARTIFACT_FILENAME,
-  );
-  const validationPath = join(
-    artifactDir,
-    TEST_CASE_VALIDATION_REPORT_ARTIFACT_FILENAME,
-  );
-  const testDataOracleReportPath =
-    validation.testDataOracleReport === undefined
-      ? undefined
-      : join(artifactDir, TEST_DATA_ORACLE_REPORT_ARTIFACT_FILENAME);
-  const visualSidecarValidationPath =
-    validation.visual === undefined
-      ? undefined
-      : join(artifactDir, VISUAL_SIDECAR_VALIDATION_REPORT_ARTIFACT_FILENAME);
-  const policyPath = join(
-    artifactDir,
-    TEST_CASE_POLICY_REPORT_ARTIFACT_FILENAME,
-  );
-  const workflowTopologyPath = join(
-    artifactDir,
-    WORKFLOW_TOPOLOGY_ARTIFACT_FILENAME,
-  );
-  const coveragePlanPath = join(artifactDir, "coverage-plan.json");
-  const riskRankingPath = join(artifactDir, RISK_RANKING_ARTIFACT_FILENAME);
-  const adversarialCriticTracePath = join(
-    artifactDir,
-    ADVERSARIAL_CRITIC_TRACE_ARTIFACT_FILENAME,
-  );
-  const coveragePath = join(
-    artifactDir,
-    TEST_CASE_COVERAGE_REPORT_ARTIFACT_FILENAME,
-  );
-  const finopsOutcomeOverride = deriveFinopsOutcomeFromValidation(
-    validation,
-    judgeAccepted,
-  );
-  const explicitWallClockOverrideMs =
-    finopsBudget.roles.test_generation?.maxTotalWallClockMs;
-  const resolvedWallClockBudget = resolveTestGenerationWallClockBudget({
-    caseCount: generatedList.testCases.length,
-    judgePanelSize: judgeConsensusResult.panel.length,
-    adversarialRounds: adversarialCriticRoundArtifacts.length,
-    visualSidecarEnabled: visualSidecarResult !== undefined,
-    ...(explicitWallClockOverrideMs !== undefined
-      ? { explicitOverrideMs: explicitWallClockOverrideMs }
-      : {}),
-    ...(policyProfileRules !== undefined
-      ? { profileRules: policyProfileRules }
-      : {}),
-  });
-  const resolvedFinopsBudget = cloneFinOpsBudgetEnvelope(finopsBudget);
-  if (resolvedFinopsBudget.roles.test_generation !== undefined) {
-    resolvedFinopsBudget.roles.test_generation.maxTotalWallClockMs =
-      resolvedWallClockBudget.resolvedMs;
-  }
-  const finopsReport = buildFinOpsBudgetReport({
-    jobId: input.jobId,
-    generatedAt: input.generatedAt,
-    budget: resolvedFinopsBudget,
-    recorder: finopsRecorder,
-    resolvedBudget: {
-      testGenerationWallClock: resolvedWallClockBudget,
-    },
-    figmaPayload: {
-      resolvedCapBytes: figmaPayloadCap,
-      actualBytes: figmaPayloadActualBytes,
-      defaultCapBytes: MAX_FIGMA_PAYLOAD_BYTES,
-      ceilingBytes: MAX_FIGMA_PAYLOAD_BYTES_CEILING,
-      overrideApplied: input.maxFigmaPayloadBytes !== undefined,
-    },
-    ...(finopsOutcomeOverride !== undefined
-      ? { outcomeOverride: finopsOutcomeOverride }
-      : {}),
-  });
-  const runQualityArtifact = buildRunQualityArtifact({
-    jobId: input.jobId,
-    generatedAt: input.generatedAt,
-    blocked,
-    judgeAccepted,
-    validation,
-    judgeConsensus: judgeConsensusResult,
-    finopsReport,
-    ...(selfConsistencyReport !== undefined ? { selfConsistencyReport } : {}),
-    ...(visualSidecarResult !== undefined ? { visualSidecarResult } : {}),
-  });
-  const finopsWritten = await writeFinOpsBudgetReport({
-    runDir: artifactDir,
-    report: finopsReport,
-  });
-  const finopsTimeSeriesStorePath = defaultFinOpsTimeSeriesStorePath(
-    input.outputRoot,
-  );
-  await appendFinOpsTimeSeriesRecordOnDisk({
-    storePath: finopsTimeSeriesStorePath,
-    record: buildFinOpsTimeSeriesRecord({
-      report: finopsReport,
-      fixtureId: resolveFinOpsFixtureId({ fileKey: figmaFile.fileKey }),
-    }),
-    retentionDays: 30,
-  });
-  const agentParticipationArtifact = buildAgentParticipationArtifact({
-    jobId: input.jobId,
-    generatedAt: input.generatedAt,
-    roles: buildAgentParticipationEntries({
-      request: input,
-      artifactDir,
-      finopsReport,
-      generationCacheHit,
-      logicJudgeEnabled,
-      logicJudgeGatewayResult: logicJudgeResult.gatewayResult,
-      coveragePlannerGatewayResult: coveragePlanResult.gatewayResult,
-      riskRankerGatewayResult: riskRankingResult.gatewayResult,
-      visualSidecarResult,
-      visualSidecarSkippedReason,
-      a11yJudgeResult,
-      visualSidecarRefusal,
-      repairLoopResult,
-      adversarialCriticRounds: adversarialCriticRoundArtifacts,
-      artifactPaths: {
-        coveragePlan: coveragePlanPath,
-        workflowTopology: workflowTopologyPath,
-        riskRanking: riskRankingPath,
-        logicJudgeVerdict: logicJudgeVerdictPath,
-        judgeConsensus: judgeConsensusPath,
-        ...(adversarialCriticTraceArtifact !== undefined
-          ? { adversarialCriticTrace: adversarialCriticTracePath }
-          : {}),
-        ...(visualSidecarArtifactPath !== undefined
-          ? { visualSidecarResult: visualSidecarArtifactPath }
-          : {}),
-        ...(a11yJudgeVerdictPath !== undefined
-          ? { a11yJudgeVerdict: a11yJudgeVerdictPath }
-          : {}),
-        agentRoleRun: join(
-          artifactDir,
-          "agent-role-runs",
-          "test_generation.json",
-        ),
-      },
-    }),
-  });
-  const agentParticipationWritePromise = writeAgentParticipationArtifact({
-    artifact: agentParticipationArtifact,
-    destinationDir: artifactDir,
-  });
-  const intentBytes = encodeCanonicalJson(intent);
-  const compiledPromptBytes = encodeCanonicalJson(compiled.artifacts);
-  const customerEvalRubricBytes =
-    customerEvalRubric === undefined
-      ? undefined
-      : encodeCanonicalJson({
-          schemaVersion: "1.0.0",
-          jobId: input.jobId,
-          generatedAt: input.generatedAt,
-          source: "customer-eval-markdown",
-          bodyMarkdown: customerEvalRubric.bodyMarkdown,
-          bodyPlain: customerEvalRubric.bodyPlain,
-          markdownContentHash: customerEvalRubric.markdownContentHash,
-          plainContentHash: customerEvalRubric.plainContentHash,
-        });
-  const tenantBundleResolvedBytes =
-    resolvedTenantBundle === undefined
-      ? undefined
-      : new TextEncoder().encode(
-          serializeResolvedTenantBundle(resolvedTenantBundle),
-        );
-  const logicJudgeCompiledPromptBytes = encodeCanonicalJson(
-    logicJudgeResult.promptArtifact,
-  );
-  const logicJudgeVerdictBytes = encodeCanonicalJson(logicJudgeResult.verdict);
-  const judgeConsensusBytes = encodeCanonicalJson(judgeConsensusResult);
-  const runQualityBytes = encodeCanonicalJson(runQualityArtifact);
-  const faithfulnessJudgeCompiledPromptBytes =
-    faithfulnessJudgeResult === undefined
-      ? undefined
-      : encodeCanonicalJson(faithfulnessJudgeResult.promptArtifact);
-  const faithfulnessJudgeVerdictBytes =
-    faithfulnessJudgeResult === undefined
-      ? undefined
-      : encodeCanonicalJson(faithfulnessJudgeResult.verdict);
-  const faithfulnessTierReportBytes =
-    faithfulnessTierReportArtifact === undefined
-      ? undefined
-      : encodeCanonicalJson(faithfulnessTierReportArtifact);
-  const techniqueQuotaReportBytes =
-    techniqueQuotaReportArtifact === undefined
-      ? undefined
-      : encodeCanonicalJson(techniqueQuotaReportArtifact);
-  const a11yJudgeVerdictBytes =
-    a11yJudgeResult === undefined
-      ? undefined
-      : encodeCanonicalJson(a11yJudgeResult.verdict);
-  const generatedBytes = encodeCanonicalJson(calibratedGeneratedTestCases);
-  const validationBytes = encodeCanonicalJson(validation.validation);
-  const testDataOracleReportBytes =
-    validation.testDataOracleReport === undefined
-      ? undefined
-      : encodeCanonicalJson(validation.testDataOracleReport);
-  const visualSidecarValidationBytes =
-    validation.visual === undefined
-      ? undefined
-      : encodeCanonicalJson(validation.visual);
-  const coverageBytes = encodeCanonicalJson(validation.coverage);
-  const agentRoleRunPromise = writeAgentRoleRunArtifact({
-    runDir: artifactDir,
-    jobId: input.jobId,
-    roleRunId: "test_generation",
-    roleStepId: "test_generation",
-    hashes: compiled.request.hashes,
-  });
-  const generatorPassRunPromises = generationExecutions
-    .filter((execution) => execution.pass.roleRunId !== "test_generation")
-    .map((execution) =>
-      writeAgentRoleRunArtifact({
-        runDir: artifactDir,
-        jobId: input.jobId,
-        roleRunId: execution.pass.roleRunId,
-        roleStepId: execution.pass.roleRunId,
-        hashes: execution.compiled.request.hashes,
-      }),
+    // 7b. Repair loop (Issue #1900, Issue #1928). When the judge panel did
+    //     not unanimously accept the initial output — including the case
+    //     where a judge returned `reject` — consolidate the union of
+    //     `repairInstructions`, re-invoke the generator with the augmented
+    //     prompt, and re-run both judges, bounded by `maxRepairIterations`.
+    //     Issue #1928: live runs showed the Logic-Judge frequently emits
+    //     `reject` for recoverable structured-output schema violations from
+    //     the generator LLM; gating repair on `repair`-only verdicts
+    //     silently disabled the recovery mechanism. The repair driver
+    //     terminates as soon as the panel reaches `accept` (logic-judge
+    //     accepts and the faithfulness-judge either accepts or is not
+    //     run for that iteration) or any judge in a post-iteration
+    //     verdict round returns `reject` (logic-judge `reject` always
+    //     terminates; faithfulness-judge `reject` terminates when it is
+    //     run).
+    //     Per-iteration artifacts (`agent-role-runs/repair_planner_iter_K.json`
+    //     and `agent-role-runs/test_generation_repair_iter_K.json`) are written
+    //     by the loop driver. Token spend is attributed to FinOps role
+    //     `test_generation` (source `generator`) for the regenerator and
+    //     `judge_primary` / `judge_secondary` for the re-runs.
+    const initialJudgeAccepted = isJudgeConsensusAcceptedForRun(
+      judgeConsensusDisposition.disposition,
     );
-  const contextBudgetReportPath =
-    compiled.contextBudgetReport === undefined
-      ? undefined
-      : join(
-          artifactDir,
-          CONTEXT_BUDGET_ARTIFACT_DIRECTORY,
-          `${compiled.contextBudgetReport.roleStepId}.json`,
-        );
-  const contextBudgetReportBytes =
-    compiled.contextBudgetReport === undefined
-      ? undefined
-      : encodeCanonicalJson(compiled.contextBudgetReport);
-  const judgeConsensusWritePromise = writeJudgeConsensusArtifact({
-    runDir: artifactDir,
-    artifact: judgeConsensusResult,
-  });
-  const selfConsistencyWritePromise =
-    selfConsistencyReport === undefined
-      ? undefined
-      : writeSelfConsistencyReport({
+    let repairLoopResult: RepairLoopResult | undefined;
+    if (
+      !initialJudgeAccepted &&
+      judgeConsensusDisposition.disposition === "needs_review"
+    ) {
+      judgeConsensusResult = buildCurrentJudgeConsensus({
+        attempted: false,
+        repairIterationCount: 0,
+        finalOutcome: "needs_review",
+        historicalFindings: initialJudgeConsensusResult.activeFindings,
+        historicalRepairInstructions:
+          initialJudgeConsensusResult.repairInstructions,
+      });
+      judgeConsensusDisposition = resolveJudgeConsensusDisposition({
+        verdict: judgeConsensusResult,
+        generatedTestCases: generatedList,
+        logicJudgeDeployment: logicJudgeClient.deployment,
+      });
+    } else if (!initialJudgeAccepted) {
+      const maxRepairIterations =
+        input.harness?.maxRepairIterations ??
+        REPAIR_LOOP_DEFAULT_MAX_ITERATIONS;
+      const faithfulnessSnapshot = faithfulnessJudgeResult;
+      const a11ySnapshot = a11yJudgeResult;
+      let latestRepairLogicJudgeResult: RunLogicJudgeResult | undefined;
+      let latestRepairA11yJudgeResult: RunA11yJudgeResult | undefined;
+      // Issue #2016: hand the FinOps generator-side budget to the repair
+      // loop so it can stop *before* the next regeneration would breach
+      // `maxTotalOutputTokens` or `maxAttempts` on the test_generation
+      // role. The initial generator pass has already been recorded by
+      // this point; we hand its cumulative output / attempt count in as
+      // `initialGenerator*` so the guard's projection is honest about
+      // pre-loop spend.
+      const testGenerationRoleBudget = finopsBudget.roles.test_generation;
+      const initialGeneratorAttempts = generationPasses.length;
+      const repairLoopBudgetGuard: RepairLoopBudgetGuard | undefined =
+        testGenerationRoleBudget !== undefined &&
+        (testGenerationRoleBudget.maxTotalOutputTokens !== undefined ||
+          testGenerationRoleBudget.maxAttempts !== undefined)
+          ? {
+              initialGeneratorOutputTokens: capturedLlmOutputTokens,
+              initialGeneratorAttempts,
+              ...(testGenerationRoleBudget.maxTotalOutputTokens !== undefined
+                ? {
+                    maxGeneratorOutputTokens:
+                      testGenerationRoleBudget.maxTotalOutputTokens,
+                  }
+                : {}),
+              ...(testGenerationRoleBudget.maxAttempts !== undefined
+                ? { maxGeneratorAttempts: testGenerationRoleBudget.maxAttempts }
+                : {}),
+              ...(testGenerationRoleBudget.maxOutputTokensPerRequest !==
+              undefined
+                ? {
+                    expectedNextOutputTokens:
+                      testGenerationRoleBudget.maxOutputTokensPerRequest,
+                  }
+                : {}),
+            }
+          : undefined;
+      repairLoopResult = await runRepairLoop({
+        jobId: input.jobId,
+        runDir: artifactDir,
+        initialList: generatedList,
+        initialLogicVerdict: mergeA11yIntoLogicVerdict(
+          logicJudgeResult.verdict,
+          isA11yJudgeAvailableForConsensus(a11ySnapshot)
+            ? a11ySnapshot.verdict
+            : undefined,
+        ),
+        ...(faithfulnessSnapshot !== undefined
+          ? { initialFaithfulnessVerdict: faithfulnessSnapshot.verdict }
+          : {}),
+        maxRepairIterations,
+        softFailOnIterationError: true,
+        ...(repairLoopBudgetGuard !== undefined
+          ? { budget: repairLoopBudgetGuard }
+          : {}),
+        regenerate: async ({
+          previousList,
+          repairInstructions,
+          truncatedInstructionCount,
+          iteration,
+        }) => {
+          const targetedCaseIds = [
+            ...new Set(
+              repairInstructions
+                .map((instruction) => instruction.testCaseId)
+                .filter((testCaseId) => testCaseId !== "$job"),
+            ),
+          ].sort((left, right) => left.localeCompare(right));
+          const repairContextList =
+            targetedCaseIds.length === 0
+              ? {
+                  ...previousList,
+                  testCases: previousList.testCases.slice(0, 3),
+                }
+              : {
+                  ...previousList,
+                  testCases: previousList.testCases.filter((testCase) =>
+                    targetedCaseIds.includes(testCase.id),
+                  ),
+                };
+          const repairSuffixSections: readonly CompilePromptSuffixSection[] = [
+            {
+              kind: "repair_instructions",
+              label: `RepairInstructions (iteration ${iteration})`,
+              jsonPayload: repairInstructions,
+            },
+            {
+              kind: "json",
+              label: `PreviousGeneratedTestCasesNeedingRepair (iteration ${iteration})`,
+              jsonPayload: repairContextList,
+            },
+          ];
+          const repairPassResults = await Promise.all(
+            generationPasses.map(async (pass) => {
+              const repairCompiled = compileGenerationPass(
+                pass,
+                repairSuffixSections,
+              );
+              const repairRequest = buildGenerationRequest(repairCompiled);
+              repairRequest.maxRetries = 0;
+              const startedAtRepair = Date.now();
+              const llmResult = await input.llm.client.generate(repairRequest);
+              const llmDurationMs = Date.now() - startedAtRepair;
+              await recordFinopsGatewayAttempt({
+                role: "test_generation",
+                source: "generator",
+                ...(diversityPasses > 1 ? { attemptId: pass.roleRunId } : {}),
+                deployment:
+                  llmResult.outcome === "success"
+                    ? llmResult.modelDeployment
+                    : input.llm.client.deployment,
+                endpointReference: input.llm.client.operatorEndpointReference,
+                durationMs: llmDurationMs,
+                result: llmResult,
+              });
+              if (llmResult.outcome !== "success") {
+                throw new ProductionRunnerError({
+                  failureClass: "LLM_GATEWAY_FAILED",
+                  message: `Repair iteration ${iteration} generator failed: ${llmResult.errorClass}`,
+                  retryable: false,
+                });
+              }
+              const repairValidation = validateLlmDraftResponse(
+                llmResult.content,
+              );
+              if (!repairValidation.ok) {
+                throw new ProductionRunnerError({
+                  failureClass: "LLM_RESPONSE_INVALID",
+                  message: `Repair iteration ${iteration} returned an invalid payload: ${repairValidation.message}`,
+                  retryable: false,
+                });
+              }
+              const repairAudit: GeneratedTestCaseAuditMetadata = {
+                jobId: input.jobId,
+                generatedAt: input.generatedAt,
+                contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+                schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+                promptTemplateVersion:
+                  TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
+                redactionPolicyVersion: REDACTION_POLICY_VERSION,
+                visualSidecarSchemaVersion: VISUAL_SIDECAR_SCHEMA_VERSION,
+                cacheHit: false,
+                cacheKey: repairCompiled.request.hashes.cacheKey,
+                inputHash: repairCompiled.request.hashes.inputHash,
+                promptHash: repairCompiled.request.hashes.promptHash,
+                schemaHash: repairCompiled.request.hashes.schemaHash,
+                truncatedInstructionCount,
+              };
+              const repairCases = repairValidation.value.testCases.map(
+                (draft, index) =>
+                  stampGeneratedTestCase({
+                    draft,
+                    jobId: input.jobId,
+                    index,
+                    audit: repairAudit,
+                    intent,
+                    ...(pass.identitySalt !== undefined
+                      ? { identitySalt: pass.identitySalt }
+                      : {}),
+                  }),
+              );
+              repairCases.sort((a, b) =>
+                a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
+              );
+              const repairList: GeneratedTestCaseList = {
+                schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+                jobId: input.jobId,
+                testCases: repairCases,
+              };
+              return {
+                list: stabilizeGeneratedListForAcceptance({
+                  list: repairList,
+                  model: compiled.artifacts.payload.testDesignModel!,
+                  jobId: input.jobId,
+                }),
+                llmResult,
+                llmDurationMs,
+                inputTokens: llmResult.usage.inputTokens ?? 0,
+                outputTokens: llmResult.usage.outputTokens ?? 0,
+                hashes: {
+                  inputHash: repairCompiled.request.hashes.inputHash,
+                  promptHash: repairCompiled.request.hashes.promptHash,
+                  schemaHash: repairCompiled.request.hashes.schemaHash,
+                  cacheKey: repairCompiled.request.hashes.cacheKey,
+                },
+              };
+            }),
+          );
+          return {
+            list: (() => {
+              const merged = mergeGenerationPassLists(
+                repairPassResults.map((pass) => pass.list),
+              );
+              if (merged.selfConsistencyReport !== undefined) {
+                selfConsistencyReport = merged.selfConsistencyReport;
+              }
+              return merged.list;
+            })(),
+            llmResult: repairPassResults[0]!.llmResult,
+            llmDurationMs: repairPassResults.reduce(
+              (sum, pass) => sum + pass.llmDurationMs,
+              0,
+            ),
+            inputTokens: repairPassResults.reduce(
+              (sum, pass) => sum + pass.inputTokens,
+              0,
+            ),
+            outputTokens: repairPassResults.reduce(
+              (sum, pass) => sum + pass.outputTokens,
+              0,
+            ),
+            hashes: repairPassResults[0]!.hashes,
+          };
+        },
+        runLogicJudge: async ({ list }) => {
+          const repairLogicResult = await runLogicJudge({
+            jobId: input.jobId,
+            generatedAt: input.generatedAt,
+            testDesignModel: compiled.artifacts.payload.testDesignModel!,
+            coveragePlan: compiled.artifacts.payload.coveragePlan!,
+            generatedTestCases: list,
+            client: logicJudgeClient,
+            // Per-iteration regen produces a unique input hash; bypass the
+            // disk-backed cache and use a fresh in-memory cache so deterministic
+            // repeat-iteration mocks (test fixtures) can still hit byte-stable
+            // verdicts without poisoning the shared logic-judge cache.
+            cache: createMemoryLogicJudgeCache(),
+            knownNavigationIds: logicJudgeKnownNavigationIds,
+            coverageThresholds: logicJudgeCoverageThresholds,
+            ...(logicJudgeTechniqueCoverageMinimum !== undefined
+              ? { techniqueCoverageMinimum: logicJudgeTechniqueCoverageMinimum }
+              : {}),
+            ...(finopsBudget.roles.test_generation?.maxInputTokensPerRequest !==
+            undefined
+              ? {
+                  maxInputTokens:
+                    finopsBudget.roles.test_generation.maxInputTokensPerRequest,
+                }
+              : {}),
+            ...(finopsBudget.roles.test_generation
+              ?.maxOutputTokensPerRequest !== undefined
+              ? {
+                  maxOutputTokens:
+                    finopsBudget.roles.test_generation
+                      .maxOutputTokensPerRequest,
+                }
+              : {}),
+            ...(finopsBudget.roles.test_generation?.maxWallClockMsPerRequest !==
+            undefined
+              ? {
+                  maxWallClockMs:
+                    finopsBudget.roles.test_generation.maxWallClockMsPerRequest,
+                }
+              : {}),
+            ...(finopsBudget.roles.test_generation?.maxRetriesPerRequest !==
+            undefined
+              ? {
+                  maxRetries:
+                    finopsBudget.roles.test_generation.maxRetriesPerRequest,
+                }
+              : {}),
+          });
+          if (repairLogicResult.gatewayResult !== undefined) {
+            await recordFinopsGatewayAttempt({
+              role: "test_generation",
+              source: "judge_primary",
+              attributionMode: "audit",
+              deployment:
+                repairLogicResult.gatewayResult.outcome === "success"
+                  ? repairLogicResult.gatewayResult.modelDeployment
+                  : logicJudgeClient.deployment,
+              endpointReference: logicJudgeClient.operatorEndpointReference,
+              durationMs: 0,
+              result: repairLogicResult.gatewayResult,
+            });
+          }
+          const repairA11yResult =
+            visualCaptures !== undefined &&
+            input.llm.bundle?.a11yJudge !== undefined
+              ? await runA11yJudge({
+                  jobId: input.jobId,
+                  generatedAt: input.generatedAt,
+                  intent,
+                  captures: visualCaptures,
+                  generatedTestCases: list,
+                  bundle: input.llm.bundle,
+                  cache: createMemoryA11yJudgeCache(),
+                  ...(finopsBudget.roles.visual_primary
+                    ?.maxInputTokensPerRequest !== undefined
+                    ? {
+                        maxInputTokens:
+                          finopsBudget.roles.visual_primary
+                            .maxInputTokensPerRequest,
+                      }
+                    : {}),
+                  ...(finopsBudget.roles.visual_primary
+                    ?.maxOutputTokensPerRequest !== undefined
+                    ? {
+                        maxOutputTokens:
+                          finopsBudget.roles.visual_primary
+                            .maxOutputTokensPerRequest,
+                      }
+                    : {}),
+                  ...(finopsBudget.roles.visual_primary
+                    ?.maxWallClockMsPerRequest !== undefined
+                    ? {
+                        maxWallClockMs:
+                          finopsBudget.roles.visual_primary
+                            .maxWallClockMsPerRequest,
+                      }
+                    : {}),
+                  ...(finopsBudget.roles.visual_primary
+                    ?.maxRetriesPerRequest !== undefined
+                    ? {
+                        maxRetries:
+                          finopsBudget.roles.visual_primary
+                            .maxRetriesPerRequest,
+                      }
+                    : {}),
+                })
+              : undefined;
+          if (repairA11yResult?.gatewayResult !== undefined) {
+            await recordFinopsGatewayAttempt({
+              role: "visual_primary",
+              source: "judge_secondary",
+              attributionMode: "audit",
+              deployment:
+                repairA11yResult.gatewayResult.outcome === "success"
+                  ? repairA11yResult.gatewayResult.modelDeployment
+                  : input.llm.bundle!.a11yJudge!.deployment,
+              endpointReference:
+                input.llm.bundle!.a11yJudge!.operatorEndpointReference,
+              durationMs: 0,
+              result: repairA11yResult.gatewayResult,
+            });
+          }
+          latestRepairLogicJudgeResult = repairLogicResult;
+          latestRepairA11yJudgeResult = repairA11yResult;
+          const usage =
+            repairLogicResult.gatewayResult?.outcome === "success"
+              ? repairLogicResult.gatewayResult.usage
+              : { inputTokens: 0, outputTokens: 0 };
+          const a11yUsage =
+            repairA11yResult?.gatewayResult?.outcome === "success"
+              ? repairA11yResult.gatewayResult.usage
+              : { inputTokens: 0, outputTokens: 0 };
+          return {
+            verdict: mergeA11yIntoLogicVerdict(
+              repairLogicResult.verdict,
+              isA11yJudgeAvailableForConsensus(repairA11yResult)
+                ? repairA11yResult.verdict
+                : undefined,
+            ),
+            inputTokens:
+              (usage.inputTokens ?? 0) + (a11yUsage.inputTokens ?? 0),
+            outputTokens:
+              (usage.outputTokens ?? 0) + (a11yUsage.outputTokens ?? 0),
+          };
+        },
+        ...(faithfulnessSnapshot !== undefined &&
+        visualCaptures !== undefined &&
+        input.llm.bundle !== undefined
+          ? {
+              runFaithfulnessJudge: async ({ list }) => {
+                const repairFaithResult = await runFaithfulnessJudge({
+                  jobId: input.jobId,
+                  generatedAt: input.generatedAt,
+                  captures: visualCaptures,
+                  generatedTestCases: list,
+                  bundle: input.llm.bundle!,
+                  cache: createMemoryFaithfulnessJudgeCache(),
+                  ...(finopsBudget.roles.visual_primary
+                    ?.maxInputTokensPerRequest !== undefined
+                    ? {
+                        maxInputTokens:
+                          finopsBudget.roles.visual_primary
+                            .maxInputTokensPerRequest,
+                      }
+                    : {}),
+                  ...(finopsBudget.roles.visual_primary
+                    ?.maxOutputTokensPerRequest !== undefined
+                    ? {
+                        maxOutputTokens:
+                          finopsBudget.roles.visual_primary
+                            .maxOutputTokensPerRequest,
+                      }
+                    : {}),
+                  ...(finopsBudget.roles.visual_primary
+                    ?.maxWallClockMsPerRequest !== undefined
+                    ? {
+                        maxWallClockMs:
+                          finopsBudget.roles.visual_primary
+                            .maxWallClockMsPerRequest,
+                      }
+                    : {}),
+                  ...(finopsBudget.roles.visual_primary
+                    ?.maxRetriesPerRequest !== undefined
+                    ? {
+                        maxRetries:
+                          finopsBudget.roles.visual_primary
+                            .maxRetriesPerRequest,
+                      }
+                    : {}),
+                });
+                for (const attempt of repairFaithResult.attempts) {
+                  await recordFinopsGatewayAttempt({
+                    role: attempt.role,
+                    source: "judge_secondary",
+                    attributionMode: "audit",
+                    deployment:
+                      attempt.result.outcome === "success"
+                        ? attempt.result.modelDeployment
+                        : attempt.role === "visual_primary"
+                          ? input.llm.bundle!.visualPrimary.deployment
+                          : input.llm.bundle!.visualFallback.deployment,
+                    endpointReference:
+                      attempt.role === "visual_primary"
+                        ? input.llm.bundle!.visualPrimary
+                            .operatorEndpointReference
+                        : input.llm.bundle!.visualFallback
+                            .operatorEndpointReference,
+                    durationMs: 0,
+                    result: attempt.result,
+                  });
+                }
+                const totalUsage = repairFaithResult.attempts.reduce(
+                  (acc, attempt) => {
+                    if (attempt.result.outcome === "success") {
+                      acc.inputTokens += attempt.result.usage.inputTokens ?? 0;
+                      acc.outputTokens +=
+                        attempt.result.usage.outputTokens ?? 0;
+                    }
+                    return acc;
+                  },
+                  { inputTokens: 0, outputTokens: 0 },
+                );
+                return {
+                  verdict: repairFaithResult.verdict,
+                  inputTokens: totalUsage.inputTokens,
+                  outputTokens: totalUsage.outputTokens,
+                };
+              },
+            }
+          : {}),
+        onIterationComplete: (record) => {
+          emit({
+            phase: "repair_loop_iteration",
+            timestamp: monotonicMs(),
+            details: {
+              iteration: record.iteration,
+              logicVerdict: record.logicVerdict,
+              faithfulnessVerdict: record.faithfulnessVerdict,
+              generatedCaseCount: record.generatedCaseCount,
+              inputTokens: record.inputTokens,
+              outputTokens: record.outputTokens,
+            },
+          });
+        },
+      });
+      generatedList = repairLoopResult.finalList;
+      if (latestRepairLogicJudgeResult !== undefined) {
+        logicJudgeResult = latestRepairLogicJudgeResult;
+      } else {
+        logicJudgeResult = {
+          ...logicJudgeResult,
+          verdict: repairLoopResult.finalLogicVerdict,
+        };
+      }
+      if (
+        repairLoopResult.finalFaithfulnessVerdict !== undefined &&
+        faithfulnessJudgeResult !== undefined
+      ) {
+        faithfulnessJudgeResult = {
+          ...faithfulnessJudgeResult,
+          verdict: repairLoopResult.finalFaithfulnessVerdict,
+        };
+      }
+      if (latestRepairA11yJudgeResult !== undefined) {
+        a11yJudgeResult = latestRepairA11yJudgeResult;
+      }
+      judgeConsensusResult = buildCurrentJudgeConsensus({
+        attempted: true,
+        repairIterationCount: repairLoopResult.repairIterationCount,
+        finalOutcome: repairLoopResult.outcome,
+        historicalFindings: initialJudgeConsensusResult.activeFindings,
+        historicalRepairInstructions:
+          initialJudgeConsensusResult.repairInstructions,
+      });
+      judgeConsensusDisposition = resolveJudgeConsensusDisposition({
+        verdict: judgeConsensusResult,
+        generatedTestCases: generatedList,
+        logicJudgeDeployment: logicJudgeClient.deployment,
+      });
+    }
+
+    const judgeAccepted = isJudgeConsensusAcceptedForRun(
+      judgeConsensusDisposition.disposition,
+    );
+
+    if (
+      harnessMode !== "off" &&
+      judgeAccepted &&
+      harnessSummary === undefined
+    ) {
+      const harnessAttemptResult = buildHarnessAttemptResult({
+        hashes: compiled.request.hashes,
+        judgeAccepted,
+        errorClass: "none",
+        llmDurationMs: capturedLlmDurationMs,
+        llmInputTokens: capturedLlmInputTokens,
+        llmOutputTokens: capturedLlmOutputTokens,
+      });
+      const harnessRunResult: RunAgentHarnessStepResult =
+        await runAgentHarnessStep({
           runDir: artifactDir,
-          report: selfConsistencyReport,
+          jobId: input.jobId,
+          role: "generator",
+          roleStepId: harnessRoleStepId,
+          testDepth: harnessTestDepth,
+          executeAttempt: async () => harnessAttemptResult,
         });
-  try {
-    const coveragePlanWritePromise = writeCoveragePlanArtifact({
-      plan: coveragePlanResult.plan,
-      runDir: artifactDir,
+      harnessArtifactPath = harnessRunResult.artifactPath;
+      harnessSummary = {
+        mode: harnessMode,
+        outcome: harnessRunResult.outcome,
+        mappedJobStatus: harnessRunResult.mappedJobStatus,
+        errorClass: harnessRunResult.artifact.errorClass,
+        attemptsConsumed: harnessRunResult.artifact.attemptsConsumed,
+        maxAttemptsAllowed: harnessRunResult.artifact.maxAttemptsAllowed,
+        artifactPath: harnessRunResult.artifactPath,
+      };
+    }
+
+    if (harnessMode !== "off" && !judgeAccepted) {
+      // Issue #1939: when the repair loop aborts because two consecutive
+      // iterations produced the same verdict signature, surface that as
+      // `convergence_stalled` on the harness summary instead of the
+      // generic `judge_rejection` so operators can distinguish "the
+      // judges keep rejecting" from "the LLM is stuck on the same error
+      // class".
+      // Issue #2016: budget_exhausted is also a "stop without judge accept"
+      // outcome — surface it as the same convergence_stalled errorClass on
+      // the harness summary so the harness state machine recognises the
+      // stop-condition lane and does not treat it as a generic rejection.
+      const stalled =
+        repairLoopResult?.outcome === "convergence_stalled" ||
+        repairLoopResult?.outcome === "budget_exhausted";
+      const harnessAttemptResult = buildHarnessAttemptResult({
+        hashes: compiled.request.hashes,
+        judgeAccepted,
+        errorClass: stalled ? "convergence_stalled" : "judge_rejection",
+        llmDurationMs: capturedLlmDurationMs,
+        llmInputTokens: capturedLlmInputTokens,
+        llmOutputTokens: capturedLlmOutputTokens,
+      });
+      const harnessRunResult: RunAgentHarnessStepResult =
+        await runAgentHarnessStep({
+          runDir: artifactDir,
+          jobId: input.jobId,
+          role: "generator",
+          roleStepId: harnessRoleStepId,
+          testDepth: harnessTestDepth,
+          executeAttempt: async () => harnessAttemptResult,
+        });
+      harnessArtifactPath = harnessRunResult.artifactPath;
+      harnessSummary = {
+        mode: harnessMode,
+        outcome: harnessRunResult.outcome,
+        mappedJobStatus: harnessRunResult.mappedJobStatus,
+        errorClass: harnessRunResult.artifact.errorClass,
+        attemptsConsumed: harnessRunResult.artifact.attemptsConsumed,
+        maxAttemptsAllowed: harnessRunResult.artifact.maxAttemptsAllowed,
+        artifactPath: harnessRunResult.artifactPath,
+      };
+    }
+
+    // 8. Validation pipeline.
+    emit({ phase: "validation_started", timestamp: monotonicMs() });
+    const policyOverridesForValidation:
+      | ReadonlyArray<{
+          ruleId: string;
+          severity: "error" | "warning";
+          threshold?: number;
+        }>
+      | undefined =
+      canonicalCustomerProfile?.policyOverrides !== undefined &&
+      canonicalCustomerProfile.policyOverrides.some(
+        (override) => override.severity !== "info",
+      )
+        ? canonicalCustomerProfile.policyOverrides.filter(
+            (
+              override,
+            ): override is {
+              ruleId: string;
+              severity: "error" | "warning";
+              threshold?: number;
+            } => override.severity !== "info",
+          )
+        : undefined;
+    const validation = runValidationPipeline({
+      jobId: input.jobId,
+      generatedAt: input.generatedAt,
+      list: generatedList,
+      intent,
+      coveragePlan: coveragePlanResult.plan,
+      workflowTopology,
+      ...(policyOverridesForValidation !== undefined
+        ? { policyOverrides: policyOverridesForValidation }
+        : {}),
+      ...(faithfulnessJudgeResult !== undefined
+        ? { faithfulnessVerdict: faithfulnessJudgeResult.verdict }
+        : {}),
+      ...(a11yJudgeResult !== undefined
+        ? { a11yVerdict: a11yJudgeResult.verdict }
+        : {}),
+      ...("rules" in customerRubric ? { profile: customerRubric } : {}),
+      ...(promptVisualBatch !== undefined ? { visual: promptVisualBatch } : {}),
+      ...(promptVisualBatch !== undefined
+        ? {
+            primaryVisualDeployment: "llama-4-maverick-vision" as const,
+          }
+        : {}),
+      ...(visualSidecarRefusal !== undefined ? { visualSidecarRefusal } : {}),
+      untrustedContentReport: normalizedUntrusted.report,
+      activeModelBindings,
     });
-    const workflowTopologyWritePromise = writeWorkflowTopologyArtifact({
-      topology: workflowTopology,
-      runDir: artifactDir,
+    const blocked = validation.blocked || !judgeAccepted;
+    emit({
+      phase: "validation_complete",
+      timestamp: monotonicMs(),
+      details: {
+        blocked,
+        errorCount: validation.validation.errorCount,
+        warningCount: validation.validation.warningCount,
+        cases: validation.generatedTestCases.testCases.length,
+      },
     });
-    const riskRankingWritePromise = writeRiskRankingArtifact({
-      ranking: riskRankingResult.ranking,
-      runDir: artifactDir,
+    emit({
+      phase: "policy_decision",
+      timestamp: monotonicMs(),
+      details: {
+        blocked,
+        profileId: validation.policy.policyProfileId,
+        approved: validation.policy.approvedCount,
+        blockedCount: validation.policy.blockedCount,
+        needsReview: validation.policy.needsReviewCount,
+      },
     });
-    await Promise.all([
-      writeAtomicBytes(intentPath, intentBytes),
-      writeAtomicBytes(compiledPromptPath, compiledPromptBytes),
-      ...(customerEvalRubricPath === undefined ||
-      customerEvalRubricBytes === undefined
-        ? []
-        : [writeAtomicBytes(customerEvalRubricPath, customerEvalRubricBytes)]),
-      ...(tenantBundleResolvedPath === undefined ||
-      tenantBundleResolvedBytes === undefined
-        ? []
-        : [
-            writeAtomicBytes(
-              tenantBundleResolvedPath,
-              tenantBundleResolvedBytes,
-            ),
-          ]),
-      writeAtomicBytes(
-        logicJudgeCompiledPromptPath,
-        logicJudgeCompiledPromptBytes,
-      ),
-      writeAtomicBytes(logicJudgeVerdictPath, logicJudgeVerdictBytes),
-      judgeConsensusWritePromise,
-      ...(selfConsistencyReportPath === undefined ||
+
+    // 9. Persist artifacts.
+    emit({ phase: "export_started", timestamp: monotonicMs() });
+    await mkdir(artifactDir, { recursive: true });
+    const intentPath = join(artifactDir, "business-intent-ir.json");
+    const compiledPromptPath = join(artifactDir, "compiled-prompt.json");
+    const customerEvalRubricPath =
+      customerEvalRubric === undefined
+        ? undefined
+        : join(artifactDir, "customer-eval-rubric.json");
+    const tenantBundleResolvedPath =
+      resolvedTenantBundle === undefined
+        ? undefined
+        : join(artifactDir, TENANT_BUNDLE_RESOLVED_ARTIFACT_FILENAME);
+    const logicJudgeCompiledPromptPath = join(
+      artifactDir,
+      LOGIC_JUDGE_COMPILED_PROMPT_ARTIFACT_FILENAME,
+    );
+    const logicJudgeVerdictPath = join(
+      artifactDir,
+      "agent-role-runs",
+      LOGIC_JUDGE_VERDICT_ARTIFACT_FILENAME,
+    );
+    const judgeConsensusPath = join(
+      artifactDir,
+      JUDGE_CONSENSUS_ARTIFACT_FILENAME,
+    );
+    const runQualityPath = join(artifactDir, RUN_QUALITY_ARTIFACT_FILENAME);
+    const selfConsistencyReportPath =
+      selfConsistencyReport === undefined
+        ? undefined
+        : join(artifactDir, SELF_CONSISTENCY_REPORT_ARTIFACT_FILENAME);
+    const faithfulnessJudgeCompiledPromptPath =
+      faithfulnessJudgeResult === undefined
+        ? undefined
+        : join(
+            artifactDir,
+            FAITHFULNESS_JUDGE_COMPILED_PROMPT_ARTIFACT_FILENAME,
+          );
+    const faithfulnessJudgeVerdictPath =
+      faithfulnessJudgeResult === undefined
+        ? undefined
+        : join(
+            artifactDir,
+            "agent-role-runs",
+            FAITHFULNESS_VERDICT_ARTIFACT_FILENAME,
+          );
+    // Issue #2066 — per-run tier report. Computed only when the verdict
+    // carries `stepVerdicts`; legacy verdicts persisted under schema 1.0.0
+    // skip this artifact (the gate falls back to the case-level score).
+    const faithfulnessTierReportArtifact =
+      faithfulnessJudgeResult === undefined
+        ? undefined
+        : resolveFaithfulnessTierReport(
+            faithfulnessJudgeResult.verdict,
+            validation.generatedTestCases,
+            policyOverridesForValidation,
+          );
+    const faithfulnessTierReportPath =
+      faithfulnessTierReportArtifact === undefined
+        ? undefined
+        : join(artifactDir, FAITHFULNESS_TIER_REPORT_ARTIFACT_FILENAME);
+    const confidenceCalibration = await loadCaseConfidenceCalibration({
+      datasetRoot: input.outputRoot,
+      generatedAt: input.generatedAt,
+      currentRunId: basename(artifactDir),
+    });
+    const calibratedGeneratedTestCases = applyCaseConfidenceCalibration({
+      list: validation.generatedTestCases,
+      curve: confidenceCalibration.curve,
+      judgeConsensus: judgeConsensusResult,
+      ...(selfConsistencyReport !== undefined ? { selfConsistencyReport } : {}),
+      ...(validation.testDataOracleReport !== undefined
+        ? { oracleReport: validation.testDataOracleReport }
+        : {}),
+      ...(faithfulnessTierReportArtifact !== undefined
+        ? { faithfulnessTierReport: faithfulnessTierReportArtifact }
+        : {}),
+      acceptedAnchors: confidenceCalibration.acceptedAnchors,
+      excludedRunId: basename(artifactDir),
+    });
+    const confidenceSummary = summarizeCaseConfidenceDistribution(
+      calibratedGeneratedTestCases,
+    );
+    // Issue #2068 — per-run technique-quota report. Built upstream by the
+    // validation pipeline when a CoveragePlan is supplied so reviewers
+    // can audit the tier-elastic quota path even when the gate passes.
+    const techniqueQuotaReportArtifact = validation.techniqueQuota;
+    const techniqueQuotaReportPath =
+      techniqueQuotaReportArtifact === undefined
+        ? undefined
+        : join(artifactDir, TECHNIQUE_QUOTA_REPORT_ARTIFACT_FILENAME);
+    const a11yJudgeVerdictPath =
+      a11yJudgeResult === undefined
+        ? undefined
+        : join(
+            artifactDir,
+            "agent-role-runs",
+            A11Y_JUDGE_VERDICT_ARTIFACT_FILENAME,
+          );
+    const generatedPath = join(
+      artifactDir,
+      GENERATED_TESTCASES_ARTIFACT_FILENAME,
+    );
+    const validationPath = join(
+      artifactDir,
+      TEST_CASE_VALIDATION_REPORT_ARTIFACT_FILENAME,
+    );
+    const testDataOracleReportPath =
+      validation.testDataOracleReport === undefined
+        ? undefined
+        : join(artifactDir, TEST_DATA_ORACLE_REPORT_ARTIFACT_FILENAME);
+    const visualSidecarValidationPath =
+      validation.visual === undefined
+        ? undefined
+        : join(artifactDir, VISUAL_SIDECAR_VALIDATION_REPORT_ARTIFACT_FILENAME);
+    const policyPath = join(
+      artifactDir,
+      TEST_CASE_POLICY_REPORT_ARTIFACT_FILENAME,
+    );
+    const workflowTopologyPath = join(
+      artifactDir,
+      WORKFLOW_TOPOLOGY_ARTIFACT_FILENAME,
+    );
+    const coveragePlanPath = join(artifactDir, "coverage-plan.json");
+    const riskRankingPath = join(artifactDir, RISK_RANKING_ARTIFACT_FILENAME);
+    const adversarialCriticTracePath = join(
+      artifactDir,
+      ADVERSARIAL_CRITIC_TRACE_ARTIFACT_FILENAME,
+    );
+    const coveragePath = join(
+      artifactDir,
+      TEST_CASE_COVERAGE_REPORT_ARTIFACT_FILENAME,
+    );
+    const finopsOutcomeOverride = deriveFinopsOutcomeFromValidation(
+      validation,
+      judgeAccepted,
+    );
+    const explicitWallClockOverrideMs =
+      finopsBudget.roles.test_generation?.maxTotalWallClockMs;
+    const resolvedWallClockBudget = resolveTestGenerationWallClockBudget({
+      caseCount: generatedList.testCases.length,
+      judgePanelSize: judgeConsensusResult.panel.length,
+      adversarialRounds: adversarialCriticRoundArtifacts.length,
+      visualSidecarEnabled: visualSidecarResult !== undefined,
+      ...(explicitWallClockOverrideMs !== undefined
+        ? { explicitOverrideMs: explicitWallClockOverrideMs }
+        : {}),
+      ...(policyProfileRules !== undefined
+        ? { profileRules: policyProfileRules }
+        : {}),
+    });
+    const resolvedFinopsBudget = cloneFinOpsBudgetEnvelope(finopsBudget);
+    if (resolvedFinopsBudget.roles.test_generation !== undefined) {
+      resolvedFinopsBudget.roles.test_generation.maxTotalWallClockMs =
+        resolvedWallClockBudget.resolvedMs;
+    }
+    const finopsReport = buildFinOpsBudgetReport({
+      jobId: input.jobId,
+      generatedAt: input.generatedAt,
+      budget: resolvedFinopsBudget,
+      recorder: finopsRecorder,
+      resolvedBudget: {
+        testGenerationWallClock: resolvedWallClockBudget,
+      },
+      figmaPayload: {
+        resolvedCapBytes: figmaPayloadCap,
+        actualBytes: figmaPayloadActualBytes,
+        defaultCapBytes: MAX_FIGMA_PAYLOAD_BYTES,
+        ceilingBytes: MAX_FIGMA_PAYLOAD_BYTES_CEILING,
+        overrideApplied: input.maxFigmaPayloadBytes !== undefined,
+      },
+      ...(finopsOutcomeOverride !== undefined
+        ? { outcomeOverride: finopsOutcomeOverride }
+        : {}),
+    });
+    const runQualityArtifact = buildRunQualityArtifact({
+      jobId: input.jobId,
+      generatedAt: input.generatedAt,
+      blocked,
+      judgeAccepted,
+      validation,
+      judgeConsensus: judgeConsensusResult,
+      finopsReport,
+      ...(selfConsistencyReport !== undefined ? { selfConsistencyReport } : {}),
+      ...(visualSidecarResult !== undefined ? { visualSidecarResult } : {}),
+    });
+    const finopsWritten = await writeFinOpsBudgetReport({
+      runDir: artifactDir,
+      report: finopsReport,
+    });
+    const finopsTimeSeriesStorePath = defaultFinOpsTimeSeriesStorePath(
+      input.outputRoot,
+    );
+    await appendFinOpsTimeSeriesRecordOnDisk({
+      storePath: finopsTimeSeriesStorePath,
+      record: buildFinOpsTimeSeriesRecord({
+        report: finopsReport,
+        fixtureId: resolveFinOpsFixtureId({ fileKey: figmaFile.fileKey }),
+      }),
+      retentionDays: 30,
+    });
+
+    // ---- Wave B.3 (Issue #2129): per-job carbon-footprint estimator ----
+    // Build a deterministic per-job CO₂e report from the FinOps role
+    // accumulator. This is informational — never blocks the run. Skips
+    // silently when:
+    //   - no role attempted an LLM call (cache-hit-only job)
+    //   - the dominant served region is not in the grid-intensity table
+    //     (e.g. mock-deployment-only run with empty region observations)
+    //   - the grid-intensity table is stale (> 35 days old) — the operator
+    //     is expected to refresh it monthly; a stale table fails the
+    //     report quietly rather than blocking artifact emission
+    const carbonFootprintConfig = input.carbonFootprint;
+    const carbonEnergyCoefficientTable: EnergyCoefficientTable =
+      carbonFootprintConfig?.energyCoefficientTable ??
+      REFERENCE_ENERGY_COEFFICIENT_TABLE;
+    const carbonGridCarbonIntensityTable: GridCarbonIntensityTable =
+      carbonFootprintConfig?.gridCarbonIntensityTable ??
+      REFERENCE_GRID_CARBON_INTENSITY_TABLE;
+    const carbonRoleUsages = carbonRoleUsageFromFinOpsRoles(finopsReport.roles);
+    const carbonRegion =
+      carbonFootprintConfig?.region ??
+      pickDominantCarbonRegion(
+        regionAttestationObservations.map((observation) => ({
+          region: observation.servedFromRegion,
+        })),
+      );
+    let carbonFootprintReport: CarbonFootprintReport | undefined;
+    let carbonFootprintArtifactPath: string | undefined;
+    if (carbonRoleUsages.length > 0 && carbonRegion !== undefined) {
+      try {
+        carbonFootprintReport = buildCarbonFootprintReport({
+          jobId: input.jobId,
+          ...(carbonFootprintConfig?.customerId !== undefined
+            ? { customerId: carbonFootprintConfig.customerId }
+            : {}),
+          generatedAt: input.generatedAt,
+          region: carbonRegion,
+          roles: carbonRoleUsages,
+          energyCoefficients: carbonEnergyCoefficientTable,
+          gridIntensity: carbonGridCarbonIntensityTable,
+        });
+        const carbonWritten = await writeCarbonFootprintReport({
+          runDir: artifactDir,
+          report: carbonFootprintReport,
+        });
+        carbonFootprintArtifactPath = carbonWritten.artifactPath;
+      } catch (error) {
+        // Fail silent for known-recoverable carbon-footprint errors:
+        // missing deployment / region rows or a stale grid table. Any
+        // other error (e.g. unexpected disk failure) propagates so the
+        // run still fails fast on a true bug.
+        if (!(error instanceof CarbonFootprintError)) {
+          throw error;
+        }
+      }
+    }
+    // ---- end Wave B.3 (Issue #2129) ----
+    const agentParticipationArtifact = buildAgentParticipationArtifact({
+      jobId: input.jobId,
+      generatedAt: input.generatedAt,
+      roles: buildAgentParticipationEntries({
+        request: input,
+        artifactDir,
+        finopsReport,
+        generationCacheHit,
+        logicJudgeEnabled,
+        logicJudgeGatewayResult: logicJudgeResult.gatewayResult,
+        coveragePlannerGatewayResult: coveragePlanResult.gatewayResult,
+        riskRankerGatewayResult: riskRankingResult.gatewayResult,
+        visualSidecarResult,
+        visualSidecarSkippedReason,
+        a11yJudgeResult,
+        visualSidecarRefusal,
+        repairLoopResult,
+        adversarialCriticRounds: adversarialCriticRoundArtifacts,
+        artifactPaths: {
+          coveragePlan: coveragePlanPath,
+          workflowTopology: workflowTopologyPath,
+          riskRanking: riskRankingPath,
+          logicJudgeVerdict: logicJudgeVerdictPath,
+          judgeConsensus: judgeConsensusPath,
+          ...(adversarialCriticTraceArtifact !== undefined
+            ? { adversarialCriticTrace: adversarialCriticTracePath }
+            : {}),
+          ...(visualSidecarArtifactPath !== undefined
+            ? { visualSidecarResult: visualSidecarArtifactPath }
+            : {}),
+          ...(a11yJudgeVerdictPath !== undefined
+            ? { a11yJudgeVerdict: a11yJudgeVerdictPath }
+            : {}),
+          agentRoleRun: join(
+            artifactDir,
+            "agent-role-runs",
+            "test_generation.json",
+          ),
+        },
+      }),
+    });
+    const agentParticipationWritePromise = writeAgentParticipationArtifact({
+      artifact: agentParticipationArtifact,
+      destinationDir: artifactDir,
+    });
+    const intentBytes = encodeCanonicalJson(intent);
+    const compiledPromptBytes = encodeCanonicalJson(compiled.artifacts);
+    const customerEvalRubricBytes =
+      customerEvalRubric === undefined
+        ? undefined
+        : encodeCanonicalJson({
+            schemaVersion: "1.0.0",
+            jobId: input.jobId,
+            generatedAt: input.generatedAt,
+            source: "customer-eval-markdown",
+            bodyMarkdown: customerEvalRubric.bodyMarkdown,
+            bodyPlain: customerEvalRubric.bodyPlain,
+            markdownContentHash: customerEvalRubric.markdownContentHash,
+            plainContentHash: customerEvalRubric.plainContentHash,
+          });
+    const tenantBundleResolvedBytes =
+      resolvedTenantBundle === undefined
+        ? undefined
+        : new TextEncoder().encode(
+            serializeResolvedTenantBundle(resolvedTenantBundle),
+          );
+    const logicJudgeCompiledPromptBytes = encodeCanonicalJson(
+      logicJudgeResult.promptArtifact,
+    );
+    const logicJudgeVerdictBytes = encodeCanonicalJson(
+      logicJudgeResult.verdict,
+    );
+    const judgeConsensusBytes = encodeCanonicalJson(judgeConsensusResult);
+    const runQualityBytes = encodeCanonicalJson(runQualityArtifact);
+    const faithfulnessJudgeCompiledPromptBytes =
+      faithfulnessJudgeResult === undefined
+        ? undefined
+        : encodeCanonicalJson(faithfulnessJudgeResult.promptArtifact);
+    const faithfulnessJudgeVerdictBytes =
+      faithfulnessJudgeResult === undefined
+        ? undefined
+        : encodeCanonicalJson(faithfulnessJudgeResult.verdict);
+    const faithfulnessTierReportBytes =
+      faithfulnessTierReportArtifact === undefined
+        ? undefined
+        : encodeCanonicalJson(faithfulnessTierReportArtifact);
+    const techniqueQuotaReportBytes =
+      techniqueQuotaReportArtifact === undefined
+        ? undefined
+        : encodeCanonicalJson(techniqueQuotaReportArtifact);
+    const a11yJudgeVerdictBytes =
+      a11yJudgeResult === undefined
+        ? undefined
+        : encodeCanonicalJson(a11yJudgeResult.verdict);
+    const generatedBytes = encodeCanonicalJson(calibratedGeneratedTestCases);
+    const validationBytes = encodeCanonicalJson(validation.validation);
+    const testDataOracleReportBytes =
+      validation.testDataOracleReport === undefined
+        ? undefined
+        : encodeCanonicalJson(validation.testDataOracleReport);
+    const visualSidecarValidationBytes =
+      validation.visual === undefined
+        ? undefined
+        : encodeCanonicalJson(validation.visual);
+    const coverageBytes = encodeCanonicalJson(validation.coverage);
+    const agentRoleRunPromise = writeAgentRoleRunArtifact({
+      runDir: artifactDir,
+      jobId: input.jobId,
+      roleRunId: "test_generation",
+      roleStepId: "test_generation",
+      hashes: compiled.request.hashes,
+    });
+    const generatorPassRunPromises = generationExecutions
+      .filter((execution) => execution.pass.roleRunId !== "test_generation")
+      .map((execution) =>
+        writeAgentRoleRunArtifact({
+          runDir: artifactDir,
+          jobId: input.jobId,
+          roleRunId: execution.pass.roleRunId,
+          roleStepId: execution.pass.roleRunId,
+          hashes: execution.compiled.request.hashes,
+        }),
+      );
+    const contextBudgetReportPath =
+      compiled.contextBudgetReport === undefined
+        ? undefined
+        : join(
+            artifactDir,
+            CONTEXT_BUDGET_ARTIFACT_DIRECTORY,
+            `${compiled.contextBudgetReport.roleStepId}.json`,
+          );
+    const contextBudgetReportBytes =
+      compiled.contextBudgetReport === undefined
+        ? undefined
+        : encodeCanonicalJson(compiled.contextBudgetReport);
+    const judgeConsensusWritePromise = writeJudgeConsensusArtifact({
+      runDir: artifactDir,
+      artifact: judgeConsensusResult,
+    });
+    const selfConsistencyWritePromise =
+      selfConsistencyReport === undefined
+        ? undefined
+        : writeSelfConsistencyReport({
+            runDir: artifactDir,
+            report: selfConsistencyReport,
+          });
+    try {
+      const coveragePlanWritePromise = writeCoveragePlanArtifact({
+        plan: coveragePlanResult.plan,
+        runDir: artifactDir,
+      });
+      const workflowTopologyWritePromise = writeWorkflowTopologyArtifact({
+        topology: workflowTopology,
+        runDir: artifactDir,
+      });
+      const riskRankingWritePromise = writeRiskRankingArtifact({
+        ranking: riskRankingResult.ranking,
+        runDir: artifactDir,
+      });
+      await Promise.all([
+        writeAtomicBytes(intentPath, intentBytes),
+        writeAtomicBytes(compiledPromptPath, compiledPromptBytes),
+        ...(customerEvalRubricPath === undefined ||
+        customerEvalRubricBytes === undefined
+          ? []
+          : [
+              writeAtomicBytes(customerEvalRubricPath, customerEvalRubricBytes),
+            ]),
+        ...(tenantBundleResolvedPath === undefined ||
+        tenantBundleResolvedBytes === undefined
+          ? []
+          : [
+              writeAtomicBytes(
+                tenantBundleResolvedPath,
+                tenantBundleResolvedBytes,
+              ),
+            ]),
+        writeAtomicBytes(
+          logicJudgeCompiledPromptPath,
+          logicJudgeCompiledPromptBytes,
+        ),
+        writeAtomicBytes(logicJudgeVerdictPath, logicJudgeVerdictBytes),
+        judgeConsensusWritePromise,
+        ...(selfConsistencyReportPath === undefined ||
+        selfConsistencyWritePromise === undefined
+          ? []
+          : [selfConsistencyWritePromise]),
+        writeAtomicBytes(runQualityPath, runQualityBytes),
+        agentParticipationWritePromise,
+        agentRoleRunPromise,
+        ...generatorPassRunPromises,
+        ...(faithfulnessJudgeCompiledPromptPath === undefined ||
+        faithfulnessJudgeCompiledPromptBytes === undefined
+          ? []
+          : [
+              writeAtomicBytes(
+                faithfulnessJudgeCompiledPromptPath,
+                faithfulnessJudgeCompiledPromptBytes,
+              ),
+            ]),
+        ...(faithfulnessJudgeVerdictPath === undefined ||
+        faithfulnessJudgeVerdictBytes === undefined
+          ? []
+          : [
+              writeAtomicBytes(
+                faithfulnessJudgeVerdictPath,
+                faithfulnessJudgeVerdictBytes,
+              ),
+            ]),
+        ...(faithfulnessTierReportPath === undefined ||
+        faithfulnessTierReportBytes === undefined
+          ? []
+          : [
+              writeAtomicBytes(
+                faithfulnessTierReportPath,
+                faithfulnessTierReportBytes,
+              ),
+            ]),
+        ...(techniqueQuotaReportPath === undefined ||
+        techniqueQuotaReportBytes === undefined
+          ? []
+          : [
+              writeAtomicBytes(
+                techniqueQuotaReportPath,
+                techniqueQuotaReportBytes,
+              ),
+            ]),
+        ...(a11yJudgeVerdictPath === undefined ||
+        a11yJudgeVerdictBytes === undefined
+          ? []
+          : [writeAtomicBytes(a11yJudgeVerdictPath, a11yJudgeVerdictBytes)]),
+        ...(contextBudgetReportPath === undefined ||
+        contextBudgetReportBytes === undefined
+          ? []
+          : [
+              writeAtomicBytes(
+                contextBudgetReportPath,
+                contextBudgetReportBytes,
+              ),
+            ]),
+        writeAtomicBytes(generatedPath, generatedBytes),
+        writeAtomicBytes(validationPath, validationBytes),
+        ...(testDataOracleReportPath === undefined ||
+        testDataOracleReportBytes === undefined
+          ? []
+          : [
+              writeAtomicBytes(
+                testDataOracleReportPath,
+                testDataOracleReportBytes,
+              ),
+            ]),
+        ...(visualSidecarValidationPath === undefined ||
+        visualSidecarValidationBytes === undefined
+          ? []
+          : [
+              writeAtomicBytes(
+                visualSidecarValidationPath,
+                visualSidecarValidationBytes,
+              ),
+            ]),
+        workflowTopologyWritePromise,
+        writeAtomicBytes(coveragePath, coverageBytes),
+        coveragePlanWritePromise,
+        riskRankingWritePromise,
+      ]);
+    } catch (err) {
+      throw new ProductionRunnerError({
+        failureClass: "PERSIST_FAILED",
+        message: `Could not persist test-intelligence artifacts: ${sanitizeErrorMessage({ error: err, fallback: "filesystem failure" })}`,
+        retryable: false,
+        cause: err,
+      });
+    }
+    const agentParticipationWritten = await agentParticipationWritePromise;
+    const agentRoleRunArtifact = await agentRoleRunPromise;
+    const judgeConsensusArtifact = await judgeConsensusWritePromise;
+    const selfConsistencyWritten =
       selfConsistencyWritePromise === undefined
-        ? []
-        : [selfConsistencyWritePromise]),
-      writeAtomicBytes(runQualityPath, runQualityBytes),
-      agentParticipationWritePromise,
-      agentRoleRunPromise,
-      ...generatorPassRunPromises,
-      ...(faithfulnessJudgeCompiledPromptPath === undefined ||
-      faithfulnessJudgeCompiledPromptBytes === undefined
-        ? []
-        : [
-            writeAtomicBytes(
-              faithfulnessJudgeCompiledPromptPath,
-              faithfulnessJudgeCompiledPromptBytes,
-            ),
-          ]),
-      ...(faithfulnessJudgeVerdictPath === undefined ||
-      faithfulnessJudgeVerdictBytes === undefined
-        ? []
-        : [
-            writeAtomicBytes(
-              faithfulnessJudgeVerdictPath,
-              faithfulnessJudgeVerdictBytes,
-            ),
-          ]),
-      ...(faithfulnessTierReportPath === undefined ||
-      faithfulnessTierReportBytes === undefined
-        ? []
-        : [
-            writeAtomicBytes(
-              faithfulnessTierReportPath,
-              faithfulnessTierReportBytes,
-            ),
-          ]),
-      ...(techniqueQuotaReportPath === undefined ||
-      techniqueQuotaReportBytes === undefined
-        ? []
-        : [
-            writeAtomicBytes(
-              techniqueQuotaReportPath,
-              techniqueQuotaReportBytes,
-            ),
-          ]),
-      ...(a11yJudgeVerdictPath === undefined ||
-      a11yJudgeVerdictBytes === undefined
-        ? []
-        : [writeAtomicBytes(a11yJudgeVerdictPath, a11yJudgeVerdictBytes)]),
-      ...(contextBudgetReportPath === undefined ||
-      contextBudgetReportBytes === undefined
-        ? []
-        : [
-            writeAtomicBytes(contextBudgetReportPath, contextBudgetReportBytes),
-          ]),
-      writeAtomicBytes(generatedPath, generatedBytes),
-      writeAtomicBytes(validationPath, validationBytes),
-      ...(testDataOracleReportPath === undefined ||
-      testDataOracleReportBytes === undefined
-        ? []
-        : [
-            writeAtomicBytes(
-              testDataOracleReportPath,
-              testDataOracleReportBytes,
-            ),
-          ]),
-      ...(visualSidecarValidationPath === undefined ||
-      visualSidecarValidationBytes === undefined
-        ? []
-        : [
-            writeAtomicBytes(
-              visualSidecarValidationPath,
-              visualSidecarValidationBytes,
-            ),
-          ]),
-      workflowTopologyWritePromise,
-      writeAtomicBytes(coveragePath, coverageBytes),
-      coveragePlanWritePromise,
-      riskRankingWritePromise,
-    ]);
-  } catch (err) {
-    throw new ProductionRunnerError({
-      failureClass: "PERSIST_FAILED",
-      message: `Could not persist test-intelligence artifacts: ${sanitizeErrorMessage({ error: err, fallback: "filesystem failure" })}`,
-      retryable: false,
-      cause: err,
-    });
-  }
-  const agentParticipationWritten = await agentParticipationWritePromise;
-  const agentRoleRunArtifact = await agentRoleRunPromise;
-  const judgeConsensusArtifact = await judgeConsensusWritePromise;
-  const selfConsistencyWritten =
-    selfConsistencyWritePromise === undefined
-      ? undefined
-      : await selfConsistencyWritePromise;
-  const generatorPassRunArtifacts = await Promise.all(generatorPassRunPromises);
-  const genealogyArtifact = await writeGenealogyArtifact({
-    runDir: artifactDir,
-    generatedAt: input.generatedAt,
-    nodes: [
-      {
-        jobId: input.jobId,
-        roleStepId: "test_generation",
-        artifactFilename: "agent-role-runs/test_generation.json",
-        roleLineageDepth: 0,
-      },
-      ...generatorPassRunArtifacts.map((artifact) => ({
-        jobId: input.jobId,
-        roleStepId: artifact.artifact.roleRunId,
-        artifactFilename: `agent-role-runs/${artifact.artifact.roleRunId}.json`,
-        roleLineageDepth: 0,
-      })),
-      ...adversarialCriticRoundArtifacts.map((artifact) => ({
-        jobId: input.jobId,
-        roleStepId: `adversarial_critic_round_${artifact.round}`,
-        artifactFilename: `agent-role-runs/${ADVERSARIAL_CRITIC_ROUND_ARTIFACT_PREFIX}${artifact.round}.json`,
-        roleLineageDepth: artifact.round,
-      })),
-      {
-        jobId: input.jobId,
-        roleStepId: "logic_judge",
-        artifactFilename: `agent-role-runs/${LOGIC_JUDGE_VERDICT_ARTIFACT_FILENAME}`,
-        roleLineageDepth: 0,
-      },
-      ...(a11yJudgeResult === undefined
-        ? []
-        : [
-            {
-              jobId: input.jobId,
-              roleStepId: "a11y_judge",
-              artifactFilename: `agent-role-runs/${A11Y_JUDGE_VERDICT_ARTIFACT_FILENAME}`,
-              roleLineageDepth: 0,
-            },
-          ]),
-      {
-        jobId: input.jobId,
-        roleStepId: "judge_consensus",
-        artifactFilename: JUDGE_CONSENSUS_ARTIFACT_FILENAME,
-        roleLineageDepth: 0,
-      },
-      ...(faithfulnessJudgeResult === undefined
-        ? []
-        : [
-            {
-              jobId: input.jobId,
-              roleStepId: "faithfulness_judge",
-              artifactFilename: `agent-role-runs/${FAITHFULNESS_VERDICT_ARTIFACT_FILENAME}`,
-              roleLineageDepth: 0,
-            },
-          ]),
-      ...(compiled.contextBudgetReport === undefined
-        ? []
-        : [
-            {
-              jobId: input.jobId,
-              roleStepId: compiled.contextBudgetReport.roleStepId,
-              artifactFilename: `${CONTEXT_BUDGET_ARTIFACT_DIRECTORY}/${compiled.contextBudgetReport.roleStepId}.json`,
-              roleLineageDepth: 0,
-            },
-          ]),
-      ...(repairLoopResult === undefined
-        ? []
-        : Array.from({ length: repairLoopResult.repairIterationCount }).flatMap(
-            (_unused, index) => {
+        ? undefined
+        : await selfConsistencyWritePromise;
+    const generatorPassRunArtifacts = await Promise.all(
+      generatorPassRunPromises,
+    );
+    const genealogyArtifact = await writeGenealogyArtifact({
+      runDir: artifactDir,
+      generatedAt: input.generatedAt,
+      nodes: [
+        {
+          jobId: input.jobId,
+          roleStepId: "test_generation",
+          artifactFilename: "agent-role-runs/test_generation.json",
+          roleLineageDepth: 0,
+        },
+        ...generatorPassRunArtifacts.map((artifact) => ({
+          jobId: input.jobId,
+          roleStepId: artifact.artifact.roleRunId,
+          artifactFilename: `agent-role-runs/${artifact.artifact.roleRunId}.json`,
+          roleLineageDepth: 0,
+        })),
+        ...adversarialCriticRoundArtifacts.map((artifact) => ({
+          jobId: input.jobId,
+          roleStepId: `adversarial_critic_round_${artifact.round}`,
+          artifactFilename: `agent-role-runs/${ADVERSARIAL_CRITIC_ROUND_ARTIFACT_PREFIX}${artifact.round}.json`,
+          roleLineageDepth: artifact.round,
+        })),
+        {
+          jobId: input.jobId,
+          roleStepId: "logic_judge",
+          artifactFilename: `agent-role-runs/${LOGIC_JUDGE_VERDICT_ARTIFACT_FILENAME}`,
+          roleLineageDepth: 0,
+        },
+        ...(a11yJudgeResult === undefined
+          ? []
+          : [
+              {
+                jobId: input.jobId,
+                roleStepId: "a11y_judge",
+                artifactFilename: `agent-role-runs/${A11Y_JUDGE_VERDICT_ARTIFACT_FILENAME}`,
+                roleLineageDepth: 0,
+              },
+            ]),
+        {
+          jobId: input.jobId,
+          roleStepId: "judge_consensus",
+          artifactFilename: JUDGE_CONSENSUS_ARTIFACT_FILENAME,
+          roleLineageDepth: 0,
+        },
+        ...(faithfulnessJudgeResult === undefined
+          ? []
+          : [
+              {
+                jobId: input.jobId,
+                roleStepId: "faithfulness_judge",
+                artifactFilename: `agent-role-runs/${FAITHFULNESS_VERDICT_ARTIFACT_FILENAME}`,
+                roleLineageDepth: 0,
+              },
+            ]),
+        ...(compiled.contextBudgetReport === undefined
+          ? []
+          : [
+              {
+                jobId: input.jobId,
+                roleStepId: compiled.contextBudgetReport.roleStepId,
+                artifactFilename: `${CONTEXT_BUDGET_ARTIFACT_DIRECTORY}/${compiled.contextBudgetReport.roleStepId}.json`,
+                roleLineageDepth: 0,
+              },
+            ]),
+        ...(repairLoopResult === undefined
+          ? []
+          : Array.from({
+              length: repairLoopResult.repairIterationCount,
+            }).flatMap((_unused, index) => {
               const iteration = index + 1;
               return [
                 {
@@ -5691,1036 +5858,1052 @@ export const runFigmaToQcTestCases = async (
                   roleLineageDepth: iteration,
                 },
               ];
-            },
-          )),
-    ],
-  });
-  const harnessCheckpointSummary =
-    harnessArtifactPath !== undefined
-      ? summarizeAgentHarnessCheckpointChain(
-          await readAgentHarnessCheckpointChain({
-            runDir: artifactDir,
-            jobId: input.jobId,
-          }),
-        )
-      : {
-          headOfChainHash: AGENT_HARNESS_CHECKPOINT_ROOT_PARENT_HASH,
-          chainLength: 0,
-        };
-
-  // 10. Customer Markdown.
-  const customerLabel = resolveCustomerLabel(input, figmaFile);
-  const sourceLabel = resolveSourceLabel(input.source);
-  const acceptanceCriteria =
-    customContextMarkdown === undefined
-      ? undefined
-      : extractAcceptanceCriteriaFromMarkdown(
-          customContextMarkdown.bodyMarkdown,
-        );
-  const rendered = renderCustomerMarkdown({
-    list: calibratedGeneratedTestCases,
-    fileName: customerLabel,
-    sourceLabel,
-    generatedAt: input.generatedAt,
-    workflowTopology,
-    ...(acceptanceCriteria !== undefined ? { acceptanceCriteria } : {}),
-    ...(input.showConfidence === true ? { showConfidence: true } : {}),
-  });
-  const markdownDir = join(artifactDir, "customer-markdown");
-  await mkdir(markdownDir, { recursive: true });
-  const combinedMarkdownPath = join(markdownDir, "testfaelle.md");
-  const combinedMarkdownBytes = Buffer.from(rendered.combinedMarkdown, "utf8");
-  await writeAtomicText(combinedMarkdownPath, rendered.combinedMarkdown);
-  const perCasePaths: string[] = [];
-  const perCaseArtifacts: Array<{ filename: string; bytes: Buffer }> = [];
-  for (const file of rendered.perCaseFiles) {
-    const filePath = join(markdownDir, file.filename);
-    await writeAtomicText(filePath, file.body);
-    perCasePaths.push(filePath);
-    perCaseArtifacts.push({
-      filename: `customer-markdown/${file.filename}`,
-      bytes: Buffer.from(file.body, "utf8"),
+            })),
+      ],
     });
-  }
-  const visualSidecarSummary =
-    visualSidecarResult?.outcome === "success" &&
-    visualSidecarArtifactBytes !== undefined
-      ? {
-          selectedDeployment: visualSidecarResult.selectedDeployment,
-          fallbackReason: visualSidecarResult.fallbackReason,
-          confidenceSummary: visualSidecarResult.confidenceSummary,
-          resultArtifactSha256: sha256OfBytes(visualSidecarArtifactBytes),
-        }
-      : undefined;
-  const finopsArtifactFilename = `finops/${finopsWritten.filename}`;
-  const productionRunnerEvidenceSealPath = join(
-    artifactDir,
-    PRODUCTION_RUNNER_EVIDENCE_SEAL_ARTIFACT_FILENAME,
-  );
-  const productionRunnerEvidenceSealBytes = Buffer.from(
-    serializeProductionRunnerEvidenceSeal(
-      buildProductionRunnerEvidenceSeal({
-        jobId: input.jobId,
-        generatedAt: input.generatedAt,
-        harnessArtifactFilenames: [
-          AGENT_PARTICIPATION_ARTIFACT_FILENAME,
-          WORKFLOW_TOPOLOGY_ARTIFACT_FILENAME,
-          "agent-role-runs/test_generation.json",
-          ...generatorPassRunArtifacts.map(
-            (artifact) => `agent-role-runs/${artifact.artifact.roleRunId}.json`,
-          ),
-          ...(adversarialCriticTraceArtifact !== undefined
-            ? [ADVERSARIAL_CRITIC_TRACE_ARTIFACT_FILENAME]
-            : []),
-          ...adversarialCriticRoundArtifacts.map(
-            (artifact) =>
-              `agent-role-runs/${ADVERSARIAL_CRITIC_ROUND_ARTIFACT_PREFIX}${artifact.round}.json`,
-          ),
-          `agent-role-runs/${LOGIC_JUDGE_VERDICT_ARTIFACT_FILENAME}`,
-          ...(a11yJudgeResult === undefined
-            ? []
-            : [`agent-role-runs/${A11Y_JUDGE_VERDICT_ARTIFACT_FILENAME}`]),
-          JUDGE_CONSENSUS_ARTIFACT_FILENAME,
-          ...(faithfulnessJudgeResult === undefined
-            ? []
-            : [`agent-role-runs/${FAITHFULNESS_VERDICT_ARTIFACT_FILENAME}`]),
-          ...(contextBudgetReportPath !== undefined &&
-          compiled.contextBudgetReport !== undefined
-            ? [
-                `${CONTEXT_BUDGET_ARTIFACT_DIRECTORY}/${compiled.contextBudgetReport.roleStepId}.json`,
-              ]
-            : []),
-          ...(harnessArtifactPath !== undefined
-            ? [harnessArtifactPath.slice(artifactDir.length + 1)]
-            : []),
-        ],
-        headOfChainHash: harnessCheckpointSummary.headOfChainHash,
-        chainLength: harnessCheckpointSummary.chainLength,
-        finopsArtifactFilename,
-        bySourceHash: computePerSourceCostBreakdownHashFromReport(finopsReport),
-        genealogyDagHash: sha256OfBytes(genealogyArtifact.bytes),
-        visualEvidenceHashes:
-          visualSidecarArtifact?.visualEvidenceRefs?.map((ref) => ({
-            screenId: ref.screenId,
-            modelDeployment: ref.modelDeployment,
-            evidenceHash: ref.evidenceHash,
-          })) ?? [],
-        ...(customContextMarkdown !== undefined
-          ? {
-              customContextMarkdownHashes: [
-                {
-                  sourceId: CUSTOM_CONTEXT_MARKDOWN_SOURCE_ID,
-                  markdownContentHash:
-                    customContextMarkdown.markdownContentHash,
-                  plainContentHash: customContextMarkdown.plainContentHash,
-                },
-              ],
-            }
-          : {}),
-      }),
-    ),
-    "utf8",
-  );
-  // Subprocessor register (Issue #2174). Emitted before provenance so
-  // the JSON-LD graph can pin its on-disk SHA-256 in a `prov:Entity`
-  // node and stamp the register's internal Merkle root at the bundle
-  // level. The register is static (operator-side document), so building
-  // it here is deterministic and adds no token spend.
-  const subprocessorRegisterArtifact = buildSubprocessorRegister({
-    generatedAt: input.generatedAt,
-  });
-  const subprocessorRegisterPath = join(
-    artifactDir,
-    SUBPROCESSOR_REGISTER_ARTIFACT_FILENAME,
-  );
-  await writeAtomicBytes(
-    subprocessorRegisterPath,
-    Buffer.from(
-      serializeSubprocessorRegister(subprocessorRegisterArtifact),
-      "utf8",
-    ),
-  );
-  // Issue #2176 — multi-tenant isolation attestation. Captures every
-  // persistent-store read recorded under the active AsyncLocalStorage
-  // scope and emits a byte-stable attestation. The artifact's SHA-256
-  // is pinned in `provenance.jsonld` so a downstream verifier can
-  // cross-reference the per-run isolation evidence without parsing the
-  // attestation file. The attestation builder re-asserts that no read
-  // crossed tenant boundaries — a violation here aborts the run.
-  const tenantIsolationAttestation = buildTenantIsolationAttestation({
-    jobId: input.jobId,
-    generatedAt: input.generatedAt,
-    tenantScope,
-    reads: snapshotTenantIsolationReads(),
-  });
-  const tenantIsolationAttestationPath = join(
-    artifactDir,
-    TENANT_ISOLATION_ATTESTATION_ARTIFACT_FILENAME,
-  );
-  await writeAtomicBytes(
-    tenantIsolationAttestationPath,
-    Buffer.from(
-      serializeTenantIsolationAttestation(tenantIsolationAttestation),
-      "utf8",
-    ),
-  );
-  const provenanceDocument = await buildRunProvenanceGraph({
-    runDir: artifactDir,
-    jobId: input.jobId,
-    generatedAt: input.generatedAt,
-    sourceKind: input.source.kind,
-    finalGeneratedTestCases: calibratedGeneratedTestCases,
-    regionAttestations: regionAttestationObservations,
-    subprocessorRegister: {
-      artifactFilename: SUBPROCESSOR_REGISTER_ARTIFACT_FILENAME,
-      merkleRoot: subprocessorRegisterArtifact.merkleRoot,
-    },
-    tenantIsolationAttestation: {
-      artifactFilename: TENANT_ISOLATION_ATTESTATION_ARTIFACT_FILENAME,
-      attestationSha256: tenantIsolationAttestation.attestationSha256,
-      tenantScope,
-    },
-    initialGenerationDeployment:
-      capturedLlmResult?.outcome === "success"
-        ? capturedLlmResult.modelDeployment
-        : input.llm.client.deployment,
-    ...(repairLoopResult !== undefined
-      ? {
-          repairIterations: repairLoopResult.iterations.filter(
-            (iteration) => iteration.iteration > 0,
-          ),
-        }
-      : {}),
-    ...(adversarialCriticRoundArtifacts.length > 0
-      ? {
-          adversarialCriticRounds: adversarialCriticProvenanceRounds,
-        }
-      : {}),
-    logicJudge: {
-      artifactFilename: `agent-role-runs/${LOGIC_JUDGE_VERDICT_ARTIFACT_FILENAME}`,
-      verdict: logicJudgeResult.verdict,
-    },
-    judgeConsensus: {
-      artifactFilename: JUDGE_CONSENSUS_ARTIFACT_FILENAME,
-      verdict: judgeConsensusResult,
-    },
-    ...(faithfulnessJudgeResult !== undefined
-      ? {
-          faithfulnessJudge: {
-            artifactFilename: `agent-role-runs/${FAITHFULNESS_VERDICT_ARTIFACT_FILENAME}`,
-            verdict: faithfulnessJudgeResult.verdict,
-          },
-        }
-      : {}),
-    ...(a11yJudgeResult !== undefined
-      ? {
-          a11yJudge: {
-            artifactFilename: `agent-role-runs/${A11Y_JUDGE_VERDICT_ARTIFACT_FILENAME}`,
-            verdict: a11yJudgeResult.verdict,
-          },
-        }
-      : {}),
-  });
-  // Issue #2041 — mutation-killing-eval pass. Defaults to off; benchmark
-  // runs opt in via `--enable-mutation-eval`. The evaluator is fully
-  // deterministic and never calls an LLM, so enabling it does not consume
-  // any token budget. The persisted `mutation-report.json` and the
-  // embedded summary are byte-stable regenerations of the catalog state
-  // for the run.
-  const mutationEvalEnabled = input.mutationEval?.enabled === true;
-  const mutationReport = mutationEvalEnabled
-    ? evaluateMutationKillingSuite({
-        jobId: input.jobId,
-        generatedAt: input.generatedAt,
-        policyProfileId: validation.policy.policyProfileId,
-        testCases: calibratedGeneratedTestCases.testCases,
-        intent,
-        ...(input.mutationEval?.thresholdRatio !== undefined
-          ? { threshold: input.mutationEval.thresholdRatio }
-          : { threshold: MUTATION_KILL_RATE_DEFAULT_THRESHOLD }),
-      })
-    : undefined;
-  const mutationKillRateSummary =
-    mutationReport === undefined
-      ? undefined
-      : buildMutationKillRateSummary(mutationReport);
+    const harnessCheckpointSummary =
+      harnessArtifactPath !== undefined
+        ? summarizeAgentHarnessCheckpointChain(
+            await readAgentHarnessCheckpointChain({
+              runDir: artifactDir,
+              jobId: input.jobId,
+            }),
+          )
+        : {
+            headOfChainHash: AGENT_HARNESS_CHECKPOINT_ROOT_PARENT_HASH,
+            chainLength: 0,
+          };
 
-  // Issue #2180 — causal-validation framework. Defaults to off; only
-  // benchmark + customer evaluation runs opt in. Pair generation is
-  // fully deterministic (oracle-fed) and never calls an LLM, so the
-  // runtime cost is bounded by the per-hypothesis pair cap.
-  const causalValidationEnabled = input.causalValidation?.enabled === true;
-  const causalReport = causalValidationEnabled
-    ? await (async () => {
-        const invariantRegistryForCausal =
-          buildActiveDatasetInvariantRegistry();
-        const hypotheses = buildCausalHypothesisRegistry({
-          invariants: invariantRegistryForCausal.list(),
-          model: testDesignModel,
-          ...(input.causalValidation?.operatorHypotheses !== undefined
-            ? { operatorHypotheses: input.causalValidation.operatorHypotheses }
-            : {}),
-        });
-        const seed = input.causalValidation?.seed ?? input.jobId;
-        const pairs = await deriveCounterfactualPairs({
-          cases: calibratedGeneratedTestCases.testCases,
-          invariants: invariantRegistryForCausal.list(),
-          model: testDesignModel,
+    // 10. Customer Markdown.
+    const customerLabel = resolveCustomerLabel(input, figmaFile);
+    const sourceLabel = resolveSourceLabel(input.source);
+    const acceptanceCriteria =
+      customContextMarkdown === undefined
+        ? undefined
+        : extractAcceptanceCriteriaFromMarkdown(
+            customContextMarkdown.bodyMarkdown,
+          );
+    const rendered = renderCustomerMarkdown({
+      list: calibratedGeneratedTestCases,
+      fileName: customerLabel,
+      sourceLabel,
+      generatedAt: input.generatedAt,
+      workflowTopology,
+      ...(acceptanceCriteria !== undefined ? { acceptanceCriteria } : {}),
+      ...(input.showConfidence === true ? { showConfidence: true } : {}),
+    });
+    const markdownDir = join(artifactDir, "customer-markdown");
+    await mkdir(markdownDir, { recursive: true });
+    const combinedMarkdownPath = join(markdownDir, "testfaelle.md");
+    const combinedMarkdownBytes = Buffer.from(
+      rendered.combinedMarkdown,
+      "utf8",
+    );
+    await writeAtomicText(combinedMarkdownPath, rendered.combinedMarkdown);
+    const perCasePaths: string[] = [];
+    const perCaseArtifacts: Array<{ filename: string; bytes: Buffer }> = [];
+    for (const file of rendered.perCaseFiles) {
+      const filePath = join(markdownDir, file.filename);
+      await writeAtomicText(filePath, file.body);
+      perCasePaths.push(filePath);
+      perCaseArtifacts.push({
+        filename: `customer-markdown/${file.filename}`,
+        bytes: Buffer.from(file.body, "utf8"),
+      });
+    }
+    const visualSidecarSummary =
+      visualSidecarResult?.outcome === "success" &&
+      visualSidecarArtifactBytes !== undefined
+        ? {
+            selectedDeployment: visualSidecarResult.selectedDeployment,
+            fallbackReason: visualSidecarResult.fallbackReason,
+            confidenceSummary: visualSidecarResult.confidenceSummary,
+            resultArtifactSha256: sha256OfBytes(visualSidecarArtifactBytes),
+          }
+        : undefined;
+    const finopsArtifactFilename = `finops/${finopsWritten.filename}`;
+    const productionRunnerEvidenceSealPath = join(
+      artifactDir,
+      PRODUCTION_RUNNER_EVIDENCE_SEAL_ARTIFACT_FILENAME,
+    );
+    const productionRunnerEvidenceSealBytes = Buffer.from(
+      serializeProductionRunnerEvidenceSeal(
+        buildProductionRunnerEvidenceSeal({
           jobId: input.jobId,
           generatedAt: input.generatedAt,
-          hypotheses,
-          now: new Date(input.generatedAt),
-          seed,
-          ...(input.causalValidation?.maxPairsPerHypothesis !== undefined
+          harnessArtifactFilenames: [
+            AGENT_PARTICIPATION_ARTIFACT_FILENAME,
+            WORKFLOW_TOPOLOGY_ARTIFACT_FILENAME,
+            "agent-role-runs/test_generation.json",
+            ...generatorPassRunArtifacts.map(
+              (artifact) =>
+                `agent-role-runs/${artifact.artifact.roleRunId}.json`,
+            ),
+            ...(adversarialCriticTraceArtifact !== undefined
+              ? [ADVERSARIAL_CRITIC_TRACE_ARTIFACT_FILENAME]
+              : []),
+            ...adversarialCriticRoundArtifacts.map(
+              (artifact) =>
+                `agent-role-runs/${ADVERSARIAL_CRITIC_ROUND_ARTIFACT_PREFIX}${artifact.round}.json`,
+            ),
+            `agent-role-runs/${LOGIC_JUDGE_VERDICT_ARTIFACT_FILENAME}`,
+            ...(a11yJudgeResult === undefined
+              ? []
+              : [`agent-role-runs/${A11Y_JUDGE_VERDICT_ARTIFACT_FILENAME}`]),
+            JUDGE_CONSENSUS_ARTIFACT_FILENAME,
+            ...(faithfulnessJudgeResult === undefined
+              ? []
+              : [`agent-role-runs/${FAITHFULNESS_VERDICT_ARTIFACT_FILENAME}`]),
+            ...(contextBudgetReportPath !== undefined &&
+            compiled.contextBudgetReport !== undefined
+              ? [
+                  `${CONTEXT_BUDGET_ARTIFACT_DIRECTORY}/${compiled.contextBudgetReport.roleStepId}.json`,
+                ]
+              : []),
+            ...(harnessArtifactPath !== undefined
+              ? [harnessArtifactPath.slice(artifactDir.length + 1)]
+              : []),
+          ],
+          headOfChainHash: harnessCheckpointSummary.headOfChainHash,
+          chainLength: harnessCheckpointSummary.chainLength,
+          finopsArtifactFilename,
+          bySourceHash:
+            computePerSourceCostBreakdownHashFromReport(finopsReport),
+          genealogyDagHash: sha256OfBytes(genealogyArtifact.bytes),
+          visualEvidenceHashes:
+            visualSidecarArtifact?.visualEvidenceRefs?.map((ref) => ({
+              screenId: ref.screenId,
+              modelDeployment: ref.modelDeployment,
+              evidenceHash: ref.evidenceHash,
+            })) ?? [],
+          ...(customContextMarkdown !== undefined
             ? {
-                maxPairsPerHypothesis:
-                  input.causalValidation.maxPairsPerHypothesis,
+                customContextMarkdownHashes: [
+                  {
+                    sourceId: CUSTOM_CONTEXT_MARKDOWN_SOURCE_ID,
+                    markdownContentHash:
+                      customContextMarkdown.markdownContentHash,
+                    plainContentHash: customContextMarkdown.plainContentHash,
+                  },
+                ],
               }
             : {}),
-        });
-        return evaluateCounterfactualPairs({
-          jobId: input.jobId,
-          generatedAt: input.generatedAt,
-          hypotheses,
-          pairs,
-        });
-      })()
-    : undefined;
-  const causalCoverageSummary =
-    causalReport === undefined
-      ? undefined
-      : summarizeCausalCoverage(causalReport);
-
-  const policyReport: TestCasePolicyReport = {
-    ...validation.policy,
-    ...(confidenceSummary !== undefined ? confidenceSummary : {}),
-    provenance: {
-      artifactFilename: PROVENANCE_ARTIFACT_FILENAME,
-      merkleAlgorithm: "sha256_merkle_v1",
-      merkleRoot: provenanceDocument["ti:merkleSeal"].root,
-      leafCount: provenanceDocument["ti:merkleSeal"].leafCount,
-    },
-    // Issue #2053 — surface quality-gate results alongside the policy
-    // decisions. Today this carries the single `G-NEG-CASE` entry; the
-    // array shape leaves room for additional gates without a contract
-    // change. Always present once the runner reaches this point so
-    // consumers do not have to defend against the field being absent.
-    gateResults: [negativeCaseLiftGateResult],
-    ...(mutationKillRateSummary !== undefined
-      ? { mutationKillRate: mutationKillRateSummary }
-      : {}),
-    ...(causalCoverageSummary !== undefined
-      ? { causalCoverage: causalCoverageSummary }
-      : {}),
-  };
-  const policyBytes = encodeCanonicalJson(policyReport);
-  const reviewStore = createFileSystemReviewStore({
-    destinationDir: artifactDir,
-  });
-  await reviewStore.seedSnapshot({
-    jobId: input.jobId,
-    generatedAt: input.generatedAt,
-    list: calibratedGeneratedTestCases,
-    policy: policyReport,
-  });
-  if (judgeConsensusResult.panel.length > 1) {
-    await reviewStore.recordTransition({
-      jobId: input.jobId,
-      kind: "note",
-      at: input.generatedAt,
-      note: "Multi-judge consensus recorded for audit.",
-      metadata: {
-        agreementShape: judgeConsensusResult.agreementShape,
-        voteAccept: judgeConsensusDisposition.voteCounts.accept,
-        voteRepair: judgeConsensusDisposition.voteCounts.repair,
-        voteReject: judgeConsensusDisposition.voteCounts.reject,
-        consensusVerdict: judgeConsensusResult.verdict,
-        reviewDisposition: judgeConsensusDisposition.disposition,
-        regulatedDisagreement: judgeConsensusDisposition.regulatedDisagreement,
-        ...(judgeConsensusResult.vetoBy !== undefined
-          ? { vetoJudgeId: judgeConsensusResult.vetoBy.judgeId }
-          : {}),
-        ...(judgeConsensusDisposition.tiebreakerDeployment !== undefined
-          ? {
-              tiebreakerDeployment:
-                judgeConsensusDisposition.tiebreakerDeployment,
-            }
-          : {}),
-        ...(judgeConsensusDisposition.tiebreakerVerdict !== undefined
-          ? {
-              tiebreakerVerdict: judgeConsensusDisposition.tiebreakerVerdict,
-            }
-          : {}),
-      },
+        }),
+      ),
+      "utf8",
+    );
+    // Subprocessor register (Issue #2174). Emitted before provenance so
+    // the JSON-LD graph can pin its on-disk SHA-256 in a `prov:Entity`
+    // node and stamp the register's internal Merkle root at the bundle
+    // level. The register is static (operator-side document), so building
+    // it here is deterministic and adds no token spend.
+    const subprocessorRegisterArtifact = buildSubprocessorRegister({
+      generatedAt: input.generatedAt,
     });
-  }
-  const mutationReportBytes =
-    mutationReport === undefined
-      ? undefined
-      : encodeMutationReportBytes(mutationReport);
-  const mutationReportPath =
-    mutationReport === undefined
-      ? undefined
-      : join(artifactDir, MUTATION_REPORT_ARTIFACT_FILENAME);
-  const causalReportBytes =
-    causalReport === undefined ? undefined : encodeCanonicalJson(causalReport);
-  const causalReportPath =
-    causalReport === undefined
-      ? undefined
-      : join(artifactDir, CAUSAL_VALIDATION_REPORT_ARTIFACT_FILENAME);
-  const modelDeployments = {
-    testGeneration: input.llm.client.deployment,
-    ...(input.llm.bundle !== undefined
-      ? {
-          visualPrimary: toEvidenceVisualDeployment(
-            input.llm.bundle.visualPrimary.deployment,
-          ),
-          visualFallback: toEvidenceVisualDeployment(
-            input.llm.bundle.visualFallback.deployment,
-          ),
-        }
-      : {}),
-  } satisfies Parameters<
-    typeof buildWave1ValidationEvidenceManifest
-  >[0]["modelDeployments"];
-  const rawEvidenceArtifacts = [
-    {
-      filename: "business-intent-ir.json",
-      bytes: intentBytes,
-      category: "intent" as const,
-    },
-    {
-      filename: "compiled-prompt.json",
-      bytes: compiledPromptBytes,
-      category: "intent" as const,
-    },
-    ...(customerEvalRubricBytes === undefined
-      ? []
-      : [
-          {
-            filename: "customer-eval-rubric.json",
-            bytes: customerEvalRubricBytes,
-            category: "intent" as const,
-          },
-        ]),
-    ...(tenantBundleResolvedBytes === undefined
-      ? []
-      : [
-          {
-            filename: TENANT_BUNDLE_RESOLVED_ARTIFACT_FILENAME,
-            bytes: tenantBundleResolvedBytes,
-            category: "intent" as const,
-          },
-        ]),
-    {
-      filename: LOGIC_JUDGE_COMPILED_PROMPT_ARTIFACT_FILENAME,
-      bytes: logicJudgeCompiledPromptBytes,
-      category: "intent" as const,
-    },
-    {
-      filename: `agent-role-runs/${LOGIC_JUDGE_VERDICT_ARTIFACT_FILENAME}`,
-      bytes: logicJudgeVerdictBytes,
-      category: "manifest" as const,
-    },
-    {
-      filename: JUDGE_CONSENSUS_ARTIFACT_FILENAME,
-      bytes: judgeConsensusBytes,
-      category: "manifest" as const,
-    },
-    {
-      filename: RUN_QUALITY_ARTIFACT_FILENAME,
-      bytes: runQualityBytes,
-      category: "manifest" as const,
-    },
-    ...(selfConsistencyWritten === undefined
-      ? []
-      : [
-          {
-            filename: SELF_CONSISTENCY_REPORT_ARTIFACT_FILENAME,
-            bytes: selfConsistencyWritten.bytes,
-            category: "manifest" as const,
-          },
-        ]),
-    {
-      filename: AGENT_PARTICIPATION_ARTIFACT_FILENAME,
-      bytes: agentParticipationWritten.bytes,
-      category: "manifest" as const,
-    },
-    ...(adversarialCriticTraceArtifact === undefined
-      ? []
-      : [
-          {
-            filename: ADVERSARIAL_CRITIC_TRACE_ARTIFACT_FILENAME,
-            bytes: Buffer.from(
-              `${canonicalJson(adversarialCriticTraceArtifact)}\n`,
-              "utf8",
-            ),
-            category: "manifest" as const,
-          },
-        ]),
-    ...adversarialCriticRoundArtifacts.map((artifact) => ({
-      filename: `agent-role-runs/${ADVERSARIAL_CRITIC_ROUND_ARTIFACT_PREFIX}${artifact.round}.json`,
-      bytes: Buffer.from(`${canonicalJson(artifact)}\n`, "utf8"),
-      category: "manifest" as const,
-    })),
-    ...(faithfulnessJudgeCompiledPromptBytes === undefined
-      ? []
-      : [
-          {
-            filename: FAITHFULNESS_JUDGE_COMPILED_PROMPT_ARTIFACT_FILENAME,
-            bytes: faithfulnessJudgeCompiledPromptBytes,
-            category: "intent" as const,
-          },
-        ]),
-    ...(faithfulnessJudgeVerdictBytes === undefined
-      ? []
-      : [
-          {
-            filename: `agent-role-runs/${FAITHFULNESS_VERDICT_ARTIFACT_FILENAME}`,
-            bytes: faithfulnessJudgeVerdictBytes,
-            category: "manifest" as const,
-          },
-        ]),
-    ...(a11yJudgeVerdictBytes === undefined
-      ? []
-      : [
-          {
-            filename: `agent-role-runs/${A11Y_JUDGE_VERDICT_ARTIFACT_FILENAME}`,
-            bytes: a11yJudgeVerdictBytes,
-            category: "manifest" as const,
-          },
-        ]),
-    {
-      filename: "agent-role-runs/test_generation.json",
-      bytes: agentRoleRunArtifact.bytes,
-      category: "manifest" as const,
-    },
-    ...generatorPassRunArtifacts.map((artifact) => ({
-      filename: `agent-role-runs/${artifact.artifact.roleRunId}.json`,
-      bytes: artifact.bytes,
-      category: "manifest" as const,
-    })),
-    {
-      filename: "genealogy.json",
-      bytes: genealogyArtifact.bytes,
-      category: "genealogy" as const,
-    },
-    ...(contextBudgetReportBytes === undefined ||
-    compiled.contextBudgetReport === undefined
-      ? []
-      : [
-          {
-            filename: `${CONTEXT_BUDGET_ARTIFACT_DIRECTORY}/${compiled.contextBudgetReport.roleStepId}.json`,
-            bytes: contextBudgetReportBytes,
-            category: "manifest" as const,
-          },
-        ]),
-    {
-      filename: WORKFLOW_TOPOLOGY_ARTIFACT_FILENAME,
-      bytes: Buffer.from(canonicalJson(workflowTopology), "utf8"),
-      category: "intent" as const,
-    },
-    {
-      filename: GENERATED_TESTCASES_ARTIFACT_FILENAME,
-      bytes: generatedBytes,
-      category: "validation" as const,
-    },
-    {
-      filename: TEST_CASE_VALIDATION_REPORT_ARTIFACT_FILENAME,
-      bytes: validationBytes,
-      category: "validation" as const,
-    },
-    ...(testDataOracleReportBytes === undefined
-      ? []
-      : [
-          {
-            filename: TEST_DATA_ORACLE_REPORT_ARTIFACT_FILENAME,
-            bytes: testDataOracleReportBytes,
-            category: "validation" as const,
-          },
-        ]),
-    ...(visualSidecarValidationBytes === undefined
-      ? []
-      : [
-          {
-            filename: VISUAL_SIDECAR_VALIDATION_REPORT_ARTIFACT_FILENAME,
-            bytes: visualSidecarValidationBytes,
-            category: "validation" as const,
-          },
-        ]),
-    {
-      filename: TEST_CASE_POLICY_REPORT_ARTIFACT_FILENAME,
-      bytes: policyBytes,
-      category: "validation" as const,
-    },
-    {
-      filename: PROVENANCE_ARTIFACT_FILENAME,
-      bytes: Buffer.from(`${canonicalJson(provenanceDocument)}\n`, "utf8"),
-      category: "manifest" as const,
-    },
-    {
-      filename: SUBPROCESSOR_REGISTER_ARTIFACT_FILENAME,
-      bytes: Buffer.from(
+    const subprocessorRegisterPath = join(
+      artifactDir,
+      SUBPROCESSOR_REGISTER_ARTIFACT_FILENAME,
+    );
+    await writeAtomicBytes(
+      subprocessorRegisterPath,
+      Buffer.from(
         serializeSubprocessorRegister(subprocessorRegisterArtifact),
         "utf8",
       ),
-      category: "manifest" as const,
-    },
-    {
-      filename: TEST_CASE_COVERAGE_REPORT_ARTIFACT_FILENAME,
-      bytes: coverageBytes,
-      category: "validation" as const,
-    },
-    {
-      filename: "untrusted-content-normalization-report.json",
-      bytes: untrustedContentNormalizationReportBytes,
-      category: "manifest" as const,
-    },
-    {
-      filename: finopsArtifactFilename,
-      bytes: finopsWritten.bytes,
-      category: "finops" as const,
-    },
-    {
-      filename: PRODUCTION_RUNNER_EVIDENCE_SEAL_ARTIFACT_FILENAME,
-      bytes: productionRunnerEvidenceSealBytes,
-      category: "manifest" as const,
-    },
-    ...(visualSidecarArtifactBytes === undefined
-      ? []
-      : [
-          {
-            filename: VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME,
-            bytes: visualSidecarArtifactBytes,
-            category: "visual_sidecar" as const,
-          },
-        ]),
-    ...visualSidecarDiagnostics.map((diagnostic) => ({
-      filename: diagnostic.filename,
-      bytes: diagnostic.bytes,
-      category: "visual_sidecar" as const,
-    })),
-    ...(visualCaptureArtifacts === undefined
-      ? []
-      : [
-          {
-            filename: visualCaptureArtifacts.manifestFilename,
-            bytes: visualCaptureArtifacts.manifestBytes,
-            category: "visual_sidecar" as const,
-          },
-          ...visualCaptureArtifacts.files.map((file) => ({
-            filename: file.filename,
-            bytes: file.bytes,
-            category: "visual_sidecar" as const,
-          })),
-        ]),
-    {
-      filename: "customer-markdown/testfaelle.md",
-      bytes: combinedMarkdownBytes,
-      category: "export" as const,
-    },
-    ...perCaseArtifacts.map((artifact) => ({
-      filename: artifact.filename,
-      bytes: artifact.bytes,
-      category: "export" as const,
-    })),
-    ...(mutationReportBytes === undefined
-      ? []
-      : [
-          {
-            filename: MUTATION_REPORT_ARTIFACT_FILENAME,
-            bytes: mutationReportBytes,
-            category: "manifest" as const,
-          },
-        ]),
-    ...(causalReportBytes === undefined
-      ? []
-      : [
-          {
-            filename: CAUSAL_VALIDATION_REPORT_ARTIFACT_FILENAME,
-            bytes: causalReportBytes,
-            category: "manifest" as const,
-          },
-        ]),
-  ];
-  const evidenceArtifacts = rawEvidenceArtifacts.map((artifact) => {
-    const artifactHash = sha256Hex(artifact.bytes);
-    return {
-      ...artifact,
+    );
+    // Issue #2176 — multi-tenant isolation attestation. Captures every
+    // persistent-store read recorded under the active AsyncLocalStorage
+    // scope and emits a byte-stable attestation. The artifact's SHA-256
+    // is pinned in `provenance.jsonld` so a downstream verifier can
+    // cross-reference the per-run isolation evidence without parsing the
+    // attestation file. The attestation builder re-asserts that no read
+    // crossed tenant boundaries — a violation here aborts the run.
+    const tenantIsolationAttestation = buildTenantIsolationAttestation({
+      jobId: input.jobId,
+      generatedAt: input.generatedAt,
+      tenantScope,
+      reads: snapshotTenantIsolationReads(),
+    });
+    const tenantIsolationAttestationPath = join(
+      artifactDir,
+      TENANT_ISOLATION_ATTESTATION_ARTIFACT_FILENAME,
+    );
+    await writeAtomicBytes(
+      tenantIsolationAttestationPath,
+      Buffer.from(
+        serializeTenantIsolationAttestation(tenantIsolationAttestation),
+        "utf8",
+      ),
+    );
+    const provenanceDocument = await buildRunProvenanceGraph({
+      runDir: artifactDir,
+      jobId: input.jobId,
+      generatedAt: input.generatedAt,
+      sourceKind: input.source.kind,
+      finalGeneratedTestCases: calibratedGeneratedTestCases,
+      regionAttestations: regionAttestationObservations,
+      subprocessorRegister: {
+        artifactFilename: SUBPROCESSOR_REGISTER_ARTIFACT_FILENAME,
+        merkleRoot: subprocessorRegisterArtifact.merkleRoot,
+      },
+      tenantIsolationAttestation: {
+        artifactFilename: TENANT_ISOLATION_ATTESTATION_ARTIFACT_FILENAME,
+        attestationSha256: tenantIsolationAttestation.attestationSha256,
+        tenantScope,
+      },
+      initialGenerationDeployment:
+        capturedLlmResult?.outcome === "success"
+          ? capturedLlmResult.modelDeployment
+          : input.llm.client.deployment,
+      ...(repairLoopResult !== undefined
+        ? {
+            repairIterations: repairLoopResult.iterations.filter(
+              (iteration) => iteration.iteration > 0,
+            ),
+          }
+        : {}),
+      ...(adversarialCriticRoundArtifacts.length > 0
+        ? {
+            adversarialCriticRounds: adversarialCriticProvenanceRounds,
+          }
+        : {}),
+      logicJudge: {
+        artifactFilename: `agent-role-runs/${LOGIC_JUDGE_VERDICT_ARTIFACT_FILENAME}`,
+        verdict: logicJudgeResult.verdict,
+      },
+      judgeConsensus: {
+        artifactFilename: JUDGE_CONSENSUS_ARTIFACT_FILENAME,
+        verdict: judgeConsensusResult,
+      },
+      ...(faithfulnessJudgeResult !== undefined
+        ? {
+            faithfulnessJudge: {
+              artifactFilename: `agent-role-runs/${FAITHFULNESS_VERDICT_ARTIFACT_FILENAME}`,
+              verdict: faithfulnessJudgeResult.verdict,
+            },
+          }
+        : {}),
+      ...(a11yJudgeResult !== undefined
+        ? {
+            a11yJudge: {
+              artifactFilename: `agent-role-runs/${A11Y_JUDGE_VERDICT_ARTIFACT_FILENAME}`,
+              verdict: a11yJudgeResult.verdict,
+            },
+          }
+        : {}),
+    });
+    // Issue #2041 — mutation-killing-eval pass. Defaults to off; benchmark
+    // runs opt in via `--enable-mutation-eval`. The evaluator is fully
+    // deterministic and never calls an LLM, so enabling it does not consume
+    // any token budget. The persisted `mutation-report.json` and the
+    // embedded summary are byte-stable regenerations of the catalog state
+    // for the run.
+    const mutationEvalEnabled = input.mutationEval?.enabled === true;
+    const mutationReport = mutationEvalEnabled
+      ? evaluateMutationKillingSuite({
+          jobId: input.jobId,
+          generatedAt: input.generatedAt,
+          policyProfileId: validation.policy.policyProfileId,
+          testCases: calibratedGeneratedTestCases.testCases,
+          intent,
+          ...(input.mutationEval?.thresholdRatio !== undefined
+            ? { threshold: input.mutationEval.thresholdRatio }
+            : { threshold: MUTATION_KILL_RATE_DEFAULT_THRESHOLD }),
+        })
+      : undefined;
+    const mutationKillRateSummary =
+      mutationReport === undefined
+        ? undefined
+        : buildMutationKillRateSummary(mutationReport);
+
+    // Issue #2180 — causal-validation framework. Defaults to off; only
+    // benchmark + customer evaluation runs opt in. Pair generation is
+    // fully deterministic (oracle-fed) and never calls an LLM, so the
+    // runtime cost is bounded by the per-hypothesis pair cap.
+    const causalValidationEnabled = input.causalValidation?.enabled === true;
+    const causalReport = causalValidationEnabled
+      ? await (async () => {
+          const invariantRegistryForCausal =
+            buildActiveDatasetInvariantRegistry();
+          const hypotheses = buildCausalHypothesisRegistry({
+            invariants: invariantRegistryForCausal.list(),
+            model: testDesignModel,
+            ...(input.causalValidation?.operatorHypotheses !== undefined
+              ? {
+                  operatorHypotheses: input.causalValidation.operatorHypotheses,
+                }
+              : {}),
+          });
+          const seed = input.causalValidation?.seed ?? input.jobId;
+          const pairs = await deriveCounterfactualPairs({
+            cases: calibratedGeneratedTestCases.testCases,
+            invariants: invariantRegistryForCausal.list(),
+            model: testDesignModel,
+            jobId: input.jobId,
+            generatedAt: input.generatedAt,
+            hypotheses,
+            now: new Date(input.generatedAt),
+            seed,
+            ...(input.causalValidation?.maxPairsPerHypothesis !== undefined
+              ? {
+                  maxPairsPerHypothesis:
+                    input.causalValidation.maxPairsPerHypothesis,
+                }
+              : {}),
+          });
+          return evaluateCounterfactualPairs({
+            jobId: input.jobId,
+            generatedAt: input.generatedAt,
+            hypotheses,
+            pairs,
+          });
+        })()
+      : undefined;
+    const causalCoverageSummary =
+      causalReport === undefined
+        ? undefined
+        : summarizeCausalCoverage(causalReport);
+
+    const policyReport: TestCasePolicyReport = {
+      ...validation.policy,
+      ...(confidenceSummary !== undefined ? confidenceSummary : {}),
+      provenance: {
+        artifactFilename: PROVENANCE_ARTIFACT_FILENAME,
+        merkleAlgorithm: "sha256_merkle_v1",
+        merkleRoot: provenanceDocument["ti:merkleSeal"].root,
+        leafCount: provenanceDocument["ti:merkleSeal"].leafCount,
+      },
+      // Issue #2053 — surface quality-gate results alongside the policy
+      // decisions. Today this carries the single `G-NEG-CASE` entry; the
+      // array shape leaves room for additional gates without a contract
+      // change. Always present once the runner reaches this point so
+      // consumers do not have to defend against the field being absent.
+      gateResults: [negativeCaseLiftGateResult],
+      ...(mutationKillRateSummary !== undefined
+        ? { mutationKillRate: mutationKillRateSummary }
+        : {}),
+      ...(causalCoverageSummary !== undefined
+        ? { causalCoverage: causalCoverageSummary }
+        : {}),
+    };
+    const policyBytes = encodeCanonicalJson(policyReport);
+    const reviewStore = createFileSystemReviewStore({
+      destinationDir: artifactDir,
+    });
+    await reviewStore.seedSnapshot({
+      jobId: input.jobId,
+      generatedAt: input.generatedAt,
+      list: calibratedGeneratedTestCases,
+      policy: policyReport,
+    });
+    if (judgeConsensusResult.panel.length > 1) {
+      await reviewStore.recordTransition({
+        jobId: input.jobId,
+        kind: "note",
+        at: input.generatedAt,
+        note: "Multi-judge consensus recorded for audit.",
+        metadata: {
+          agreementShape: judgeConsensusResult.agreementShape,
+          voteAccept: judgeConsensusDisposition.voteCounts.accept,
+          voteRepair: judgeConsensusDisposition.voteCounts.repair,
+          voteReject: judgeConsensusDisposition.voteCounts.reject,
+          consensusVerdict: judgeConsensusResult.verdict,
+          reviewDisposition: judgeConsensusDisposition.disposition,
+          regulatedDisagreement:
+            judgeConsensusDisposition.regulatedDisagreement,
+          ...(judgeConsensusResult.vetoBy !== undefined
+            ? { vetoJudgeId: judgeConsensusResult.vetoBy.judgeId }
+            : {}),
+          ...(judgeConsensusDisposition.tiebreakerDeployment !== undefined
+            ? {
+                tiebreakerDeployment:
+                  judgeConsensusDisposition.tiebreakerDeployment,
+              }
+            : {}),
+          ...(judgeConsensusDisposition.tiebreakerVerdict !== undefined
+            ? {
+                tiebreakerVerdict: judgeConsensusDisposition.tiebreakerVerdict,
+              }
+            : {}),
+        },
+      });
+    }
+    const mutationReportBytes =
+      mutationReport === undefined
+        ? undefined
+        : encodeMutationReportBytes(mutationReport);
+    const mutationReportPath =
+      mutationReport === undefined
+        ? undefined
+        : join(artifactDir, MUTATION_REPORT_ARTIFACT_FILENAME);
+    const causalReportBytes =
+      causalReport === undefined
+        ? undefined
+        : encodeCanonicalJson(causalReport);
+    const causalReportPath =
+      causalReport === undefined
+        ? undefined
+        : join(artifactDir, CAUSAL_VALIDATION_REPORT_ARTIFACT_FILENAME);
+    const modelDeployments = {
+      testGeneration: input.llm.client.deployment,
+      ...(input.llm.bundle !== undefined
+        ? {
+            visualPrimary: toEvidenceVisualDeployment(
+              input.llm.bundle.visualPrimary.deployment,
+            ),
+            visualFallback: toEvidenceVisualDeployment(
+              input.llm.bundle.visualFallback.deployment,
+            ),
+          }
+        : {}),
+    } satisfies Parameters<
+      typeof buildWave1ValidationEvidenceManifest
+    >[0]["modelDeployments"];
+    const rawEvidenceArtifacts = [
+      {
+        filename: "business-intent-ir.json",
+        bytes: intentBytes,
+        category: "intent" as const,
+      },
+      {
+        filename: "compiled-prompt.json",
+        bytes: compiledPromptBytes,
+        category: "intent" as const,
+      },
+      ...(customerEvalRubricBytes === undefined
+        ? []
+        : [
+            {
+              filename: "customer-eval-rubric.json",
+              bytes: customerEvalRubricBytes,
+              category: "intent" as const,
+            },
+          ]),
+      ...(tenantBundleResolvedBytes === undefined
+        ? []
+        : [
+            {
+              filename: TENANT_BUNDLE_RESOLVED_ARTIFACT_FILENAME,
+              bytes: tenantBundleResolvedBytes,
+              category: "intent" as const,
+            },
+          ]),
+      {
+        filename: LOGIC_JUDGE_COMPILED_PROMPT_ARTIFACT_FILENAME,
+        bytes: logicJudgeCompiledPromptBytes,
+        category: "intent" as const,
+      },
+      {
+        filename: `agent-role-runs/${LOGIC_JUDGE_VERDICT_ARTIFACT_FILENAME}`,
+        bytes: logicJudgeVerdictBytes,
+        category: "manifest" as const,
+      },
+      {
+        filename: JUDGE_CONSENSUS_ARTIFACT_FILENAME,
+        bytes: judgeConsensusBytes,
+        category: "manifest" as const,
+      },
+      {
+        filename: RUN_QUALITY_ARTIFACT_FILENAME,
+        bytes: runQualityBytes,
+        category: "manifest" as const,
+      },
+      ...(selfConsistencyWritten === undefined
+        ? []
+        : [
+            {
+              filename: SELF_CONSISTENCY_REPORT_ARTIFACT_FILENAME,
+              bytes: selfConsistencyWritten.bytes,
+              category: "manifest" as const,
+            },
+          ]),
+      {
+        filename: AGENT_PARTICIPATION_ARTIFACT_FILENAME,
+        bytes: agentParticipationWritten.bytes,
+        category: "manifest" as const,
+      },
+      ...(adversarialCriticTraceArtifact === undefined
+        ? []
+        : [
+            {
+              filename: ADVERSARIAL_CRITIC_TRACE_ARTIFACT_FILENAME,
+              bytes: Buffer.from(
+                `${canonicalJson(adversarialCriticTraceArtifact)}\n`,
+                "utf8",
+              ),
+              category: "manifest" as const,
+            },
+          ]),
+      ...adversarialCriticRoundArtifacts.map((artifact) => ({
+        filename: `agent-role-runs/${ADVERSARIAL_CRITIC_ROUND_ARTIFACT_PREFIX}${artifact.round}.json`,
+        bytes: Buffer.from(`${canonicalJson(artifact)}\n`, "utf8"),
+        category: "manifest" as const,
+      })),
+      ...(faithfulnessJudgeCompiledPromptBytes === undefined
+        ? []
+        : [
+            {
+              filename: FAITHFULNESS_JUDGE_COMPILED_PROMPT_ARTIFACT_FILENAME,
+              bytes: faithfulnessJudgeCompiledPromptBytes,
+              category: "intent" as const,
+            },
+          ]),
+      ...(faithfulnessJudgeVerdictBytes === undefined
+        ? []
+        : [
+            {
+              filename: `agent-role-runs/${FAITHFULNESS_VERDICT_ARTIFACT_FILENAME}`,
+              bytes: faithfulnessJudgeVerdictBytes,
+              category: "manifest" as const,
+            },
+          ]),
+      ...(a11yJudgeVerdictBytes === undefined
+        ? []
+        : [
+            {
+              filename: `agent-role-runs/${A11Y_JUDGE_VERDICT_ARTIFACT_FILENAME}`,
+              bytes: a11yJudgeVerdictBytes,
+              category: "manifest" as const,
+            },
+          ]),
+      {
+        filename: "agent-role-runs/test_generation.json",
+        bytes: agentRoleRunArtifact.bytes,
+        category: "manifest" as const,
+      },
+      ...generatorPassRunArtifacts.map((artifact) => ({
+        filename: `agent-role-runs/${artifact.artifact.roleRunId}.json`,
+        bytes: artifact.bytes,
+        category: "manifest" as const,
+      })),
+      {
+        filename: "genealogy.json",
+        bytes: genealogyArtifact.bytes,
+        category: "genealogy" as const,
+      },
+      ...(contextBudgetReportBytes === undefined ||
+      compiled.contextBudgetReport === undefined
+        ? []
+        : [
+            {
+              filename: `${CONTEXT_BUDGET_ARTIFACT_DIRECTORY}/${compiled.contextBudgetReport.roleStepId}.json`,
+              bytes: contextBudgetReportBytes,
+              category: "manifest" as const,
+            },
+          ]),
+      {
+        filename: WORKFLOW_TOPOLOGY_ARTIFACT_FILENAME,
+        bytes: Buffer.from(canonicalJson(workflowTopology), "utf8"),
+        category: "intent" as const,
+      },
+      {
+        filename: GENERATED_TESTCASES_ARTIFACT_FILENAME,
+        bytes: generatedBytes,
+        category: "validation" as const,
+      },
+      {
+        filename: TEST_CASE_VALIDATION_REPORT_ARTIFACT_FILENAME,
+        bytes: validationBytes,
+        category: "validation" as const,
+      },
+      ...(testDataOracleReportBytes === undefined
+        ? []
+        : [
+            {
+              filename: TEST_DATA_ORACLE_REPORT_ARTIFACT_FILENAME,
+              bytes: testDataOracleReportBytes,
+              category: "validation" as const,
+            },
+          ]),
+      ...(visualSidecarValidationBytes === undefined
+        ? []
+        : [
+            {
+              filename: VISUAL_SIDECAR_VALIDATION_REPORT_ARTIFACT_FILENAME,
+              bytes: visualSidecarValidationBytes,
+              category: "validation" as const,
+            },
+          ]),
+      {
+        filename: TEST_CASE_POLICY_REPORT_ARTIFACT_FILENAME,
+        bytes: policyBytes,
+        category: "validation" as const,
+      },
+      {
+        filename: PROVENANCE_ARTIFACT_FILENAME,
+        bytes: Buffer.from(`${canonicalJson(provenanceDocument)}\n`, "utf8"),
+        category: "manifest" as const,
+      },
+      {
+        filename: SUBPROCESSOR_REGISTER_ARTIFACT_FILENAME,
+        bytes: Buffer.from(
+          serializeSubprocessorRegister(subprocessorRegisterArtifact),
+          "utf8",
+        ),
+        category: "manifest" as const,
+      },
+      {
+        filename: TEST_CASE_COVERAGE_REPORT_ARTIFACT_FILENAME,
+        bytes: coverageBytes,
+        category: "validation" as const,
+      },
+      {
+        filename: "untrusted-content-normalization-report.json",
+        bytes: untrustedContentNormalizationReportBytes,
+        category: "manifest" as const,
+      },
+      {
+        filename: finopsArtifactFilename,
+        bytes: finopsWritten.bytes,
+        category: "finops" as const,
+      },
+      {
+        filename: PRODUCTION_RUNNER_EVIDENCE_SEAL_ARTIFACT_FILENAME,
+        bytes: productionRunnerEvidenceSealBytes,
+        category: "manifest" as const,
+      },
+      ...(visualSidecarArtifactBytes === undefined
+        ? []
+        : [
+            {
+              filename: VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME,
+              bytes: visualSidecarArtifactBytes,
+              category: "visual_sidecar" as const,
+            },
+          ]),
+      ...visualSidecarDiagnostics.map((diagnostic) => ({
+        filename: diagnostic.filename,
+        bytes: diagnostic.bytes,
+        category: "visual_sidecar" as const,
+      })),
+      ...(visualCaptureArtifacts === undefined
+        ? []
+        : [
+            {
+              filename: visualCaptureArtifacts.manifestFilename,
+              bytes: visualCaptureArtifacts.manifestBytes,
+              category: "visual_sidecar" as const,
+            },
+            ...visualCaptureArtifacts.files.map((file) => ({
+              filename: file.filename,
+              bytes: file.bytes,
+              category: "visual_sidecar" as const,
+            })),
+          ]),
+      {
+        filename: "customer-markdown/testfaelle.md",
+        bytes: combinedMarkdownBytes,
+        category: "export" as const,
+      },
+      ...perCaseArtifacts.map((artifact) => ({
+        filename: artifact.filename,
+        bytes: artifact.bytes,
+        category: "export" as const,
+      })),
+      ...(mutationReportBytes === undefined
+        ? []
+        : [
+            {
+              filename: MUTATION_REPORT_ARTIFACT_FILENAME,
+              bytes: mutationReportBytes,
+              category: "manifest" as const,
+            },
+          ]),
+      ...(causalReportBytes === undefined
+        ? []
+        : [
+            {
+              filename: CAUSAL_VALIDATION_REPORT_ARTIFACT_FILENAME,
+              bytes: causalReportBytes,
+              category: "manifest" as const,
+            },
+          ]),
+    ];
+    const evidenceArtifacts = rawEvidenceArtifacts.map((artifact) => {
+      const artifactHash = sha256Hex(artifact.bytes);
+      return {
+        ...artifact,
+        regionAttestations: buildArtifactRegionAttestations({
+          artifactHash,
+          observations: collectRegionAttestationsForSources({
+            observations: regionAttestationObservations,
+          }),
+        }),
+      };
+    });
+    const regionAttestationArtifacts: RegionAttestationArtifactEntry[] =
+      evidenceArtifacts.map((artifact) => ({
+        filename: artifact.filename,
+        artifactHash: sha256Hex(artifact.bytes),
+        regionAttestations: artifact.regionAttestations,
+      }));
+    const regionAttestationReport = buildRegionAttestationReport({
+      jobId: input.jobId,
+      generatedAt: input.generatedAt,
+      artifacts: regionAttestationArtifacts,
+    });
+    const allowedHostingRegions =
+      policyProfileRules?.allowedHostingRegions ??
+      SUPPORTED_REGION_ATTESTATION_HOSTING_REGIONS;
+    const allRegionAttestations = evidenceArtifacts.flatMap(
+      (artifact) => artifact.regionAttestations,
+    );
+    assertAllowedRegionAttestations({
+      profileId: policyReport.policyProfileId,
+      allowedRegions: allowedHostingRegions,
+      attestations: allRegionAttestations,
+    });
+    const regionAttestationReportBytes = Buffer.from(
+      `${canonicalJson(regionAttestationReport)}\n`,
+      "utf8",
+    );
+    evidenceArtifacts.push({
+      filename: REGION_ATTESTATION_REPORT_ARTIFACT_FILENAME,
+      bytes: regionAttestationReportBytes,
+      category: "manifest",
       regionAttestations: buildArtifactRegionAttestations({
-        artifactHash,
+        artifactHash: sha256Hex(regionAttestationReportBytes),
         observations: collectRegionAttestationsForSources({
           observations: regionAttestationObservations,
         }),
       }),
-    };
-  });
-  const regionAttestationArtifacts: RegionAttestationArtifactEntry[] =
-    evidenceArtifacts.map((artifact) => ({
-      filename: artifact.filename,
-      artifactHash: sha256Hex(artifact.bytes),
-      regionAttestations: artifact.regionAttestations,
-    }));
-  const regionAttestationReport = buildRegionAttestationReport({
-    jobId: input.jobId,
-    generatedAt: input.generatedAt,
-    artifacts: regionAttestationArtifacts,
-  });
-  const allowedHostingRegions =
-    policyProfileRules?.allowedHostingRegions ??
-    SUPPORTED_REGION_ATTESTATION_HOSTING_REGIONS;
-  const allRegionAttestations = evidenceArtifacts.flatMap(
-    (artifact) => artifact.regionAttestations,
-  );
-  assertAllowedRegionAttestations({
-    profileId: policyReport.policyProfileId,
-    allowedRegions: allowedHostingRegions,
-    attestations: allRegionAttestations,
-  });
-  const regionAttestationReportBytes = Buffer.from(
-    `${canonicalJson(regionAttestationReport)}\n`,
-    "utf8",
-  );
-  evidenceArtifacts.push({
-    filename: REGION_ATTESTATION_REPORT_ARTIFACT_FILENAME,
-    bytes: regionAttestationReportBytes,
-    category: "manifest",
-    regionAttestations: buildArtifactRegionAttestations({
-      artifactHash: sha256Hex(regionAttestationReportBytes),
-      observations: collectRegionAttestationsForSources({
-        observations: regionAttestationObservations,
-      }),
-    }),
-  });
-  const evidenceManifest = buildWave1ValidationEvidenceManifest({
-    fixtureId: `production-runner-${input.source.kind}`,
-    jobId: input.jobId,
-    generatedAt: input.generatedAt,
-    modelDeployments,
-    policyProfileId: policyReport.policyProfileId,
-    policyProfileVersion: policyReport.policyProfileVersion,
-    exportProfileId: "customer-markdown",
-    exportProfileVersion: "1.0.0",
-    activeModelBindings,
-    promptHash: compiled.request.hashes.promptHash,
-    schemaHash: compiled.request.hashes.schemaHash,
-    inputHash: compiled.request.hashes.inputHash,
-    cacheKeyDigest: compiled.request.hashes.cacheKey,
-    ...(visualSidecarSummary !== undefined
-      ? { visualSidecar: visualSidecarSummary }
-      : {}),
-    ...(visualSidecarResult !== undefined
-      ? {
-          visualSidecarCaptureIdentities: visualSidecarResult.captureIdentities,
-        }
-      : {}),
-    artifacts: evidenceArtifacts,
-  });
-  try {
-    await writeAtomicBytes(
-      productionRunnerEvidenceSealPath,
-      productionRunnerEvidenceSealBytes,
-    );
-    await writeAtomicBytes(policyPath, policyBytes);
-    if (mutationReportBytes !== undefined && mutationReportPath !== undefined) {
-      await writeAtomicBytes(mutationReportPath, mutationReportBytes);
-    }
-    if (causalReportBytes !== undefined && causalReportPath !== undefined) {
-      await writeAtomicBytes(causalReportPath, causalReportBytes);
-    }
-    await writeProvenanceGraph({
-      runDir: artifactDir,
-      document: provenanceDocument,
     });
-    await writeRegionAttestationReport({
-      runDir: artifactDir,
-      report: regionAttestationReport,
+    const evidenceManifest = buildWave1ValidationEvidenceManifest({
+      fixtureId: `production-runner-${input.source.kind}`,
+      jobId: input.jobId,
+      generatedAt: input.generatedAt,
+      modelDeployments,
+      policyProfileId: policyReport.policyProfileId,
+      policyProfileVersion: policyReport.policyProfileVersion,
+      exportProfileId: "customer-markdown",
+      exportProfileVersion: "1.0.0",
+      activeModelBindings,
+      promptHash: compiled.request.hashes.promptHash,
+      schemaHash: compiled.request.hashes.schemaHash,
+      inputHash: compiled.request.hashes.inputHash,
+      cacheKeyDigest: compiled.request.hashes.cacheKey,
+      ...(visualSidecarSummary !== undefined
+        ? { visualSidecar: visualSidecarSummary }
+        : {}),
+      ...(visualSidecarResult !== undefined
+        ? {
+            visualSidecarCaptureIdentities:
+              visualSidecarResult.captureIdentities,
+          }
+        : {}),
+      artifacts: evidenceArtifacts,
     });
-    await writeWave1ValidationEvidenceManifest({
-      manifest: evidenceManifest,
-      destinationDir: artifactDir,
-    });
-  } catch (err) {
-    throw new ProductionRunnerError({
-      failureClass: "PERSIST_FAILED",
-      message: `Could not seal production-runner evidence: ${sanitizeErrorMessage({ error: err, fallback: "filesystem failure" })}`,
-      retryable: false,
-      cause: err,
-    });
-  }
-  const manifestVerification = await verifyWave1ValidationEvidenceFromDisk(
-    artifactDir,
-    {
-      rejectUnexpected: false,
-    },
-  );
-  if (!manifestVerification.result.ok) {
-    throw new ProductionRunnerError({
-      failureClass: "PERSIST_FAILED",
-      message:
-        "Production-runner evidence manifest failed immediate post-write verification.",
-      retryable: false,
-    });
-  }
-  const sealVerification = await verifyProductionRunnerEvidenceSealFromDisk({
-    artifactsDir: artifactDir,
-    jobId: input.jobId,
-  });
-  if (sealVerification.failures.length > 0) {
-    throw new ProductionRunnerError({
-      failureClass: "PERSIST_FAILED",
-      message:
-        "Production-runner evidence seal failed immediate post-write verification.",
-      retryable: false,
-    });
-  }
-  const provenanceVerification = await verifyProvenanceFromDisk(artifactDir);
-  if (!provenanceVerification.ok) {
-    throw new ProductionRunnerError({
-      failureClass: "PERSIST_FAILED",
-      message:
-        "Production-runner provenance graph failed immediate post-write verification.",
-      retryable: false,
-    });
-  }
-  // G9_REPLAY_DETERMINISM_VERIFIED (Issue #2178): replay the seal we
-  // just produced through the standalone bundle verifier so any drift
-  // between the in-process build path and the auditor-facing verifier
-  // fails CI before the run is declared complete.
-  try {
-    await assertReplayDeterminismVerifiedFromDisk(artifactDir);
-  } catch (error) {
-    if (error instanceof ReplayDeterminismHardGateError) {
+    try {
+      await writeAtomicBytes(
+        productionRunnerEvidenceSealPath,
+        productionRunnerEvidenceSealBytes,
+      );
+      await writeAtomicBytes(policyPath, policyBytes);
+      if (
+        mutationReportBytes !== undefined &&
+        mutationReportPath !== undefined
+      ) {
+        await writeAtomicBytes(mutationReportPath, mutationReportBytes);
+      }
+      if (causalReportBytes !== undefined && causalReportPath !== undefined) {
+        await writeAtomicBytes(causalReportPath, causalReportBytes);
+      }
+      await writeProvenanceGraph({
+        runDir: artifactDir,
+        document: provenanceDocument,
+      });
+      await writeRegionAttestationReport({
+        runDir: artifactDir,
+        report: regionAttestationReport,
+      });
+      await writeWave1ValidationEvidenceManifest({
+        manifest: evidenceManifest,
+        destinationDir: artifactDir,
+      });
+    } catch (err) {
       throw new ProductionRunnerError({
         failureClass: "PERSIST_FAILED",
-        message: error.message,
+        message: `Could not seal production-runner evidence: ${sanitizeErrorMessage({ error: err, fallback: "filesystem failure" })}`,
+        retryable: false,
+        cause: err,
+      });
+    }
+    const manifestVerification = await verifyWave1ValidationEvidenceFromDisk(
+      artifactDir,
+      {
+        rejectUnexpected: false,
+      },
+    );
+    if (!manifestVerification.result.ok) {
+      throw new ProductionRunnerError({
+        failureClass: "PERSIST_FAILED",
+        message:
+          "Production-runner evidence manifest failed immediate post-write verification.",
         retryable: false,
       });
     }
-    throw error;
-  }
+    const sealVerification = await verifyProductionRunnerEvidenceSealFromDisk({
+      artifactsDir: artifactDir,
+      jobId: input.jobId,
+    });
+    if (sealVerification.failures.length > 0) {
+      throw new ProductionRunnerError({
+        failureClass: "PERSIST_FAILED",
+        message:
+          "Production-runner evidence seal failed immediate post-write verification.",
+        retryable: false,
+      });
+    }
+    const provenanceVerification = await verifyProvenanceFromDisk(artifactDir);
+    if (!provenanceVerification.ok) {
+      throw new ProductionRunnerError({
+        failureClass: "PERSIST_FAILED",
+        message:
+          "Production-runner provenance graph failed immediate post-write verification.",
+        retryable: false,
+      });
+    }
+    // G9_REPLAY_DETERMINISM_VERIFIED (Issue #2178): replay the seal we
+    // just produced through the standalone bundle verifier so any drift
+    // between the in-process build path and the auditor-facing verifier
+    // fails CI before the run is declared complete.
+    try {
+      await assertReplayDeterminismVerifiedFromDisk(artifactDir);
+    } catch (error) {
+      if (error instanceof ReplayDeterminismHardGateError) {
+        throw new ProductionRunnerError({
+          failureClass: "PERSIST_FAILED",
+          message: error.message,
+          retryable: false,
+        });
+      }
+      throw error;
+    }
 
-  emit({
-    phase: "export_complete",
-    timestamp: monotonicMs(),
-    details: {
-      artifactDir,
-      perCaseFiles: perCasePaths.length,
-    },
-  });
-  emit({
-    phase: "evidence_sealed",
-    timestamp: monotonicMs(),
-    details: {
-      sealed: true,
-      sealArtifact: PRODUCTION_RUNNER_EVIDENCE_SEAL_ARTIFACT_FILENAME,
-      manifest: "wave1-validation-evidence-manifest.json",
-      headOfChainHash: harnessCheckpointSummary.headOfChainHash,
-      chainLength: harnessCheckpointSummary.chainLength,
-      bySourceHash: computePerSourceCostBreakdownHashFromReport(finopsReport),
-    },
-  });
-  // Emit final FinOps summary derived from the LLM gateway response. Skipped
-  // on cache hits (no LLM call was made, so there is nothing to report).
-  if (!generationCacheHit && capturedLlmResult?.outcome === "success") {
     emit({
-      phase: "finops_recorded",
+      phase: "export_complete",
       timestamp: monotonicMs(),
       details: {
-        role: "test_generation",
-        deployment: capturedLlmResult.modelDeployment,
-        attempts: finopsReport.totals.attempts,
-        inputTokens: finopsReport.totals.inputTokens,
-        outputTokens: finopsReport.totals.outputTokens,
-        budgetMaxInputTokens: finopsLimits.maxInputTokens,
-        budgetMaxOutputTokens: finopsLimits.maxOutputTokens,
-        durationMs: finopsReport.totals.durationMs,
+        artifactDir,
+        perCaseFiles: perCasePaths.length,
       },
     });
-  }
-
-  if (
-    harnessMode === "enforced" &&
-    harnessSummary !== undefined &&
-    harnessSummary.outcome !== "accepted"
-  ) {
-    throw mapHarnessOutcomeToProductionRunnerError(harnessSummary);
-  }
-  // Issue #2053 — enforce the `G-NEG-CASE` hard gate after every
-  // artifact (policy report, evidence seal, provenance) is sealed so a
-  // gate failure still leaves a complete, auditable evidence bundle on
-  // disk. Only the `enforce` mode reaches this branch — `advisory` and
-  // `skipped` outcomes were already recorded in the policy report and
-  // do not block the run.
-  if (negativeCaseLiftGateResult.status === "failed") {
-    throw new ProductionRunnerError({
-      failureClass: "NEGATIVE_CASE_LIFT_BELOW_THRESHOLD",
-      message: negativeCaseLiftGateResult.message,
-      retryable: false,
+    emit({
+      phase: "evidence_sealed",
+      timestamp: monotonicMs(),
+      details: {
+        sealed: true,
+        sealArtifact: PRODUCTION_RUNNER_EVIDENCE_SEAL_ARTIFACT_FILENAME,
+        manifest: "wave1-validation-evidence-manifest.json",
+        headOfChainHash: harnessCheckpointSummary.headOfChainHash,
+        chainLength: harnessCheckpointSummary.chainLength,
+        bySourceHash: computePerSourceCostBreakdownHashFromReport(finopsReport),
+      },
     });
-  }
+    // Emit final FinOps summary derived from the LLM gateway response. Skipped
+    // on cache hits (no LLM call was made, so there is nothing to report).
+    if (!generationCacheHit && capturedLlmResult?.outcome === "success") {
+      emit({
+        phase: "finops_recorded",
+        timestamp: monotonicMs(),
+        details: {
+          role: "test_generation",
+          deployment: capturedLlmResult.modelDeployment,
+          attempts: finopsReport.totals.attempts,
+          inputTokens: finopsReport.totals.inputTokens,
+          outputTokens: finopsReport.totals.outputTokens,
+          budgetMaxInputTokens: finopsLimits.maxInputTokens,
+          budgetMaxOutputTokens: finopsLimits.maxOutputTokens,
+          durationMs: finopsReport.totals.durationMs,
+        },
+      });
+    }
 
-  return {
-    jobId: input.jobId,
-    generatedAt: input.generatedAt,
-    fileKey: figmaFile.fileKey,
-    generatedTestCases: calibratedGeneratedTestCases,
-    intent,
-    validation: validation.validation,
-    policy: policyReport,
-    coverage: validation.coverage,
-    blocked,
-    logicJudge: {
-      verdict: logicJudgeResult.verdict,
-      artifactPath: logicJudgeVerdictPath,
-      compiledPromptPath: logicJudgeCompiledPromptPath,
-    },
-    ...(a11yJudgeResult !== undefined && a11yJudgeVerdictPath !== undefined
-      ? {
-          a11yJudge: {
-            verdict: a11yJudgeResult.verdict,
-            artifactPath: a11yJudgeVerdictPath,
-          },
-        }
-      : {}),
-    judgeConsensus: {
-      verdict: judgeConsensusResult,
-      artifactPath: judgeConsensusPath,
-    },
-    runQuality: {
-      artifact: runQualityArtifact,
-      artifactPath: runQualityPath,
-    },
-    ...(faithfulnessJudgeResult !== undefined &&
-    faithfulnessJudgeVerdictPath !== undefined &&
-    faithfulnessJudgeCompiledPromptPath !== undefined
-      ? {
-          faithfulnessJudge: {
-            verdict: faithfulnessJudgeResult.verdict,
-            artifactPath: faithfulnessJudgeVerdictPath,
-            compiledPromptPath: faithfulnessJudgeCompiledPromptPath,
-          },
-        }
-      : {}),
-    ...(visualSidecarResult !== undefined
-      ? {
-          visualSidecar: {
-            result: visualSidecarResult,
-            artifactPath:
-              visualSidecarArtifactPath ??
-              join(artifactDir, VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME),
-            ...(visualSidecarValidationPath !== undefined
-              ? { validationReportPath: visualSidecarValidationPath }
-              : {}),
-            ...(visualSidecarRefusal !== undefined
-              ? { refusal: visualSidecarRefusal }
-              : {}),
-          },
-        }
-      : {}),
-    finopsBudget: resolvedFinopsBudget,
-    artifactDir,
-    artifactPaths: {
-      intent: intentPath,
-      compiledPrompt: compiledPromptPath,
-      ...(customerEvalRubricPath !== undefined
-        ? { customerEvalRubric: customerEvalRubricPath }
-        : {}),
-      ...(tenantBundleResolvedPath !== undefined
-        ? { tenantBundleResolved: tenantBundleResolvedPath }
-        : {}),
-      coveragePlan: coveragePlanPath,
-      workflowTopology: workflowTopologyPath,
-      riskRanking: riskRankingPath,
-      ...(adversarialCriticTraceArtifact !== undefined
-        ? { adversarialCriticTrace: adversarialCriticTracePath }
-        : {}),
-      logicJudgeCompiledPrompt: logicJudgeCompiledPromptPath,
-      ...(faithfulnessJudgeCompiledPromptPath !== undefined
+    if (
+      harnessMode === "enforced" &&
+      harnessSummary !== undefined &&
+      harnessSummary.outcome !== "accepted"
+    ) {
+      throw mapHarnessOutcomeToProductionRunnerError(harnessSummary);
+    }
+    // Issue #2053 — enforce the `G-NEG-CASE` hard gate after every
+    // artifact (policy report, evidence seal, provenance) is sealed so a
+    // gate failure still leaves a complete, auditable evidence bundle on
+    // disk. Only the `enforce` mode reaches this branch — `advisory` and
+    // `skipped` outcomes were already recorded in the policy report and
+    // do not block the run.
+    if (negativeCaseLiftGateResult.status === "failed") {
+      throw new ProductionRunnerError({
+        failureClass: "NEGATIVE_CASE_LIFT_BELOW_THRESHOLD",
+        message: negativeCaseLiftGateResult.message,
+        retryable: false,
+      });
+    }
+
+    return {
+      jobId: input.jobId,
+      generatedAt: input.generatedAt,
+      fileKey: figmaFile.fileKey,
+      generatedTestCases: calibratedGeneratedTestCases,
+      intent,
+      validation: validation.validation,
+      policy: policyReport,
+      coverage: validation.coverage,
+      blocked,
+      logicJudge: {
+        verdict: logicJudgeResult.verdict,
+        artifactPath: logicJudgeVerdictPath,
+        compiledPromptPath: logicJudgeCompiledPromptPath,
+      },
+      ...(a11yJudgeResult !== undefined && a11yJudgeVerdictPath !== undefined
         ? {
-            faithfulnessJudgeCompiledPrompt:
-              faithfulnessJudgeCompiledPromptPath,
+            a11yJudge: {
+              verdict: a11yJudgeResult.verdict,
+              artifactPath: a11yJudgeVerdictPath,
+            },
           }
         : {}),
-      ...(a11yJudgeVerdictPath !== undefined
-        ? { a11yJudgeVerdict: a11yJudgeVerdictPath }
-        : {}),
-      untrustedContentNormalizationReport:
-        untrustedContentNormalizationReportPath,
-      evidenceSeal: productionRunnerEvidenceSealPath,
-      ...(visualSidecarArtifactPath !== undefined
-        ? { visualSidecarResult: visualSidecarArtifactPath }
-        : {}),
-      ...(visualCaptureArtifacts !== undefined
+      judgeConsensus: {
+        verdict: judgeConsensusResult,
+        artifactPath: judgeConsensusPath,
+      },
+      runQuality: {
+        artifact: runQualityArtifact,
+        artifactPath: runQualityPath,
+      },
+      ...(faithfulnessJudgeResult !== undefined &&
+      faithfulnessJudgeVerdictPath !== undefined &&
+      faithfulnessJudgeCompiledPromptPath !== undefined
         ? {
-            visualCaptureManifest: visualCaptureArtifacts.manifestPath,
-            visualCaptureDirectory: visualCaptureArtifacts.directory,
+            faithfulnessJudge: {
+              verdict: faithfulnessJudgeResult.verdict,
+              artifactPath: faithfulnessJudgeVerdictPath,
+              compiledPromptPath: faithfulnessJudgeCompiledPromptPath,
+            },
           }
         : {}),
-      agentParticipation: agentParticipationWritten.artifactPath,
-      agentRoleRun: agentRoleRunArtifact.artifactPath,
-      judgeConsensus: judgeConsensusArtifact.path,
-      runQuality: runQualityPath,
-      ...(selfConsistencyReportPath !== undefined
-        ? { selfConsistencyReport: selfConsistencyReportPath }
+      ...(visualSidecarResult !== undefined
+        ? {
+            visualSidecar: {
+              result: visualSidecarResult,
+              artifactPath:
+                visualSidecarArtifactPath ??
+                join(artifactDir, VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME),
+              ...(visualSidecarValidationPath !== undefined
+                ? { validationReportPath: visualSidecarValidationPath }
+                : {}),
+              ...(visualSidecarRefusal !== undefined
+                ? { refusal: visualSidecarRefusal }
+                : {}),
+            },
+          }
         : {}),
-      logicJudgeVerdict: logicJudgeVerdictPath,
-      ...(faithfulnessJudgeVerdictPath !== undefined
-        ? { faithfulnessJudgeVerdict: faithfulnessJudgeVerdictPath }
+      finopsBudget: resolvedFinopsBudget,
+      artifactDir,
+      artifactPaths: {
+        intent: intentPath,
+        compiledPrompt: compiledPromptPath,
+        ...(customerEvalRubricPath !== undefined
+          ? { customerEvalRubric: customerEvalRubricPath }
+          : {}),
+        ...(tenantBundleResolvedPath !== undefined
+          ? { tenantBundleResolved: tenantBundleResolvedPath }
+          : {}),
+        coveragePlan: coveragePlanPath,
+        workflowTopology: workflowTopologyPath,
+        riskRanking: riskRankingPath,
+        ...(adversarialCriticTraceArtifact !== undefined
+          ? { adversarialCriticTrace: adversarialCriticTracePath }
+          : {}),
+        logicJudgeCompiledPrompt: logicJudgeCompiledPromptPath,
+        ...(faithfulnessJudgeCompiledPromptPath !== undefined
+          ? {
+              faithfulnessJudgeCompiledPrompt:
+                faithfulnessJudgeCompiledPromptPath,
+            }
+          : {}),
+        ...(a11yJudgeVerdictPath !== undefined
+          ? { a11yJudgeVerdict: a11yJudgeVerdictPath }
+          : {}),
+        untrustedContentNormalizationReport:
+          untrustedContentNormalizationReportPath,
+        evidenceSeal: productionRunnerEvidenceSealPath,
+        ...(visualSidecarArtifactPath !== undefined
+          ? { visualSidecarResult: visualSidecarArtifactPath }
+          : {}),
+        ...(visualCaptureArtifacts !== undefined
+          ? {
+              visualCaptureManifest: visualCaptureArtifacts.manifestPath,
+              visualCaptureDirectory: visualCaptureArtifacts.directory,
+            }
+          : {}),
+        agentParticipation: agentParticipationWritten.artifactPath,
+        agentRoleRun: agentRoleRunArtifact.artifactPath,
+        judgeConsensus: judgeConsensusArtifact.path,
+        runQuality: runQualityPath,
+        ...(selfConsistencyReportPath !== undefined
+          ? { selfConsistencyReport: selfConsistencyReportPath }
+          : {}),
+        logicJudgeVerdict: logicJudgeVerdictPath,
+        ...(faithfulnessJudgeVerdictPath !== undefined
+          ? { faithfulnessJudgeVerdict: faithfulnessJudgeVerdictPath }
+          : {}),
+        genealogy: genealogyArtifact.artifactPath,
+        provenance: join(artifactDir, PROVENANCE_ARTIFACT_FILENAME),
+        ...(contextBudgetReportPath !== undefined
+          ? { contextBudgetReport: contextBudgetReportPath }
+          : {}),
+        generatedTestCases: generatedPath,
+        validationReport: validationPath,
+        ...(testDataOracleReportPath !== undefined
+          ? { testDataOracleReport: testDataOracleReportPath }
+          : {}),
+        ...(visualSidecarValidationPath !== undefined
+          ? { visualSidecarValidationReport: visualSidecarValidationPath }
+          : {}),
+        policyReport: policyPath,
+        coverageReport: coveragePath,
+        finopsReport: finopsWritten.artifactPath,
+        finopsTimeSeriesStore: finopsTimeSeriesStorePath,
+        ...(carbonFootprintArtifactPath !== undefined
+          ? { carbonFootprintReport: carbonFootprintArtifactPath }
+          : {}),
+        reviewEvents: join(
+          artifactDir,
+          input.jobId,
+          REVIEW_EVENTS_ARTIFACT_FILENAME,
+        ),
+        reviewState: join(
+          artifactDir,
+          input.jobId,
+          REVIEW_STATE_ARTIFACT_FILENAME,
+        ),
+        ...(harnessArtifactPath !== undefined
+          ? { harnessStep: harnessArtifactPath }
+          : {}),
+        ...(mutationReportPath !== undefined
+          ? { mutationReport: mutationReportPath }
+          : {}),
+        ...(causalReportPath !== undefined
+          ? { causalValidationReport: causalReportPath }
+          : {}),
+      },
+      customerMarkdownPaths: {
+        combined: combinedMarkdownPath,
+        perCase: perCasePaths,
+      },
+      ...(harnessSummary !== undefined ? { harness: harnessSummary } : {}),
+      ...(repairLoopResult !== undefined
+        ? {
+            repairLoop: {
+              outcome: repairLoopResult.outcome,
+              repairIterationCount: repairLoopResult.repairIterationCount,
+              maxRepairIterations: repairLoopResult.maxRepairIterations,
+              iterations: repairLoopResult.iterations,
+            },
+          }
         : {}),
-      genealogy: genealogyArtifact.artifactPath,
-      provenance: join(artifactDir, PROVENANCE_ARTIFACT_FILENAME),
-      ...(contextBudgetReportPath !== undefined
-        ? { contextBudgetReport: contextBudgetReportPath }
-        : {}),
-      generatedTestCases: generatedPath,
-      validationReport: validationPath,
-      ...(testDataOracleReportPath !== undefined
-        ? { testDataOracleReport: testDataOracleReportPath }
-        : {}),
-      ...(visualSidecarValidationPath !== undefined
-        ? { visualSidecarValidationReport: visualSidecarValidationPath }
-        : {}),
-      policyReport: policyPath,
-      coverageReport: coveragePath,
-      finopsReport: finopsWritten.artifactPath,
-      finopsTimeSeriesStore: finopsTimeSeriesStorePath,
-      reviewEvents: join(
-        artifactDir,
-        input.jobId,
-        REVIEW_EVENTS_ARTIFACT_FILENAME,
-      ),
-      reviewState: join(
-        artifactDir,
-        input.jobId,
-        REVIEW_STATE_ARTIFACT_FILENAME,
-      ),
-      ...(harnessArtifactPath !== undefined
-        ? { harnessStep: harnessArtifactPath }
-        : {}),
-      ...(mutationReportPath !== undefined
-        ? { mutationReport: mutationReportPath }
-        : {}),
-      ...(causalReportPath !== undefined
-        ? { causalValidationReport: causalReportPath }
-        : {}),
-    },
-    customerMarkdownPaths: {
-      combined: combinedMarkdownPath,
-      perCase: perCasePaths,
-    },
-    ...(harnessSummary !== undefined ? { harness: harnessSummary } : {}),
-    ...(repairLoopResult !== undefined
-      ? {
-          repairLoop: {
-            outcome: repairLoopResult.outcome,
-            repairIterationCount: repairLoopResult.repairIterationCount,
-            maxRepairIterations: repairLoopResult.maxRepairIterations,
-            iterations: repairLoopResult.iterations,
-          },
-        }
-      : {}),
-  };
+    };
   });
 };
 

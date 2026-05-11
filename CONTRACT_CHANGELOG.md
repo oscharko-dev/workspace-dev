@@ -31,6 +31,64 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [1.43.0] - 2026-05-11
+
+Test-intelligence sub-contract bump for Issue #2129 (Wave B.3, Tier-1
+BaFin/EIOPA hardening) — per-job CO₂e footprint estimator wired into the
+production-runner artifact-emission block. The carbon-footprint module
+shipped in #2215 was dead code (no production-runner invoked the
+`buildCarbonFootprintReport` / `writeCarbonFootprintReport` exports); the
+W9-2 audit demanded the manifest be emitted on every job. This change
+makes the wiring real, ships a public-source baseline grid-intensity
+table so the estimator runs without operator configuration, and surfaces
+the artifact path on the runner result type for the live-E2E lane.
+
+The wiring fails silent on the three known recoverable
+`CarbonFootprintError` codes (stale grid table, unknown region, unknown
+deployment) so an operator-side data gap never blocks a run. All other
+errors propagate so a true bug still fails fast.
+
+### Added (Issue #2129 — production-runner wiring)
+
+- `src/test-intelligence/carbon-footprint.ts`:
+    - `REFERENCE_GRID_CARBON_INTENSITY_TABLE` — public-source baseline
+      grid-intensity table refreshed 2026-05-11 with
+      `provenance: "iea-ember-public-baseline-2024"`, covering every
+      region admitted by `SUPPORTED_REGION_ATTESTATION_HOSTING_REGIONS`
+      (AWS-style) plus the legacy Azure-style aliases used by
+      `SUPPORTED_HOSTING_REGIONS`.
+    - `carbonRoleUsageFromFinOpsRoles(roles)` — pure helper that reduces
+      a `FinOpsBudgetReport`-shaped role accumulator into the
+      `CarbonFootprintRoleUsage[]` shape the estimator consumes (drops
+      cache-hit-only roles and zero-attempt rows so they don't trip
+      `requireEnergyCoefficient`).
+    - `pickDominantCarbonRegion(observations)` — deterministic region
+      picker. Highest-frequency wins; alphabetical tie-break so the
+      chosen region is byte-stable across re-runs. Returns `undefined`
+      on an empty / all-empty-region observation set so the runner can
+      skip silently.
+- `src/test-intelligence/production-runner.ts`:
+    - `RunFigmaToQcTestCasesInput.carbonFootprint?` — optional override
+      block carrying `energyCoefficientTable?`,
+      `gridCarbonIntensityTable?`, `customerId?`, `region?`. All four
+      fields are optional; omitted fields fall back to the baked-in
+      reference tables / dominant-region heuristic.
+    - `RunFigmaToQcTestCasesResult.artifactPaths.carbonFootprintReport?` —
+      optional string carrying the path to
+      `<runDir>/carbon/carbon-footprint.json` when the runner emitted
+      the artifact (skipped silently when no role attempted an LLM
+      call, the dominant region is not in the grid-intensity table, or
+      the grid-intensity table is stale).
+
+### Migration
+
+None. All four new fields are optional and all four are silently
+skipped when omitted; existing callers continue to receive a
+byte-stable artifact set minus the new `carbon-footprint.json`
+artifact. Tests that pin the exact set of `artifactPaths` keys need to
+accept the additional optional key (use object spread or `assert.ok`
+checks rather than `assert.deepEqual` against a closed key list).
+
 ## [1.42.0] - 2026-05-11
 
 Test-intelligence sub-contract bump for Issue #2131 (Wave Q9-deferred /
@@ -59,48 +117,48 @@ refresh, not via a runtime hook.
 ### Added (Issue #2131 — coverage-plan optimizer)
 
 - New module `src/test-intelligence/coverage-plan-optimizer.ts` exporting:
-  - `COVERAGE_PLAN_OPTIMIZER_REPORT_SCHEMA_VERSION = "1.0.0"`.
-  - `COVERAGE_PLAN_OPTIMIZER_BENCHMARK_SCHEMA_VERSION = "1.0.0"`.
-  - `COVERAGE_PLAN_OPTIMIZER_REPORT_ARTIFACT_FILENAME = "coverage-plan-optimizer.json"`,
-    `COVERAGE_PLAN_OPTIMIZER_ARTIFACT_DIRECTORY = "coverage-optimizer"`.
-  - `COVERAGE_PLAN_OPTIMIZER_BASELINE_REPO_PATH`,
-    `COVERAGE_PLAN_OPTIMIZER_PLOT_DIRECTORY`.
-  - `G_COVERAGE_OPTIMIZER_BASELINE_PASS` — CI hard-gate code.
-  - `COVERAGE_PLAN_OPTIMIZER_BASELINE_FIXED_GENERATED_AT = "1970-01-01T00:00:00.000Z"` —
-    structural timestamp baked into the committed baseline so bytes
-    do not drift with wall-clock time.
-  - `COVERAGE_PLAN_OPTIMIZER_METHODOLOGY_DISCLAIMER` — verbatim string
-    stamped on every produced report.
-  - `COVERAGE_PLAN_OPTIMIZER_KILL_RATE_FLOOR = 0.95`,
-    `COVERAGE_PLAN_OPTIMIZER_COST_CEILING = 0.80` — AC #4 thresholds.
-  - `COVERAGE_PLAN_OPTIMIZER_NUMERIC_PRECISION = 9` — emitted-number
-    rounding precision (decimals).
-  - `COVERAGE_PLAN_OPTIMIZER_OBJECTIVES` — closed four-element ordered
-    objective list with `COVERAGE_PLAN_OPTIMIZER_OBJECTIVE_DIRECTIONS`
-    map pinning per-objective improvement direction.
-  - `DEFAULT_NSGA_II_CONFIG` — published default GA hyper-parameters
-    (`populationSize=40, generations=60, crossoverRate=0.9,
-    mutationRate=0.15`).
-  - `COVERAGE_PLAN_OPTIMIZER_DEFAULT_SEED = 0x2131_2131` — committed
-    baseline seed.
-  - `REFERENCE_BENCHMARK_FIXTURES` — curated three-fixture reference
-    corpus the committed baseline plans against
-    (`reference-login-form`, `reference-search-results`,
-    `reference-checkout-flow`).
-  - Pure functions: `evaluatePlan`, `optimizeFixture`,
-    `selectRecommendedPlan`, `buildCoveragePlanOptimizerReport`,
-    `buildCoveragePlanOptimizerBaselineReport`,
-    `serializeCoveragePlanOptimizerReport`,
-    `computeCoveragePlanOptimizerReportDigest`,
-    `renderParetoFrontierSvg`.
-  - Persistence: `writeCoveragePlanOptimizerReport` (atomic
-    `${path}.${pid}.${uuid}.tmp` rename).
-  - Types: `TechniqueCoefficients`, `FixtureBenchmark`,
-    `NsgaIIConfig`, `CoveragePlanOptimizerInput`, `ObjectiveVector`,
-    `ParetoIndividual`, `FixtureOptimizationResult`,
-    `CoveragePlanOptimizerReport`,
-    `CoveragePlanOptimizerObjective`,
-    `WriteCoveragePlanOptimizerReportInput`.
+    - `COVERAGE_PLAN_OPTIMIZER_REPORT_SCHEMA_VERSION = "1.0.0"`.
+    - `COVERAGE_PLAN_OPTIMIZER_BENCHMARK_SCHEMA_VERSION = "1.0.0"`.
+    - `COVERAGE_PLAN_OPTIMIZER_REPORT_ARTIFACT_FILENAME = "coverage-plan-optimizer.json"`,
+      `COVERAGE_PLAN_OPTIMIZER_ARTIFACT_DIRECTORY = "coverage-optimizer"`.
+    - `COVERAGE_PLAN_OPTIMIZER_BASELINE_REPO_PATH`,
+      `COVERAGE_PLAN_OPTIMIZER_PLOT_DIRECTORY`.
+    - `G_COVERAGE_OPTIMIZER_BASELINE_PASS` — CI hard-gate code.
+    - `COVERAGE_PLAN_OPTIMIZER_BASELINE_FIXED_GENERATED_AT = "1970-01-01T00:00:00.000Z"` —
+      structural timestamp baked into the committed baseline so bytes
+      do not drift with wall-clock time.
+    - `COVERAGE_PLAN_OPTIMIZER_METHODOLOGY_DISCLAIMER` — verbatim string
+      stamped on every produced report.
+    - `COVERAGE_PLAN_OPTIMIZER_KILL_RATE_FLOOR = 0.95`,
+      `COVERAGE_PLAN_OPTIMIZER_COST_CEILING = 0.80` — AC #4 thresholds.
+    - `COVERAGE_PLAN_OPTIMIZER_NUMERIC_PRECISION = 9` — emitted-number
+      rounding precision (decimals).
+    - `COVERAGE_PLAN_OPTIMIZER_OBJECTIVES` — closed four-element ordered
+      objective list with `COVERAGE_PLAN_OPTIMIZER_OBJECTIVE_DIRECTIONS`
+      map pinning per-objective improvement direction.
+    - `DEFAULT_NSGA_II_CONFIG` — published default GA hyper-parameters
+      (`populationSize=40, generations=60, crossoverRate=0.9,
+mutationRate=0.15`).
+    - `COVERAGE_PLAN_OPTIMIZER_DEFAULT_SEED = 0x2131_2131` — committed
+      baseline seed.
+    - `REFERENCE_BENCHMARK_FIXTURES` — curated three-fixture reference
+      corpus the committed baseline plans against
+      (`reference-login-form`, `reference-search-results`,
+      `reference-checkout-flow`).
+    - Pure functions: `evaluatePlan`, `optimizeFixture`,
+      `selectRecommendedPlan`, `buildCoveragePlanOptimizerReport`,
+      `buildCoveragePlanOptimizerBaselineReport`,
+      `serializeCoveragePlanOptimizerReport`,
+      `computeCoveragePlanOptimizerReportDigest`,
+      `renderParetoFrontierSvg`.
+    - Persistence: `writeCoveragePlanOptimizerReport` (atomic
+      `${path}.${pid}.${uuid}.tmp` rename).
+    - Types: `TechniqueCoefficients`, `FixtureBenchmark`,
+      `NsgaIIConfig`, `CoveragePlanOptimizerInput`, `ObjectiveVector`,
+      `ParetoIndividual`, `FixtureOptimizationResult`,
+      `CoveragePlanOptimizerReport`,
+      `CoveragePlanOptimizerObjective`,
+      `WriteCoveragePlanOptimizerReportInput`.
 - New committed artifacts under
   `fixtures/test-intelligence/coverage-plan-optimizer/`:
   `baseline.json`, `pareto-reference-checkout-flow.svg`,
@@ -149,39 +207,39 @@ contract, manifest, or fixture is mutated.
 ### Added (Issue #2130 — cross-tenant isolation proof artifact)
 
 - New module `src/test-intelligence/tenant-isolation-proof.ts` exporting:
-  - `TENANT_ISOLATION_PROOF_SCHEMA_VERSION = "1.0.0"`.
-  - `TENANT_ISOLATION_PROOF_ARTIFACT_FILENAME = "tenant-isolation-proof.json"`,
-    `TENANT_ISOLATION_PROOF_DEFAULT_REPO_PATH`,
-    `TENANT_ISOLATION_PENTEST_DEFAULT_REPO_PATH`.
-  - `G12_TENANT_ISOLATION_PROOF_PASS` — CI hard-gate code.
-  - `TENANT_ISOLATION_PROOF_FIXED_GENERATED_AT = "1970-01-01T00:00:00.000Z"` —
-    structural-claim timestamp, baked into the committed artifact so
-    bytes do not drift with wall-clock time.
-  - `TENANT_ISOLATION_PROOF_METHODOLOGY_DISCLAIMER` — verbatim string
-    stamped on every produced proof.
-  - `DEFAULT_TENANT_SCOPE_EXAMPLES`, `DEFAULT_CACHE_KEY_EXAMPLES` —
-    curated fixtures that materialise the worked pre-image-distinctness
-    witnesses.
-  - Pure functions: `buildTenantIsolationProof`,
-    `computeTenantIsolationProofDigest`,
-    `serializeTenantIsolationProof`,
-    `buildTenantIsolationPentestEvidence`,
-    `serializeTenantIsolationPentestEvidence`,
-    `assertTenantIsolationPentestPasses`.
-  - Persistence: `writeTenantIsolationProof` (atomic
-    `${path}.${pid}.tmp` rename).
-  - Types: `CacheKeyConstruction`, `StorageNamespaceConstruction`,
-    `TenantCommitment`, `PreImageDistinctnessWitness`,
-    `SideChannelClass`, `SideChannelAnalysisEntry`,
-    `TenantIsolationProof`,
-    `BuildTenantIsolationProofInput`,
-    `WriteTenantIsolationProofInput`,
-    `WriteTenantIsolationProofResult`,
-    `TenantIsolationPentestAttempt`,
-    `TenantIsolationPentestEvidence`,
-    `BuildTenantIsolationPentestEvidenceInput`.
-  - Error class: `TenantIsolationLeakageDetected` (code
-    `"TENANT_ISOLATION_LEAKAGE_DETECTED"`).
+    - `TENANT_ISOLATION_PROOF_SCHEMA_VERSION = "1.0.0"`.
+    - `TENANT_ISOLATION_PROOF_ARTIFACT_FILENAME = "tenant-isolation-proof.json"`,
+      `TENANT_ISOLATION_PROOF_DEFAULT_REPO_PATH`,
+      `TENANT_ISOLATION_PENTEST_DEFAULT_REPO_PATH`.
+    - `G12_TENANT_ISOLATION_PROOF_PASS` — CI hard-gate code.
+    - `TENANT_ISOLATION_PROOF_FIXED_GENERATED_AT = "1970-01-01T00:00:00.000Z"` —
+      structural-claim timestamp, baked into the committed artifact so
+      bytes do not drift with wall-clock time.
+    - `TENANT_ISOLATION_PROOF_METHODOLOGY_DISCLAIMER` — verbatim string
+      stamped on every produced proof.
+    - `DEFAULT_TENANT_SCOPE_EXAMPLES`, `DEFAULT_CACHE_KEY_EXAMPLES` —
+      curated fixtures that materialise the worked pre-image-distinctness
+      witnesses.
+    - Pure functions: `buildTenantIsolationProof`,
+      `computeTenantIsolationProofDigest`,
+      `serializeTenantIsolationProof`,
+      `buildTenantIsolationPentestEvidence`,
+      `serializeTenantIsolationPentestEvidence`,
+      `assertTenantIsolationPentestPasses`.
+    - Persistence: `writeTenantIsolationProof` (atomic
+      `${path}.${pid}.tmp` rename).
+    - Types: `CacheKeyConstruction`, `StorageNamespaceConstruction`,
+      `TenantCommitment`, `PreImageDistinctnessWitness`,
+      `SideChannelClass`, `SideChannelAnalysisEntry`,
+      `TenantIsolationProof`,
+      `BuildTenantIsolationProofInput`,
+      `WriteTenantIsolationProofInput`,
+      `WriteTenantIsolationProofResult`,
+      `TenantIsolationPentestAttempt`,
+      `TenantIsolationPentestEvidence`,
+      `BuildTenantIsolationPentestEvidenceInput`.
+    - Error class: `TenantIsolationLeakageDetected` (code
+      `"TENANT_ISOLATION_LEAKAGE_DETECTED"`).
 - New committed artifacts under
   `fixtures/test-intelligence/tenant-isolation/`:
   `tenant-isolation-proof.json` and
@@ -220,11 +278,11 @@ existing behavior changes.
 ### Added (Issue #2128 — training-influence DP budget accounting)
 
 - New constants in `src/contracts/index.ts`:
-  - `DP_BUDGET_CONSUMED_MANIFEST_SCHEMA_VERSION = "1.0.0"`
-  - `DP_BUDGET_CONSUMED_MANIFEST_ARTIFACT_FILENAME = "dp-budget-consumed.json"`
-  - `DP_BUDGET_DEFAULT_PER_TOKEN_EPSILON = 1e-4`
-  - `DP_BUDGET_DEFAULT_DELTA_PER_JOB = 1e-6`
-  - `ALLOWED_DP_BUDGET_DECISIONS = ["accepted", "rejected_budget_exhausted", "skipped_disabled"]`
+    - `DP_BUDGET_CONSUMED_MANIFEST_SCHEMA_VERSION = "1.0.0"`
+    - `DP_BUDGET_CONSUMED_MANIFEST_ARTIFACT_FILENAME = "dp-budget-consumed.json"`
+    - `DP_BUDGET_DEFAULT_PER_TOKEN_EPSILON = 1e-4`
+    - `DP_BUDGET_DEFAULT_DELTA_PER_JOB = 1e-6`
+    - `ALLOWED_DP_BUDGET_DECISIONS = ["accepted", "rejected_budget_exhausted", "skipped_disabled"]`
 - New contract types: `TrainingInfluenceDpBudgetConfig`,
   `TenantDpBudgetState`, `DpBudgetCharge`, `DpBudgetDecision`,
   `DpBudgetConsumedManifest`.
@@ -240,15 +298,15 @@ existing behavior changes.
   operator's gateway-adapter call-site.
 - New module `src/test-intelligence/training-influence-dp-budget.ts` (also
   re-exported from `src/test-intelligence/index.ts`) exposing:
-  - `estimateJobDpCharge({ inputTokens, perTokenEpsilon?, deltaPerJob? })`
-  - `createTenantDpBudgetState({ tenantId, cycleId, cycleStartedAt, config })`
-  - `applyDpCharge(state, { config, inputTokens })`
-  - `resetTenantDpBudgetCycle(previous, { cycleId, cycleStartedAt, config? })`
-  - `buildDpBudgetConsumedManifest({ result, jobId, generatedAt })`
-  - `isDpBudgetConsumedManifest(value)`
-  - `serializeDpBudgetConsumedManifest(manifest)`
-  These are library helpers; this PR does not wire them into the harness
-  job-engine. Operators integrate at their gateway adapter.
+    - `estimateJobDpCharge({ inputTokens, perTokenEpsilon?, deltaPerJob? })`
+    - `createTenantDpBudgetState({ tenantId, cycleId, cycleStartedAt, config })`
+    - `applyDpCharge(state, { config, inputTokens })`
+    - `resetTenantDpBudgetCycle(previous, { cycleId, cycleStartedAt, config? })`
+    - `buildDpBudgetConsumedManifest({ result, jobId, generatedAt })`
+    - `isDpBudgetConsumedManifest(value)`
+    - `serializeDpBudgetConsumedManifest(manifest)`
+      These are library helpers; this PR does not wire them into the harness
+      job-engine. Operators integrate at their gateway adapter.
 
 ### Backwards compatibility
 
@@ -283,42 +341,42 @@ path `<runDir>/carbon/carbon-footprint.json`.
 ### Added (Issue #2129 — per-job CO₂e footprint manifest)
 
 - New module `src/test-intelligence/carbon-footprint.ts` exporting:
-  - `CARBON_FOOTPRINT_REPORT_SCHEMA_VERSION = "1.0.0"`,
-    `ENERGY_COEFFICIENT_TABLE_SCHEMA_VERSION = "1.0.0"`,
-    `GRID_CARBON_INTENSITY_TABLE_SCHEMA_VERSION = "1.0.0"`,
-    `CARBON_FOOTPRINT_AGGREGATE_SCHEMA_VERSION = "1.0.0"`.
-  - `CARBON_FOOTPRINT_REPORT_ARTIFACT_FILENAME = "carbon-footprint.json"`,
-    `CARBON_FOOTPRINT_ARTIFACT_DIRECTORY = "carbon"`.
-  - `GRID_CARBON_INTENSITY_MAX_AGE_DAYS = 35` — operator-supplied table
-    fails closed when older than this ceiling (AC requires monthly
-    refresh; ceiling absorbs weekend / holiday slippage).
-  - `CARBON_FOOTPRINT_METHODOLOGY_DISCLAIMER` — verbatim string
-    stamped on every produced report.
-  - `REFERENCE_ENERGY_COEFFICIENT_TABLE` — published table covering
-    `anthropic-claude-3-7-{opus,sonnet}`, `azure-openai-gpt-4o`,
-    `azure-openai-gpt-4o-mini`, `mistral-large-3`, and
-    `gpt-oss-120b-mock`. Every entry carries a `citation` and `origin`
-    (`"published_paper" | "vendor_disclosure" | "estimated"`). All
-    shipped entries are `"estimated"` against peer-reviewed averages
-    and vendor sustainability whitepaper figures.
-  - Pure functions: `validateEnergyCoefficientTable`,
-    `validateGridCarbonIntensityTable`,
-    `computeGridCarbonIntensityTableAgeDays`,
-    `assertGridCarbonIntensityTableFresh`,
-    `requireEnergyCoefficient`, `requireGridCarbonIntensity`,
-    `buildCarbonFootprintReport`,
-    `computeCarbonFootprintReportDigest`,
-    `aggregateCarbonFootprint`, `rankCandidatesByCarbon`.
-  - Persistence: `writeCarbonFootprintReport` (atomic
-    `${path}.${pid}.${uuid}.tmp` rename).
-  - Types: `EnergyCoefficientRecord`, `EnergyCoefficientTable`,
-    `GridCarbonIntensityRecord`, `GridCarbonIntensityTable`,
-    `CarbonFootprintRoleUsage`, `CarbonFootprintRoleLine`,
-    `CarbonFootprintReport`, `CarbonFootprintAggregate`,
-    `CarbonFootprintAggregateRow`, `CarbonRoutingCandidate`,
-    `RankedCarbonRoutingCandidate`,
-    plus the typed `CarbonFootprintError` and
-    `CarbonFootprintErrorCode` discriminated union.
+    - `CARBON_FOOTPRINT_REPORT_SCHEMA_VERSION = "1.0.0"`,
+      `ENERGY_COEFFICIENT_TABLE_SCHEMA_VERSION = "1.0.0"`,
+      `GRID_CARBON_INTENSITY_TABLE_SCHEMA_VERSION = "1.0.0"`,
+      `CARBON_FOOTPRINT_AGGREGATE_SCHEMA_VERSION = "1.0.0"`.
+    - `CARBON_FOOTPRINT_REPORT_ARTIFACT_FILENAME = "carbon-footprint.json"`,
+      `CARBON_FOOTPRINT_ARTIFACT_DIRECTORY = "carbon"`.
+    - `GRID_CARBON_INTENSITY_MAX_AGE_DAYS = 35` — operator-supplied table
+      fails closed when older than this ceiling (AC requires monthly
+      refresh; ceiling absorbs weekend / holiday slippage).
+    - `CARBON_FOOTPRINT_METHODOLOGY_DISCLAIMER` — verbatim string
+      stamped on every produced report.
+    - `REFERENCE_ENERGY_COEFFICIENT_TABLE` — published table covering
+      `anthropic-claude-3-7-{opus,sonnet}`, `azure-openai-gpt-4o`,
+      `azure-openai-gpt-4o-mini`, `mistral-large-3`, and
+      `gpt-oss-120b-mock`. Every entry carries a `citation` and `origin`
+      (`"published_paper" | "vendor_disclosure" | "estimated"`). All
+      shipped entries are `"estimated"` against peer-reviewed averages
+      and vendor sustainability whitepaper figures.
+    - Pure functions: `validateEnergyCoefficientTable`,
+      `validateGridCarbonIntensityTable`,
+      `computeGridCarbonIntensityTableAgeDays`,
+      `assertGridCarbonIntensityTableFresh`,
+      `requireEnergyCoefficient`, `requireGridCarbonIntensity`,
+      `buildCarbonFootprintReport`,
+      `computeCarbonFootprintReportDigest`,
+      `aggregateCarbonFootprint`, `rankCandidatesByCarbon`.
+    - Persistence: `writeCarbonFootprintReport` (atomic
+      `${path}.${pid}.${uuid}.tmp` rename).
+    - Types: `EnergyCoefficientRecord`, `EnergyCoefficientTable`,
+      `GridCarbonIntensityRecord`, `GridCarbonIntensityTable`,
+      `CarbonFootprintRoleUsage`, `CarbonFootprintRoleLine`,
+      `CarbonFootprintReport`, `CarbonFootprintAggregate`,
+      `CarbonFootprintAggregateRow`, `CarbonRoutingCandidate`,
+      `RankedCarbonRoutingCandidate`,
+      plus the typed `CarbonFootprintError` and
+      `CarbonFootprintErrorCode` discriminated union.
 - New ADR `docs/decisions/2026-05-11-issue-2129-carbon-footprint.md`
   documenting methodology, citations, freshness ceiling, and the
   routing-optimizer follow-up handle.
@@ -363,15 +421,15 @@ are byte-identical to the previous release.
   (ES) remains correct.
 - New module `src/test-intelligence/locale-calibration-health.ts`
   exporting:
-  - `G13_LOCALE_CALIBRATION_HEALTHY` — hard-gate code string.
-  - `LOCALE_CALIBRATION_KAPPA_FLOOR = 0.7`,
-    `LOCALE_CALIBRATION_ECE_CEILING = 0.1`,
-    `LOCALE_CALIBRATION_MIN_SAMPLE_COUNT = 30`.
-  - `evaluateLocaleCalibrationHealth`,
-    `buildLocaleCalibrationHealthReport`,
-    `loadLocaleCalibrationArtifacts`,
-    `assertLocaleCalibrationHealthy`, plus the typed
-    `LocaleCalibrationHealthError`.
+    - `G13_LOCALE_CALIBRATION_HEALTHY` — hard-gate code string.
+    - `LOCALE_CALIBRATION_KAPPA_FLOOR = 0.7`,
+      `LOCALE_CALIBRATION_ECE_CEILING = 0.1`,
+      `LOCALE_CALIBRATION_MIN_SAMPLE_COUNT = 30`.
+    - `evaluateLocaleCalibrationHealth`,
+      `buildLocaleCalibrationHealthReport`,
+      `loadLocaleCalibrationArtifacts`,
+      `assertLocaleCalibrationHealthy`, plus the typed
+      `LocaleCalibrationHealthError`.
 - `AuditDossierManifest` gains an optional `localeCalibrationHealth`
   block carrying the per-locale gate verdict so the audit-dossier PDF
   can table-render it. Optional and additive: legacy runs without
@@ -398,8 +456,8 @@ previous release.
 ### Added (Issue #2187 — sovereign-cloud / air-gap deployment profile)
 
 - New contract constants in `src/contracts/index.ts`:
-  - `EU_BANKING_SOVEREIGN_POLICY_PROFILE_ID = "eu-banking-sovereign"`
-  - `EU_BANKING_SOVEREIGN_POLICY_PROFILE_VERSION = "1.0.0"`
+    - `EU_BANKING_SOVEREIGN_POLICY_PROFILE_ID = "eu-banking-sovereign"`
+    - `EU_BANKING_SOVEREIGN_POLICY_PROFILE_VERSION = "1.0.0"`
 - `RegionAttestation.attestedBy` union extended with the new
   `"sovereign-cloud"` source. The new label is first-class evidence
   (no `severity: "warning"` flag) for endpoints that don't implement
@@ -407,17 +465,17 @@ previous release.
   manifest. The legacy `"azure-instance-metadata"` /
   `"endpoint-cert-cn"` / `"operator-pinned"` values are preserved.
 - New module `src/test-intelligence/air-gap-guard.ts` exposing:
-  - `WORKSPACE_TEST_SPACE_AIR_GAP_MODE` env flag for strict-mode
-    enforcement.
-  - `WORKSPACE_TEST_SPACE_AIR_GAP_ALLOWED_HOSTS` comma-separated
-    allow-list env flag.
-  - `createAirGapFetchGuard(options)` — wraps a fetch implementation;
-    refuses every host outside the allow-list under strict mode.
-  - `assertLocalFilesystemPath(path, options)` — refuses `s3://`,
-    `https://`, `gs://`, `azure://`, `ftp://`, `sftp://`, `wasb(s)://`,
-    `abfs(s)://` as filesystem-rooted resources under strict mode.
-  - Typed errors `AirGapNetworkPolicyError` and
-    `AirGapResourceLocationError`.
+    - `WORKSPACE_TEST_SPACE_AIR_GAP_MODE` env flag for strict-mode
+      enforcement.
+    - `WORKSPACE_TEST_SPACE_AIR_GAP_ALLOWED_HOSTS` comma-separated
+      allow-list env flag.
+    - `createAirGapFetchGuard(options)` — wraps a fetch implementation;
+      refuses every host outside the allow-list under strict mode.
+    - `assertLocalFilesystemPath(path, options)` — refuses `s3://`,
+      `https://`, `gs://`, `azure://`, `ftp://`, `sftp://`, `wasb(s)://`,
+      `abfs(s)://` as filesystem-rooted resources under strict mode.
+    - Typed errors `AirGapNetworkPolicyError` and
+      `AirGapResourceLocationError`.
 - New module `src/test-intelligence/llm-gateway-sovereign.ts` exposing
   `createSovereignLlmGatewayClient(config, runtime, options)` — thin
   wrapper around `createLlmGatewayClient` that pins the configured
@@ -432,19 +490,19 @@ previous release.
   mode), short-circuits IMDS / TLS-cert resolution and produces a
   `sovereign-cloud` observation from the operator-pinned region.
 - New CLI sub-command `workspace-dev test-intelligence figma-export
-  --figma-url <url> --output <path>` (runs outside the air-gap).
+--figma-url <url> --output <path>` (runs outside the air-gap).
 - New CLI flag alias `--figma-payload <path>` on
   `workspace-dev test-intelligence run` (functionally identical to
   `--figma-json-file`, semantically explicit for the air-gap flow).
 - New top-level re-exports in `src/index.ts`:
-  - `EU_BANKING_SOVEREIGN_POLICY_PROFILE_ID`
-  - `EU_BANKING_SOVEREIGN_POLICY_PROFILE_VERSION`
+    - `EU_BANKING_SOVEREIGN_POLICY_PROFILE_ID`
+    - `EU_BANKING_SOVEREIGN_POLICY_PROFILE_VERSION`
 - New helpers in `src/test-intelligence/policy-profile.ts`:
-  - `EU_BANKING_SOVEREIGN_POLICY_PROFILE` (deep-frozen).
-  - `EU_BANKING_SOVEREIGN_POLICY_PROFILE_DESCRIPTION` (string).
-  - `cloneEuBankingSovereignProfile({ allowedHostingRegions })` — clone
-    + narrow the attested region allow-list to the customer's
-    contractually approved set.
+    - `EU_BANKING_SOVEREIGN_POLICY_PROFILE` (deep-frozen).
+    - `EU_BANKING_SOVEREIGN_POLICY_PROFILE_DESCRIPTION` (string).
+    - `cloneEuBankingSovereignProfile({ allowedHostingRegions })` — clone
+        - narrow the attested region allow-list to the customer's
+          contractually approved set.
 
 ### Backwards compatibility
 
@@ -473,54 +531,54 @@ or renamed.
 
 - New module `src/test-intelligence/test-execution-evidence-ingest.ts`
   exposing the ingest pipeline:
-  - `ingestExecutionEvidence({ evidence, context }): Promise<{ accepted, rejected, report, ... }>`
-    — verify + persist + report a single batch of evidence under the
-    per-tenant calibration corpus.
-  - `loadPersistedExecutionEvidence(corpusDir)` — deterministic walk
-    over the persisted partitions, used by W7-3 refit reader and the
-    W6-1 audit-dossier.
-  - `summarizeExecutionEvidenceForDossier(records)` — pure summary
-    builder consumed by the audit-dossier renderer.
-  - `buildExecutionEvidenceSigningBytes(evidence)` /
-    `computeVerifyingKeyFingerprint(pem)` — reusable signing-payload
-    helpers so customer TMS-plugin authors do not have to re-derive
-    the canonicalisation rules.
+    - `ingestExecutionEvidence({ evidence, context }): Promise<{ accepted, rejected, report, ... }>`
+      — verify + persist + report a single batch of evidence under the
+      per-tenant calibration corpus.
+    - `loadPersistedExecutionEvidence(corpusDir)` — deterministic walk
+      over the persisted partitions, used by W7-3 refit reader and the
+      W6-1 audit-dossier.
+    - `summarizeExecutionEvidenceForDossier(records)` — pure summary
+      builder consumed by the audit-dossier renderer.
+    - `buildExecutionEvidenceSigningBytes(evidence)` /
+      `computeVerifyingKeyFingerprint(pem)` — reusable signing-payload
+      helpers so customer TMS-plugin authors do not have to re-derive
+      the canonicalisation rules.
 - New persisted-artifact constants:
-  - `EXECUTION_EVIDENCE_SCHEMA_VERSION` (`"1.0.0"`).
-  - `EXECUTION_EVIDENCE_CORPUS_DIRNAME` (`"execution-evidence"`).
-  - `EXECUTION_EVIDENCE_REPORT_FILENAME`
-    (`"execution-evidence-report.json"`).
-  - `G12_EXECUTION_EVIDENCE_SIGNED` — hard-gate code emitted when
-    `--strict-signature` rejects an unsigned/tampered batch.
-  - `MAX_EXECUTION_EVIDENCE_ROWS_PER_PULL` (`5000`) — adapter-side
-    cap on a single pullExecutions envelope.
+    - `EXECUTION_EVIDENCE_SCHEMA_VERSION` (`"1.0.0"`).
+    - `EXECUTION_EVIDENCE_CORPUS_DIRNAME` (`"execution-evidence"`).
+    - `EXECUTION_EVIDENCE_REPORT_FILENAME`
+      (`"execution-evidence-report.json"`).
+    - `G12_EXECUTION_EVIDENCE_SIGNED` — hard-gate code emitted when
+      `--strict-signature` rejects an unsigned/tampered batch.
+    - `MAX_EXECUTION_EVIDENCE_ROWS_PER_PULL` (`5000`) — adapter-side
+      cap on a single pullExecutions envelope.
 - New exported types:
-  - `ExecutionEvidence`, `ExecutionEvidenceBody`,
-    `ExecutionEvidenceReport`, `ExecutionEvidenceIngestContext`,
-    `IngestExecutionEvidenceInput`, `IngestExecutionEvidenceResult`,
-    `PersistedExecutionEvidenceRecord`,
-    `ExecutionEvidenceDossierSummary`,
-    `ExecutionEvidenceVerdictCounts`,
-    `ExecutionEvidenceConflictEntry`,
-    `ExecutionEvidenceRejectionEntry`,
-    `ExecutionEvidenceConflictCode`,
-    `ExecutionEvidenceRejectionCode`, `ExecutionVerdict`,
-    `ReviewerVerdict`, `TenantId`.
-  - `TmsRawExecutionEvidence`, `TmsPullExecutionsResult` on the TMS
-    adapter contract surface.
-  - `ParseRawExecutionEvidenceEnvelopeInput` /
-    `ParseRawExecutionEvidenceEnvelopeResult` on the shared TMS
-    helpers surface.
+    - `ExecutionEvidence`, `ExecutionEvidenceBody`,
+      `ExecutionEvidenceReport`, `ExecutionEvidenceIngestContext`,
+      `IngestExecutionEvidenceInput`, `IngestExecutionEvidenceResult`,
+      `PersistedExecutionEvidenceRecord`,
+      `ExecutionEvidenceDossierSummary`,
+      `ExecutionEvidenceVerdictCounts`,
+      `ExecutionEvidenceConflictEntry`,
+      `ExecutionEvidenceRejectionEntry`,
+      `ExecutionEvidenceConflictCode`,
+      `ExecutionEvidenceRejectionCode`, `ExecutionVerdict`,
+      `ReviewerVerdict`, `TenantId`.
+    - `TmsRawExecutionEvidence`, `TmsPullExecutionsResult` on the TMS
+      adapter contract surface.
+    - `ParseRawExecutionEvidenceEnvelopeInput` /
+      `ParseRawExecutionEvidenceEnvelopeResult` on the shared TMS
+      helpers surface.
 - New error classes:
-  - `ExecutionEvidenceSignatureGateError`
-    (`code === "G12_EXECUTION_EVIDENCE_SIGNED"`).
-  - `ExecutionEvidenceTenantMismatchError`.
+    - `ExecutionEvidenceSignatureGateError`
+      (`code === "G12_EXECUTION_EVIDENCE_SIGNED"`).
+    - `ExecutionEvidenceTenantMismatchError`.
 - New required adapter method on `TmsAdapter`:
-  - `pullExecutions({ session, sinceIso }): Promise<TmsPullExecutionsResult>`.
-    Implemented on all four production adapters (Xray, ALM, qTest,
-    Polarion). Each adapter calls a TMS-specific
-    `…/execution-evidence?since=…` endpoint and parses the response
-    via the shared `parseRawExecutionEvidenceEnvelope` helper.
+    - `pullExecutions({ session, sinceIso }): Promise<TmsPullExecutionsResult>`.
+      Implemented on all four production adapters (Xray, ALM, qTest,
+      Polarion). Each adapter calls a TMS-specific
+      `…/execution-evidence?since=…` endpoint and parses the response
+      via the shared `parseRawExecutionEvidenceEnvelope` helper.
 - New optional `AuditDossierManifest.executionEvidenceLoop` section
   carrying the per-tenant evidence summary (verdict counts, conflict
   counts, distinct signing-key fingerprints, executedAt range). The
@@ -529,11 +587,11 @@ or renamed.
   contains at least one persisted record — legacy runs keep the
   manifest shape stable.
 - New CLI sub-command:
-  - `workspace-dev test-intelligence execution-pull --tms <id> --project <id> --since <iso> --tenant <id> --output-root <dir> [--endpoint <alias>] [--verifying-key <path>] [--strict-signature]`
-    — drives `connect → pullExecutions → ingestExecutionEvidence →
-    disconnect` end-to-end. Exit codes: `0` on success, `1` on
-    operator/config error, `2` on `G12_EXECUTION_EVIDENCE_SIGNED`
-    under `--strict-signature`.
+    - `workspace-dev test-intelligence execution-pull --tms <id> --project <id> --since <iso> --tenant <id> --output-root <dir> [--endpoint <alias>] [--verifying-key <path>] [--strict-signature]`
+      — drives `connect → pullExecutions → ingestExecutionEvidence →
+disconnect` end-to-end. Exit codes: `0` on success, `1` on
+      operator/config error, `2` on `G12_EXECUTION_EVIDENCE_SIGNED`
+      under `--strict-signature`.
 - New documentation: `docs/test-intelligence/execution-evidence-loop.md`
   with the flow diagram + the customer's TMS-admin signing-key setup
   procedure.
@@ -556,78 +614,78 @@ field, type, or command was removed or renamed.
 
 - New module `src/test-intelligence/tenant-onboarding.ts` exposing the
   provisioning flow + the doctor validator:
-  - `runTenantOnboarding(input): Promise<TenantOnboardingResult>` —
-    the main entrypoint; validates inputs, generates Ed25519 key
-    material locally, writes the tenant directory, and returns the
-    operator-facing summary report. Throws
-    `TenantOnboardingValidationError` on operator-facing input errors.
-  - `runTenantOnboardingDoctor(input): Promise<TenantOnboardingDoctorResult>`
-    — the safety-net validator; verifies the tenant layout, parses
-    every key, cross-checks public-key fingerprints against the ICT
-    register, and refuses tenant-scope mismatches as multi-tenant
-    isolation violations (W6-2).
+    - `runTenantOnboarding(input): Promise<TenantOnboardingResult>` —
+      the main entrypoint; validates inputs, generates Ed25519 key
+      material locally, writes the tenant directory, and returns the
+      operator-facing summary report. Throws
+      `TenantOnboardingValidationError` on operator-facing input errors.
+    - `runTenantOnboardingDoctor(input): Promise<TenantOnboardingDoctorResult>`
+      — the safety-net validator; verifies the tenant layout, parses
+      every key, cross-checks public-key fingerprints against the ICT
+      register, and refuses tenant-scope mismatches as multi-tenant
+      isolation violations (W6-2).
 - New persisted-artifact constants:
-  - `TENANT_ONBOARDING_SCHEMA_VERSION` (`"1.0.0"`).
-  - `TENANT_ICT_REGISTER_SCHEMA_VERSION` (`"1.0.0"`).
-  - `TENANT_ONBOARDING_TENANTS_SUBDIR` (`"tenants"`).
-  - `TENANT_ONBOARDING_BUNDLE_FILENAME` (`"tenant-bundle.json"`).
-  - `TENANT_ONBOARDING_CALIBRATION_CORPUS_DIRNAME`
-    (`"calibration-corpus"`).
-  - `TENANT_ONBOARDING_SIGNING_KEYS_DIRNAME` (`"signing-keys"`).
-  - `TENANT_ICT_REGISTER_FILENAME` (`"ict-register.json"`).
-  - `TENANT_ONBOARDING_EVIDENCE_FILENAME`
-    (`"onboarding-evidence.json"`).
-  - `TENANT_ONBOARDING_FINGERPRINTS_FILENAME` (`"fingerprints.json"`).
-  - `AUDIT_DOSSIER_PRIVATE_KEY_FILENAME` /
-    `AUDIT_DOSSIER_PUBLIC_KEY_FILENAME` (W6-1).
-  - `REGION_ATTESTATION_KEY_FILENAME` (W6-3).
-  - `REVIEWER_SIGNING_PRIVATE_KEY_FILENAME` /
-    `REVIEWER_SIGNING_PUBLIC_KEY_FILENAME` (W6-5).
+    - `TENANT_ONBOARDING_SCHEMA_VERSION` (`"1.0.0"`).
+    - `TENANT_ICT_REGISTER_SCHEMA_VERSION` (`"1.0.0"`).
+    - `TENANT_ONBOARDING_TENANTS_SUBDIR` (`"tenants"`).
+    - `TENANT_ONBOARDING_BUNDLE_FILENAME` (`"tenant-bundle.json"`).
+    - `TENANT_ONBOARDING_CALIBRATION_CORPUS_DIRNAME`
+      (`"calibration-corpus"`).
+    - `TENANT_ONBOARDING_SIGNING_KEYS_DIRNAME` (`"signing-keys"`).
+    - `TENANT_ICT_REGISTER_FILENAME` (`"ict-register.json"`).
+    - `TENANT_ONBOARDING_EVIDENCE_FILENAME`
+      (`"onboarding-evidence.json"`).
+    - `TENANT_ONBOARDING_FINGERPRINTS_FILENAME` (`"fingerprints.json"`).
+    - `AUDIT_DOSSIER_PRIVATE_KEY_FILENAME` /
+      `AUDIT_DOSSIER_PUBLIC_KEY_FILENAME` (W6-1).
+    - `REGION_ATTESTATION_KEY_FILENAME` (W6-3).
+    - `REVIEWER_SIGNING_PRIVATE_KEY_FILENAME` /
+      `REVIEWER_SIGNING_PUBLIC_KEY_FILENAME` (W6-5).
 - New file-mode constants exported for documentation /
   cross-platform parity tests: `PRIVATE_KEY_FILE_MODE` (`0o600`),
   `HMAC_SECRET_FILE_MODE` (`0o600`),
   `PUBLIC_ARTIFACT_FILE_MODE` (`0o644`).
 - New input-validation surface:
-  - `TENANT_ONBOARDING_TENANT_ID_PATTERN` —
-    `^[a-z0-9][a-z0-9_-]{0,63}$`, kept in sync with
-    `tenant-bundle.ts`.
-  - `TENANT_ONBOARDING_KNOWN_POLICY_PROFILE_IDS` — closed allow-list
-    of policy-profile ids the onboarding CLI accepts (currently
-    `eu-banking-default`).
+    - `TENANT_ONBOARDING_TENANT_ID_PATTERN` —
+      `^[a-z0-9][a-z0-9_-]{0,63}$`, kept in sync with
+      `tenant-bundle.ts`.
+    - `TENANT_ONBOARDING_KNOWN_POLICY_PROFILE_IDS` — closed allow-list
+      of policy-profile ids the onboarding CLI accepts (currently
+      `eu-banking-default`).
 - New persisted-artifact + input types:
-  - `TenantOnboardingInput`, `Ed25519KeyMaterial`,
-    `SigningKeyFingerprints`, `CreatedArtifactRef`,
-    `TenantOnboardingResult`.
-  - `TenantOnboardingDoctorInput`, `TenantOnboardingDoctorCheck`,
-    `TenantOnboardingDoctorResult`.
+    - `TenantOnboardingInput`, `Ed25519KeyMaterial`,
+      `SigningKeyFingerprints`, `CreatedArtifactRef`,
+      `TenantOnboardingResult`.
+    - `TenantOnboardingDoctorInput`, `TenantOnboardingDoctorCheck`,
+      `TenantOnboardingDoctorResult`.
 - New error class `TenantOnboardingValidationError` with stable
   `code` strings:
-  - `TENANT_ONBOARDING_INVALID_TENANT_ID`
-  - `TENANT_ONBOARDING_INVALID_LEGAL_NAME`
-  - `TENANT_ONBOARDING_UNKNOWN_POLICY_PROFILE`
-  - `TENANT_ONBOARDING_INVALID_OUTPUT_ROOT`
-  - `TENANT_ONBOARDING_INVALID_ENVIRONMENT_ID`
-  - `TENANT_ONBOARDING_INVALID_JURISDICTION`
-  - `TENANT_ONBOARDING_INVALID_EFFECTIVE_DATE`
-  - `TENANT_ONBOARDING_DIRECTORY_EXISTS`
-  - `TENANT_ONBOARDING_INTERNAL_BUNDLE_INVALID`
+    - `TENANT_ONBOARDING_INVALID_TENANT_ID`
+    - `TENANT_ONBOARDING_INVALID_LEGAL_NAME`
+    - `TENANT_ONBOARDING_UNKNOWN_POLICY_PROFILE`
+    - `TENANT_ONBOARDING_INVALID_OUTPUT_ROOT`
+    - `TENANT_ONBOARDING_INVALID_ENVIRONMENT_ID`
+    - `TENANT_ONBOARDING_INVALID_JURISDICTION`
+    - `TENANT_ONBOARDING_INVALID_EFFECTIVE_DATE`
+    - `TENANT_ONBOARDING_DIRECTORY_EXISTS`
+    - `TENANT_ONBOARDING_INTERNAL_BUNDLE_INVALID`
 - New CLI surface in `src/test-intelligence-onboard-cli.ts`:
-  - `parseTestIntelligenceOnboardArgs(argv)` returning either
-    `TestIntelligenceOnboardOptions` (provision mode) or
-    `TestIntelligenceOnboardDoctorOptions` (doctor mode).
-  - `runTestIntelligenceOnboardCommand(options, sink)` returning
-    `Promise<number>` — exit codes `0` (ok), `1`
-    (operator/config error), `2` (doctor failed).
-  - `TestIntelligenceOnboardOperatorError` parser-level error class.
-  - `TEST_INTELLIGENCE_ONBOARD_HELP` help text constant.
+    - `parseTestIntelligenceOnboardArgs(argv)` returning either
+      `TestIntelligenceOnboardOptions` (provision mode) or
+      `TestIntelligenceOnboardDoctorOptions` (doctor mode).
+    - `runTestIntelligenceOnboardCommand(options, sink)` returning
+      `Promise<number>` — exit codes `0` (ok), `1`
+      (operator/config error), `2` (doctor failed).
+    - `TestIntelligenceOnboardOperatorError` parser-level error class.
+    - `TEST_INTELLIGENCE_ONBOARD_HELP` help text constant.
 - New `test-intelligence onboard` CLI subcommand wired into
   `src/cli.ts`, with two invocation forms:
-  - `test-intelligence onboard --tenant-id <id> --legal-name <name>
-    --policy-profile <id> --output-root <dir>
-    [--force] [--environment-id <id>] [--project-id <id>]
-    [--jurisdiction <code>] [--effective-date <iso>]`.
-  - `test-intelligence onboard --doctor --tenant-id <id>
-    --output-root <dir> [--environment-id <id>] [--project-id <id>]`.
+    - `test-intelligence onboard --tenant-id <id> --legal-name <name>
+--policy-profile <id> --output-root <dir>
+[--force] [--environment-id <id>] [--project-id <id>]
+[--jurisdiction <code>] [--effective-date <iso>]`.
+    - `test-intelligence onboard --doctor --tenant-id <id>
+--output-root <dir> [--environment-id <id>] [--project-id <id>]`.
 
 ### Behaviour notes
 
@@ -659,52 +717,52 @@ command was removed or renamed.
 - New persisted-artifact constants exported from
   `src/test-intelligence/tenant-bundle.ts` (re-exported via
   `src/test-intelligence/index.ts`):
-  - `TENANT_BUNDLE_RESOLVED_SCHEMA_VERSION` (`"1.0.0"`).
-  - `TENANT_BUNDLE_RESOLVED_ARTIFACT_FILENAME`
-    (`"tenant-bundle-resolved.json"`).
-  - `TENANT_BUNDLE_RESOLVED_CERTIFICATION` — stable certification
-    string baked into the artifact.
-  - `MAX_TENANT_BUNDLE_BYTES` (`262_144`).
-  - `TENANT_BUNDLE_DEFAULT_BASE_POLICY_PROFILE_ID` (defaults to
-    `"eu-banking-default"`).
+    - `TENANT_BUNDLE_RESOLVED_SCHEMA_VERSION` (`"1.0.0"`).
+    - `TENANT_BUNDLE_RESOLVED_ARTIFACT_FILENAME`
+      (`"tenant-bundle-resolved.json"`).
+    - `TENANT_BUNDLE_RESOLVED_CERTIFICATION` — stable certification
+      string baked into the artifact.
+    - `MAX_TENANT_BUNDLE_BYTES` (`262_144`).
+    - `TENANT_BUNDLE_DEFAULT_BASE_POLICY_PROFILE_ID` (defaults to
+      `"eu-banking-default"`).
 - New closed value sets:
-  - `TENANT_BUNDLE_OVERRIDE_ALLOW_LIST` (`tenantId`, `bundleVersion`,
-    `inheritsFromPolicyProfile`, `testCaseNamingConvention`,
-    `riskClassTaxonomy`, `complianceHouseStandards`,
-    `designSystemTokens`, `terminologyGlossary`,
-    `customerEvalRubric`) + the type alias `TenantBundleAllowedField`.
-  - `TENANT_BUNDLE_SAFETY_FLOORS` — pre-wired safety-floor catalogue
-    over `rules.minConfidence`, `rules.fieldCoverageRatioMin`,
-    `rules.actionCoverageRatioMin`,
-    `rules.negativeCaseLift.thresholdRatio`, and
-    `rules.duplicateSimilarityThreshold`.
+    - `TENANT_BUNDLE_OVERRIDE_ALLOW_LIST` (`tenantId`, `bundleVersion`,
+      `inheritsFromPolicyProfile`, `testCaseNamingConvention`,
+      `riskClassTaxonomy`, `complianceHouseStandards`,
+      `designSystemTokens`, `terminologyGlossary`,
+      `customerEvalRubric`) + the type alias `TenantBundleAllowedField`.
+    - `TENANT_BUNDLE_SAFETY_FLOORS` — pre-wired safety-floor catalogue
+      over `rules.minConfidence`, `rules.fieldCoverageRatioMin`,
+      `rules.actionCoverageRatioMin`,
+      `rules.negativeCaseLift.thresholdRatio`, and
+      `rules.duplicateSimilarityThreshold`.
 - New error classes:
-  - `TenantBundleBaseProfileMismatchError` (code
-    `TENANT_BUNDLE_BASE_PROFILE_MISMATCH`).
-  - `TenantBundleSafetyFloorViolationError` (code
-    `TENANT_BUNDLE_SAFETY_FLOOR_VIOLATION`).
+    - `TenantBundleBaseProfileMismatchError` (code
+      `TENANT_BUNDLE_BASE_PROFILE_MISMATCH`).
+    - `TenantBundleSafetyFloorViolationError` (code
+      `TENANT_BUNDLE_SAFETY_FLOOR_VIOLATION`).
 - New persisted-artifact + input types:
-  - `TenantBundleInput`, `NamingConvention`, `RiskClassOverride`,
-    `HouseStandardEntry`, `DesignSystemBinding`,
-    `TerminologyEntry`, `CustomerEvalRubricRef`.
-  - `CanonicalTenantBundle` — sorted, deterministic,
-    content-hashed canonical form.
-  - `ResolvedTenantBundle` — bundle + merged
-    `TestCasePolicyProfile` + applied-overrides catalogue +
-    certification line.
-  - `TenantBundleIssue`,
-    `ParseAndCanonicalizeTenantBundleResult`,
-    `ResolveTenantBundleInput`, `TenantBundleGlossaryEntry`.
+    - `TenantBundleInput`, `NamingConvention`, `RiskClassOverride`,
+      `HouseStandardEntry`, `DesignSystemBinding`,
+      `TerminologyEntry`, `CustomerEvalRubricRef`.
+    - `CanonicalTenantBundle` — sorted, deterministic,
+      content-hashed canonical form.
+    - `ResolvedTenantBundle` — bundle + merged
+      `TestCasePolicyProfile` + applied-overrides catalogue +
+      certification line.
+    - `TenantBundleIssue`,
+      `ParseAndCanonicalizeTenantBundleResult`,
+      `ResolveTenantBundleInput`, `TenantBundleGlossaryEntry`.
 - New public functions:
-  - `parseAndCanonicalizeTenantBundle`.
-  - `resolveTenantBundle` (deep-clone safe — never mutates the base
-    profile).
-  - `assertTenantBundleScope` (cross-tenant load guard tied to the
-    ALS-active `TenantScope`).
-  - `serializeResolvedTenantBundle` (byte-stable canonical JSON for
-    the on-disk artifact).
-  - `buildTenantBundleGlossaryEntries` (flattens the bundle's
-    terminology into the prompt-compiler glossary contract).
+    - `parseAndCanonicalizeTenantBundle`.
+    - `resolveTenantBundle` (deep-clone safe — never mutates the base
+      profile).
+    - `assertTenantBundleScope` (cross-tenant load guard tied to the
+      ALS-active `TenantScope`).
+    - `serializeResolvedTenantBundle` (byte-stable canonical JSON for
+      the on-disk artifact).
+    - `buildTenantBundleGlossaryEntries` (flattens the bundle's
+      terminology into the prompt-compiler glossary contract).
 - New `RunFigmaToQcTestCasesInput.tenantBundle?: TenantBundleInput`
   field on the production runner.
 - New `RunFigmaToQcTestCasesResult.artifactPaths.tenantBundleResolved?: string`
@@ -742,66 +800,66 @@ renamed.
 
 - New persisted-artifact constants exported from
   `src/contracts/index.ts`:
-  - `TMS_PUSH_REPORT_SCHEMA_VERSION` (`"1.0.0"`).
-  - `TMS_PUSH_REPORT_ARTIFACT_FILENAME` (`"tms-push-report.json"`).
+    - `TMS_PUSH_REPORT_SCHEMA_VERSION` (`"1.0.0"`).
+    - `TMS_PUSH_REPORT_ARTIFACT_FILENAME` (`"tms-push-report.json"`).
 - New closed value sets exported from `src/contracts/index.ts`:
-  - `ALLOWED_TMS_ADAPTER_IDS` (`["alm", "polarion", "qtest", "xray"]`)
-    + the type alias `TmsAdapterId`.
-  - `ALLOWED_TMS_PUSH_VERDICTS`
-    (`["pushed", "skipped-dup", "failed"]`) + `TmsPushVerdict`.
-  - `ALLOWED_TMS_AUTH_KINDS` (`["pat", "oauth2", "bearer"]`) +
-    `TmsAuthKind`.
-  - `ALLOWED_TMS_PUSH_REFUSAL_CODES`
-    (`["credentials_missing", "credentials_invalid",
-       "project_validation_failed", "mapping_preview_missing",
-       "mapping_preview_unreadable", "no_mapped_test_cases",
-       "adapter_unsupported", "connect_failed"]`) +
-    `TmsPushRefusalCode`.
+    - `ALLOWED_TMS_ADAPTER_IDS` (`["alm", "polarion", "qtest", "xray"]`)
+        - the type alias `TmsAdapterId`.
+    - `ALLOWED_TMS_PUSH_VERDICTS`
+      (`["pushed", "skipped-dup", "failed"]`) + `TmsPushVerdict`.
+    - `ALLOWED_TMS_AUTH_KINDS` (`["pat", "oauth2", "bearer"]`) +
+      `TmsAuthKind`.
+    - `ALLOWED_TMS_PUSH_REFUSAL_CODES`
+      (`["credentials_missing", "credentials_invalid",
+   "project_validation_failed", "mapping_preview_missing",
+   "mapping_preview_unreadable", "no_mapped_test_cases",
+   "adapter_unsupported", "connect_failed"]`) +
+      `TmsPushRefusalCode`.
 - New persisted-artifact types:
-  - `TmsPushReportEntry` — per-case row with `testCaseId`,
-    `idempotencyKey`, `verdict`, `tmsTestCaseId`, `tmsErrorCode`,
-    `tmsErrorMessage`, `attemptCount`, `recordedAt`.
-  - `TmsPushReportArtifact` — aggregate envelope with `adapterId`,
-    `adapterVersion`, `tmsEndpointAlias`, `tmsProjectId`, `runId`,
-    `tenantId`, `generatedAt`, `refused`, `refusalCodes`, `dryRun`,
-    `entries`, `pushedCount`, `skippedDuplicateCount`,
-    `failedCount`, plus the hard-invariant flags
-    `rawScreenshotsIncluded: false`, `credentialsIncluded: false`,
-    `transferUrlIncluded: false`.
+    - `TmsPushReportEntry` — per-case row with `testCaseId`,
+      `idempotencyKey`, `verdict`, `tmsTestCaseId`, `tmsErrorCode`,
+      `tmsErrorMessage`, `attemptCount`, `recordedAt`.
+    - `TmsPushReportArtifact` — aggregate envelope with `adapterId`,
+      `adapterVersion`, `tmsEndpointAlias`, `tmsProjectId`, `runId`,
+      `tenantId`, `generatedAt`, `refused`, `refusalCodes`, `dryRun`,
+      `entries`, `pushedCount`, `skippedDuplicateCount`,
+      `failedCount`, plus the hard-invariant flags
+      `rawScreenshotsIncluded: false`, `credentialsIncluded: false`,
+      `transferUrlIncluded: false`.
 - New module `src/test-intelligence/tms-adapters/` exporting:
-  - The provider-neutral `TmsAdapter` contract surface plus the
-    operational types `TmsAdapterClock`, `TmsAdapterSession`,
-    `TmsConnectInput`, `TmsCredentials`, `TmsHttpClient`,
-    `TmsHttpRequest`, `TmsHttpResponse`, `TmsMappedCase`,
-    `TmsPushAttemptResult`, `TmsPushBatchResult`,
-    `TmsSyncStatus`, `TmsValidateProjectResult`.
-  - The error classes `TmsAdapterError`, `TmsAuthError`,
-    `TmsRateLimitError`, `TmsTransportError`, `TmsValidationError`.
-  - Constants `DEFAULT_TMS_PUSH_BATCH_SIZE` (`50`),
-    `DEFAULT_TMS_REQUEST_TIMEOUT_MS` (`10_000`),
-    `MAX_TMS_FAILURE_DETAIL_LENGTH` (`240`),
-    `DEFAULT_TMS_RETRY_ATTEMPTS` (`4`),
-    `DEFAULT_TMS_RETRY_BASE_MS` (`250`),
-    `DEFAULT_TMS_RETRY_CEIL_MS` (`8_000`),
-    `DEFAULT_TMS_PRINCIPAL_ID` (`"tms-principal:default"`),
-    `TMS_ADAPTER_ENV_NAMES`.
-  - Pure helpers `computeTmsIdempotencyKey`,
-    `loadTmsCredentialsFromEnv`, `sanitizeTmsErrorDetail`,
-    `chunkBatches`, `executeWithRetry`, `classifyTmsHttpFailure`,
-    `buildBasicAuthHeader`, `resolvePrincipalId`,
-    `isSupportedAuthKind`, `buildTmsPushReportPath`,
-    `writeTmsAtomicJson`.
-  - Adapter factories `createXrayAdapter`, `createAlmAdapter`,
-    `createQtestAdapter`, `createPolarionAdapter`, plus the
-    pinned per-adapter version constants `XRAY_ADAPTER_VERSION`,
-    `ALM_ADAPTER_VERSION`, `QTEST_ADAPTER_VERSION`,
-    `POLARION_ADAPTER_VERSION` (all `"1.0.0"`).
-  - The orchestrator entry point `runTmsPushPipeline` plus the
-    helper `loadMappingPreviewFromRunDir`.
-  - The optional `PolarionWebDavClient` surface for two-protocol
-    Polarion attachment uploads (the default CLI omits WebDAV;
-    operators who need attachments call the adapter from a custom
-    entry point).
+    - The provider-neutral `TmsAdapter` contract surface plus the
+      operational types `TmsAdapterClock`, `TmsAdapterSession`,
+      `TmsConnectInput`, `TmsCredentials`, `TmsHttpClient`,
+      `TmsHttpRequest`, `TmsHttpResponse`, `TmsMappedCase`,
+      `TmsPushAttemptResult`, `TmsPushBatchResult`,
+      `TmsSyncStatus`, `TmsValidateProjectResult`.
+    - The error classes `TmsAdapterError`, `TmsAuthError`,
+      `TmsRateLimitError`, `TmsTransportError`, `TmsValidationError`.
+    - Constants `DEFAULT_TMS_PUSH_BATCH_SIZE` (`50`),
+      `DEFAULT_TMS_REQUEST_TIMEOUT_MS` (`10_000`),
+      `MAX_TMS_FAILURE_DETAIL_LENGTH` (`240`),
+      `DEFAULT_TMS_RETRY_ATTEMPTS` (`4`),
+      `DEFAULT_TMS_RETRY_BASE_MS` (`250`),
+      `DEFAULT_TMS_RETRY_CEIL_MS` (`8_000`),
+      `DEFAULT_TMS_PRINCIPAL_ID` (`"tms-principal:default"`),
+      `TMS_ADAPTER_ENV_NAMES`.
+    - Pure helpers `computeTmsIdempotencyKey`,
+      `loadTmsCredentialsFromEnv`, `sanitizeTmsErrorDetail`,
+      `chunkBatches`, `executeWithRetry`, `classifyTmsHttpFailure`,
+      `buildBasicAuthHeader`, `resolvePrincipalId`,
+      `isSupportedAuthKind`, `buildTmsPushReportPath`,
+      `writeTmsAtomicJson`.
+    - Adapter factories `createXrayAdapter`, `createAlmAdapter`,
+      `createQtestAdapter`, `createPolarionAdapter`, plus the
+      pinned per-adapter version constants `XRAY_ADAPTER_VERSION`,
+      `ALM_ADAPTER_VERSION`, `QTEST_ADAPTER_VERSION`,
+      `POLARION_ADAPTER_VERSION` (all `"1.0.0"`).
+    - The orchestrator entry point `runTmsPushPipeline` plus the
+      helper `loadMappingPreviewFromRunDir`.
+    - The optional `PolarionWebDavClient` surface for two-protocol
+      Polarion attachment uploads (the default CLI omits WebDAV;
+      operators who need attachments call the adapter from a custom
+      entry point).
 - New module `src/test-intelligence/tms-adapters/default-http-client.ts`
   exporting `createDefaultTmsHttpClient`, the `node:fetch`-backed
   HTTP client used by the CLI. Resolves endpoint aliases from
@@ -845,39 +903,39 @@ command was removed or renamed.
 
 - New module `src/test-intelligence/self-improving-calibration.ts`
   exporting:
-  - `G11_CALIBRATION_REFIT_SAFETY`
-    (`"G11_CALIBRATION_REFIT_SAFETY"`) — hard-gate code emitted by
-    `assertCalibrationRefitSafety` when a production-path
-    calibration curve has no backing ratified proposal.
-  - `CalibrationRefitSafetyHardGateError`,
-    `CalibrationRefitOperatorError` — typed error classes mirroring
-    the test-intelligence convention.
-  - `proposeCalibrationRefit`, `ratifyOrRollback`,
-    `verifyCalibrationOperatorSignature`,
-    `loadCalibrationRefitHistory`,
-    `summarizeCalibrationRefitHistory`,
-    `assertCalibrationRefitSafety`,
-    `resolveProductionCurvePath`, `parseCurveFilename`.
-  - `REGULATED_RISK_CLASSES`,
-    `SELF_IMPROVING_CALIBRATION_HARD_GATES`,
-    `SELF_IMPROVING_CALIBRATION_HELD_OUT_FRACTION` (`0.2`),
-    `SELF_IMPROVING_CALIBRATION_MIN_SAMPLES` (`20`),
-    `SELF_IMPROVING_CALIBRATION_ACCEPTED_RUN_SCORE_FLOOR` (`90`),
-    `SELF_IMPROVING_CALIBRATION_SCHEMA_VERSION` (`"1.0.0"`),
-    `SELF_IMPROVING_CALIBRATION_CURVES_DIRNAME`
-    (`"calibration-curves"`),
-    `SELF_IMPROVING_CALIBRATION_PROPOSALS_DIRNAME`
-    (`"proposals"`),
-    `SELF_IMPROVING_CALIBRATION_REJECTION_SUFFIX`
-    (`"-rejected.json"`).
-  - Public type aliases `CalibrationCurveSnapshot`,
-    `CalibrationGoldEntry`, `CalibrationGoldEntrySource`,
-    `CalibrationOperatorSignature`,
-    `CalibrationRefitGateEvaluation`,
-    `CalibrationRefitHistory`, `CalibrationRefitOutcome`,
-    `CalibrationRefitProposal`, `CalibrationRejectionSidecar`,
-    `ProposeCalibrationRefitInput`, `RatifyOrRollbackInput`,
-    `RegulatedRiskClass`.
+    - `G11_CALIBRATION_REFIT_SAFETY`
+      (`"G11_CALIBRATION_REFIT_SAFETY"`) — hard-gate code emitted by
+      `assertCalibrationRefitSafety` when a production-path
+      calibration curve has no backing ratified proposal.
+    - `CalibrationRefitSafetyHardGateError`,
+      `CalibrationRefitOperatorError` — typed error classes mirroring
+      the test-intelligence convention.
+    - `proposeCalibrationRefit`, `ratifyOrRollback`,
+      `verifyCalibrationOperatorSignature`,
+      `loadCalibrationRefitHistory`,
+      `summarizeCalibrationRefitHistory`,
+      `assertCalibrationRefitSafety`,
+      `resolveProductionCurvePath`, `parseCurveFilename`.
+    - `REGULATED_RISK_CLASSES`,
+      `SELF_IMPROVING_CALIBRATION_HARD_GATES`,
+      `SELF_IMPROVING_CALIBRATION_HELD_OUT_FRACTION` (`0.2`),
+      `SELF_IMPROVING_CALIBRATION_MIN_SAMPLES` (`20`),
+      `SELF_IMPROVING_CALIBRATION_ACCEPTED_RUN_SCORE_FLOOR` (`90`),
+      `SELF_IMPROVING_CALIBRATION_SCHEMA_VERSION` (`"1.0.0"`),
+      `SELF_IMPROVING_CALIBRATION_CURVES_DIRNAME`
+      (`"calibration-curves"`),
+      `SELF_IMPROVING_CALIBRATION_PROPOSALS_DIRNAME`
+      (`"proposals"`),
+      `SELF_IMPROVING_CALIBRATION_REJECTION_SUFFIX`
+      (`"-rejected.json"`).
+    - Public type aliases `CalibrationCurveSnapshot`,
+      `CalibrationGoldEntry`, `CalibrationGoldEntrySource`,
+      `CalibrationOperatorSignature`,
+      `CalibrationRefitGateEvaluation`,
+      `CalibrationRefitHistory`, `CalibrationRefitOutcome`,
+      `CalibrationRefitProposal`, `CalibrationRejectionSidecar`,
+      `ProposeCalibrationRefitInput`, `RatifyOrRollbackInput`,
+      `RegulatedRiskClass`.
 - New CLI sub-command
   `workspace-dev test-intelligence calibration-refit` (Issue #2182)
   exposed by `src/test-intelligence-calibration-refit-cli.ts`. The
@@ -919,30 +977,30 @@ removed or renamed.
   never invoked the model checker, so byte-shape stays stable for
   legacy runs.
 - New module `src/test-intelligence/formal-verification.ts` exporting:
-  - `G10_FORMAL_VERIFICATION_PASS` (`"G10_FORMAL_VERIFICATION_PASS"`)
-    — the hard-gate code emitted on failure.
-  - `FormalVerificationHardGateError` — error class thrown by
-    `assertFormalVerificationPass` when any formula fails.
-  - `FormalSpecParseError`, `FormalSpecModelError` — parse-time and
-    model-construction errors.
-  - `FORMAL_VERIFICATION_REPORT_ARTIFACT_FILENAME`,
-    `FORMAL_VERIFICATION_REPORT_SCHEMA_VERSION` (`"1.0.0"`),
-    `FORMAL_VERIFICATION_STATE_LIMIT` (`4096`),
-    `FORMAL_VERIFICATION_MAX_SPEC_BYTES` (`65_536`).
-  - `verifyFormalVerificationSpec`,
-    `buildFormalVerificationReport`,
-    `renderFormalVerificationReportJson`,
-    `renderFormalVerificationReportText`,
-    `assertFormalVerificationPass`.
-  - Types `FormalVerificationLogic`, `FormalVerificationVerdict`,
-    `FormalVerificationState`, `FormalVerificationCounterexample`,
-    `FormalVerificationFormulaResult`,
-    `FormalVerificationSpecResult`, `FormalVerificationReport`,
-    `VerifyFormalSpecInput`, `BuildFormalVerificationReportInput`.
+    - `G10_FORMAL_VERIFICATION_PASS` (`"G10_FORMAL_VERIFICATION_PASS"`)
+      — the hard-gate code emitted on failure.
+    - `FormalVerificationHardGateError` — error class thrown by
+      `assertFormalVerificationPass` when any formula fails.
+    - `FormalSpecParseError`, `FormalSpecModelError` — parse-time and
+      model-construction errors.
+    - `FORMAL_VERIFICATION_REPORT_ARTIFACT_FILENAME`,
+      `FORMAL_VERIFICATION_REPORT_SCHEMA_VERSION` (`"1.0.0"`),
+      `FORMAL_VERIFICATION_STATE_LIMIT` (`4096`),
+      `FORMAL_VERIFICATION_MAX_SPEC_BYTES` (`65_536`).
+    - `verifyFormalVerificationSpec`,
+      `buildFormalVerificationReport`,
+      `renderFormalVerificationReportJson`,
+      `renderFormalVerificationReportText`,
+      `assertFormalVerificationPass`.
+    - Types `FormalVerificationLogic`, `FormalVerificationVerdict`,
+      `FormalVerificationState`, `FormalVerificationCounterexample`,
+      `FormalVerificationFormulaResult`,
+      `FormalVerificationSpecResult`, `FormalVerificationReport`,
+      `VerifyFormalSpecInput`, `BuildFormalVerificationReportInput`.
 - New CLI driver `scripts/run-formal-verification.mjs` invoked via
   `node --import tsx scripts/run-formal-verification.mjs
-  [--specs-dir <path>]... [--output-dir <path>]
-  [--generated-at <iso>]`. Exits `0` on pass, `1` on any failure, `2`
+[--specs-dir <path>]... [--output-dir <path>]
+[--generated-at <iso>]`. Exits `0` on pass, `1` on any failure, `2`
   on parse / model-construction error. Output is byte-stable for
   fixed inputs.
 - Two pilot specs checked in under
@@ -994,7 +1052,7 @@ FinOps token-budget cap exposed for the framework.
   additive `causalCoverage` field on `TestCasePolicyReport`. The block
   surfaces `hypothesesEvaluated`, `pairsGenerated`, `pairsViolated`,
   and the `causalCoverageRatio` (= `(pairsGenerated -
-  pairsViolated) / pairsGenerated`, rounded to six digits, `0` when
+pairsViolated) / pairsGenerated`, rounded to six digits, `0` when
   no pairs were generated). Omitted for runs that did not enable the
   framework, so byte-shape stays stable for legacy runs.
 - (Issue #2180 follow-up — PR #2205) The persisted
@@ -1012,14 +1070,14 @@ FinOps token-budget cap exposed for the framework.
   `parseSemanticFieldId` reader, the `CausalHypothesis` /
   `CausalRelationship` types, the
   `buildCausalHypothesisRegistry({ invariants, model,
-  operatorHypotheses })` API that derives hypotheses from registered
+operatorHypotheses })` API that derives hypotheses from registered
   domain invariants (Issue #2040 + Issue #2108) and merges
   operator-declared hypotheses, and the `loadOperatorHypotheses`
   fixture loader.
 - New module `src/test-intelligence/causal-validation-framework.ts`
   exposing the `CounterfactualPair` interface, the
   `deriveCounterfactualPairs({ cases, invariants, model,
-  operatorHypotheses?, now, seed })` deterministic pair generator that
+operatorHypotheses?, now, seed })` deterministic pair generator that
   uses the test-data oracle (Issue #2071) for every value variation
   between pair members, the `evaluateCounterfactualPairs` aggregator
   that computes the persisted `CausalValidationReport`, and the
@@ -1028,7 +1086,7 @@ FinOps token-budget cap exposed for the framework.
   `E_INVALID_SEED`).
 - Pair generation is **deterministic** given fixed seeds — replaying
   the same `(cases, invariants, operatorHypotheses, model, now,
-  seed)` tuple produces byte-identical output.
+seed)` tuple produces byte-identical output.
 - Each pair counts as **one logical coverage unit** for the
   `causalCoverage` KPI but **two physical cases** when added to the
   suite. The pair envelope carries `causalDelta.fieldId`,
@@ -1100,14 +1158,14 @@ and artifact constants for the queue, verdict, and per-run audit log.
   refused with `E_SIGNATURE_INVALID` / `E_KEY_FINGERPRINT_MISMATCH`.
 - New operator-facing CLI subcommands on the package entrypoint:
   `workspace-dev test-intelligence review list --tenant <id>
-   [--profile <id>] [--sla-due-by <iso-8601>] [--root <dir>]`,
+ [--profile <id>] [--sla-due-by <iso-8601>] [--root <dir>]`,
   `workspace-dev test-intelligence review get <item-id> --tenant <id>
-   [--root <dir>]`, and
+ [--root <dir>]`, and
   `workspace-dev test-intelligence review decide <item-id>
-   --tenant <id> --verdict <approved|rejected|revised>
-   --rationale <md-file> [--revised-tc <json-file>]
-   --sign-key <pem> --decided-at <iso-8601>
-   [--reviewer-principal <stable-id>] [--root <dir>]`.
+ --tenant <id> --verdict <approved|rejected|revised>
+ --rationale <md-file> [--revised-tc <json-file>]
+ --sign-key <pem> --decided-at <iso-8601>
+ [--reviewer-principal <stable-id>] [--root <dir>]`.
 - New framework-agnostic HTTP route handlers in
   `src/test-intelligence/human-review-http-routes.ts`:
   `handleListQueue`, `handleGetItem`, `handlePostDecision`. Each
@@ -1162,24 +1220,24 @@ and artifact constants for the queue, verdict, and per-run audit log.
 - New `src/test-intelligence/tenant-isolation-guard.ts` module
   providing the runtime guarantee that no persistent-store read
   crosses tenant boundaries. Public exports:
-  - `withTenantScope(scope, fn)` — opens an `AsyncLocalStorage`
-    context so nested async calls inherit the active `TenantScope`
-    without re-passing `tenantId`. Nested calls under a different
-    scope throw eagerly.
-  - `assertTenantScope(operation, expected, actual)` — catastrophic
-    guard that raises `TenantIsolationViolation` on mismatch.
-  - `recordPersistentStoreRead(operation, recordedScope)` — guard
-    used by stores that carry their scope at construction time
-    (`replay-cache-persistent`).
-  - `recordTenantIdRead(operation, recordedTenantId)` — `tenantId`-
-    only variant for stores keyed on a flat tenant id
-    (`coverage-baseline-drift`, `distribution-shift-detector`).
-  - `recordActiveTenantRead(operation)` — audit-only hook for
-    runDir-implicit stores (`agent-lessons-memdir`,
-    `lessons-consolidation-lock`).
-  - `getCurrentTenantScope()`, `snapshotTenantIsolationReads()`,
-    `buildTenantIsolationAttestation`,
-    `serializeTenantIsolationAttestation`.
+    - `withTenantScope(scope, fn)` — opens an `AsyncLocalStorage`
+      context so nested async calls inherit the active `TenantScope`
+      without re-passing `tenantId`. Nested calls under a different
+      scope throw eagerly.
+    - `assertTenantScope(operation, expected, actual)` — catastrophic
+      guard that raises `TenantIsolationViolation` on mismatch.
+    - `recordPersistentStoreRead(operation, recordedScope)` — guard
+      used by stores that carry their scope at construction time
+      (`replay-cache-persistent`).
+    - `recordTenantIdRead(operation, recordedTenantId)` — `tenantId`-
+      only variant for stores keyed on a flat tenant id
+      (`coverage-baseline-drift`, `distribution-shift-detector`).
+    - `recordActiveTenantRead(operation)` — audit-only hook for
+      runDir-implicit stores (`agent-lessons-memdir`,
+      `lessons-consolidation-lock`).
+    - `getCurrentTenantScope()`, `snapshotTenantIsolationReads()`,
+      `buildTenantIsolationAttestation`,
+      `serializeTenantIsolationAttestation`.
 - New exported error class `TenantIsolationViolation` with a
   machine-readable `code === "TENANT_ISOLATION_VIOLATION"` and
   `operation`, `expected`, `actual` fields.
@@ -1252,29 +1310,29 @@ and artifact constants for the queue, verdict, and per-run audit log.
 - New `src/test-intelligence/seal-verifier.ts` module providing the
   auditor-facing verifier for `production-runner-evidence-seal.json`.
   Public exports:
-  - `verifySealBundle(input)` — directory-bundle entry point.
-    Recomputes per-artifact SHA-256, builds a Merkle root over sorted
-    `(filename, sha256)` leaves, HMAC-SHA256s the canonical seal
-    manifest with the supplied (or default deterministic) key, and
-    cross-checks the FinOps `bySource` hash, genealogy DAG hash,
-    `provenance.jsonld` graph, and `region-attestations.json`.
-  - `assertReplayDeterminismVerifiedFromDisk(runDir)` — throws
-    `ReplayDeterminismHardGateError` (code
-    `G9_REPLAY_DETERMINISM_VERIFIED`) on any failure.
-  - `renderSealVerificationTextReport(report)` and
-    `renderSealVerificationJsonReport(report)` — human and
-    machine-readable renderers.
-  - `DEFAULT_SEAL_VERIFY_KEY_LABEL` — documented sentinel for the
-    deterministic default HMAC key.
-  - Exported types: `SealArtifactReport`, `SealArtifactStatus`
-    (`"OK" | "TAMPERED" | "MISSING" | "EXTRA"`),
-    `SealVerifyCrossCheck`, `SealVerifyFailure`,
-    `SealVerifyFailureCode`, `SealVerificationReport`,
-    `VerifySealBundleInput`.
+    - `verifySealBundle(input)` — directory-bundle entry point.
+      Recomputes per-artifact SHA-256, builds a Merkle root over sorted
+      `(filename, sha256)` leaves, HMAC-SHA256s the canonical seal
+      manifest with the supplied (or default deterministic) key, and
+      cross-checks the FinOps `bySource` hash, genealogy DAG hash,
+      `provenance.jsonld` graph, and `region-attestations.json`.
+    - `assertReplayDeterminismVerifiedFromDisk(runDir)` — throws
+      `ReplayDeterminismHardGateError` (code
+      `G9_REPLAY_DETERMINISM_VERIFIED`) on any failure.
+    - `renderSealVerificationTextReport(report)` and
+      `renderSealVerificationJsonReport(report)` — human and
+      machine-readable renderers.
+    - `DEFAULT_SEAL_VERIFY_KEY_LABEL` — documented sentinel for the
+      deterministic default HMAC key.
+    - Exported types: `SealArtifactReport`, `SealArtifactStatus`
+      (`"OK" | "TAMPERED" | "MISSING" | "EXTRA"`),
+      `SealVerifyCrossCheck`, `SealVerifyFailure`,
+      `SealVerifyFailureCode`, `SealVerificationReport`,
+      `VerifySealBundleInput`.
 - New CLI subcommand
   `workspace-dev test-intelligence verify-seal --bundle <path>
-  [--key <path>] [--expected-hmac <hex>] [--expected-merkle-root <hex>]
-  [--json] [--output <path>]`. Accepts directory, `.tar`,
+[--key <path>] [--expected-hmac <hex>] [--expected-merkle-root <hex>]
+[--json] [--output <path>]`. Accepts directory, `.tar`,
   `.tar.gz`/`.tgz`, and `.zip` bundles; archives are extracted via
   the universal POSIX `tar` / `unzip` binaries. Exit `0` on full
   match, `1` on operator misuse, `2` on tamper / mismatch.
@@ -1704,7 +1762,7 @@ and artifact constants for the queue, verdict, and per-run audit log.
 
 - New persisted coverage artifact
   `CROSS_FIELD_INVARIANT_COVERAGE_ARTIFACT_FILENAME =
-  "cross-field-invariant-coverage-report.json"` records per-screen and
+"cross-field-invariant-coverage-report.json"` records per-screen and
   per-invariant coverage.
 - The invariant engine now publishes a typed, citation-carrying rule surface
   that downstream validators can replay deterministically without re-reading
@@ -1714,7 +1772,7 @@ and artifact constants for the queue, verdict, and per-run audit log.
 
 - New persisted workflow-state-machine artifact
   `WORKFLOW_STATE_MACHINE_REPORT_ARTIFACT_FILENAME =
-  "workflow-state-machine-report.json"` records per-case transition paths,
+"workflow-state-machine-report.json"` records per-case transition paths,
   aggregated issues, and per-state-machine coverage.
 - The validator contract now treats step-sequence reachability as a first-class
   quality gate rather than an implementation detail of the runner.
@@ -3025,24 +3083,24 @@ Additive public-contract changes:
   migration registration entry required.
 - New runtime constants exported from `src/contracts/index.ts` and the
   package root:
-  - `LOGIC_JUDGE_VERDICT_SCHEMA_VERSION = "1.0.0"`
-  - `LOGIC_JUDGE_PROMPT_TEMPLATE_VERSION = "logic-judge.v1"`
-  - `LOGIC_JUDGE_COMPILED_PROMPT_ARTIFACT_FILENAME = "compiled-prompt-logic-judge.json"`
-  - `LOGIC_JUDGE_VERDICT_ARTIFACT_FILENAME = "logic_judge.json"`
-  - `ALLOWED_LOGIC_JUDGE_VERDICTS = ["accept", "repair", "reject"]`
-  - `ALLOWED_LOGIC_JUDGE_FINDING_SEVERITIES = ["warning", "error"]`
-  - `FAITHFULNESS_VERDICT_SCHEMA_VERSION = "1.0.0"`
-  - `FAITHFULNESS_JUDGE_PROMPT_TEMPLATE_VERSION = "faithfulness-judge.v1"`
-  - `FAITHFULNESS_JUDGE_COMPILED_PROMPT_ARTIFACT_FILENAME = "compiled-prompt-faithfulness-judge.json"`
-  - `FAITHFULNESS_VERDICT_ARTIFACT_FILENAME = "faithfulness_judge.json"`
-  - `ALLOWED_FAITHFULNESS_VERDICTS = ["accept", "repair", "reject"]`
+    - `LOGIC_JUDGE_VERDICT_SCHEMA_VERSION = "1.0.0"`
+    - `LOGIC_JUDGE_PROMPT_TEMPLATE_VERSION = "logic-judge.v1"`
+    - `LOGIC_JUDGE_COMPILED_PROMPT_ARTIFACT_FILENAME = "compiled-prompt-logic-judge.json"`
+    - `LOGIC_JUDGE_VERDICT_ARTIFACT_FILENAME = "logic_judge.json"`
+    - `ALLOWED_LOGIC_JUDGE_VERDICTS = ["accept", "repair", "reject"]`
+    - `ALLOWED_LOGIC_JUDGE_FINDING_SEVERITIES = ["warning", "error"]`
+    - `FAITHFULNESS_VERDICT_SCHEMA_VERSION = "1.0.0"`
+    - `FAITHFULNESS_JUDGE_PROMPT_TEMPLATE_VERSION = "faithfulness-judge.v1"`
+    - `FAITHFULNESS_JUDGE_COMPILED_PROMPT_ARTIFACT_FILENAME = "compiled-prompt-faithfulness-judge.json"`
+    - `FAITHFULNESS_VERDICT_ARTIFACT_FILENAME = "faithfulness_judge.json"`
+    - `ALLOWED_FAITHFULNESS_VERDICTS = ["accept", "repair", "reject"]`
 - New exported types:
-  - `JudgeFinding`, `RepairInstruction`, `JudgeVerdictRefusal`,
-    `JudgeVerdict`, `LogicJudgeVerdictLabel`,
-    `LogicJudgeFindingSeverity`
-  - `HallucinationFinding`, `VisualMismatch`,
-    `FaithfulnessVerdictRefusal`, `FaithfulnessVerdict`,
-    `FaithfulnessVerdictLabel`
+    - `JudgeFinding`, `RepairInstruction`, `JudgeVerdictRefusal`,
+      `JudgeVerdict`, `LogicJudgeVerdictLabel`,
+      `LogicJudgeFindingSeverity`
+    - `HallucinationFinding`, `VisualMismatch`,
+      `FaithfulnessVerdictRefusal`, `FaithfulnessVerdict`,
+      `FaithfulnessVerdictLabel`
 
 This is an additive minor bump. No existing field or discriminant is
 removed or renamed.
@@ -3126,16 +3184,16 @@ Additive public-contract changes:
 
 - New runtime constants exported from `src/contracts/index.ts` and the
   package root:
-  - `RELEASE_READINESS_REPORT_ARTIFACT_FILENAME = "release-readiness-report.json"`
-  - `RELEASE_READINESS_ARTIFACT_DIRECTORY = "evidence/release-readiness"`
-  - `RELEASE_READINESS_REPORT_SCHEMA_VERSION = "1.0.0"`
-  - `ALLOWED_RELEASE_READINESS_GATE_IDS` — closed, ordered list of the
-    twelve canonical gates: `typecheck`, `test`, `test_ti_eval`,
-    `test_ti_live_e2e`, `lint_no_telemetry`, `lint_secrets_all`,
-    `lint_agent_boundaries`, `lint_ts_style`, `build`,
-    `release_ml_bom_emit`, `release_merkle_roundtrip`,
-    `release_library_coverage_report`.
-  - `ALLOWED_RELEASE_READINESS_GATE_STATUSES = ["passed", "failed", "skipped"]`.
+    - `RELEASE_READINESS_REPORT_ARTIFACT_FILENAME = "release-readiness-report.json"`
+    - `RELEASE_READINESS_ARTIFACT_DIRECTORY = "evidence/release-readiness"`
+    - `RELEASE_READINESS_REPORT_SCHEMA_VERSION = "1.0.0"`
+    - `ALLOWED_RELEASE_READINESS_GATE_IDS` — closed, ordered list of the
+      twelve canonical gates: `typecheck`, `test`, `test_ti_eval`,
+      `test_ti_live_e2e`, `lint_no_telemetry`, `lint_secrets_all`,
+      `lint_agent_boundaries`, `lint_ts_style`, `build`,
+      `release_ml_bom_emit`, `release_merkle_roundtrip`,
+      `release_library_coverage_report`.
+    - `ALLOWED_RELEASE_READINESS_GATE_STATUSES = ["passed", "failed", "skipped"]`.
 - New contract types: `ReleaseReadinessGateId`,
   `ReleaseReadinessGateStatus`, `ReleaseReadinessGateResult`,
   `ReleaseReadinessReport`.
@@ -3170,26 +3228,26 @@ Additive public-contract changes:
 
 - New runtime constants exported from `src/contracts/index.ts` and the
   package root:
-  - `ALLOWED_LIBRARY_COVERAGE_RELEASE_STATUSES = ["COVERED", "PARITY-PATH", "NICHT-UEBERNOMMEN"]`
-  - `RELEASE_QUALITY_GATES_THRESHOLDS.perSourceCostPlausibility = { allowedFailures: 0 }`
-  - `RELEASE_QUALITY_GATES_THRESHOLDS.MEMDIR_MAX_AGE_MS = 7776000000` (90 days)
-  - `RELEASE_QUALITY_GATES_THRESHOLDS.contextBudget = { defaultMaxBloatRatio: 1.20, minSampleCount: 5 }`
-  - `ALLOWED_RELEASE_QUALITY_GATE_IDS` extended with five new members:
-    `"per_source_cost_plausibility"`, `"memdir_manifest_consistency"`,
-    `"library_coverage_status_completeness"`, `"architecture_fit_self_test"`,
-    `"context_budget_regression"`
+    - `ALLOWED_LIBRARY_COVERAGE_RELEASE_STATUSES = ["COVERED", "PARITY-PATH", "NICHT-UEBERNOMMEN"]`
+    - `RELEASE_QUALITY_GATES_THRESHOLDS.perSourceCostPlausibility = { allowedFailures: 0 }`
+    - `RELEASE_QUALITY_GATES_THRESHOLDS.MEMDIR_MAX_AGE_MS = 7776000000` (90 days)
+    - `RELEASE_QUALITY_GATES_THRESHOLDS.contextBudget = { defaultMaxBloatRatio: 1.20, minSampleCount: 5 }`
+    - `ALLOWED_RELEASE_QUALITY_GATE_IDS` extended with five new members:
+      `"per_source_cost_plausibility"`, `"memdir_manifest_consistency"`,
+      `"library_coverage_status_completeness"`, `"architecture_fit_self_test"`,
+      `"context_budget_regression"`
 - New contract types:
-  - `LibraryCoverageReleaseStatus`
-  - `ReleaseQualityGatePerSourceCostSample`
-  - `ReleaseQualityGateMemdirLesson`
-  - `ReleaseQualityGateLibraryCoveragePrimitive`
-  - `ReleaseQualityGateArchitectureViolation`
+    - `LibraryCoverageReleaseStatus`
+    - `ReleaseQualityGatePerSourceCostSample`
+    - `ReleaseQualityGateMemdirLesson`
+    - `ReleaseQualityGateLibraryCoveragePrimitive`
+    - `ReleaseQualityGateArchitectureViolation`
 - `ReleaseQualityGatesInput` extended with five new required sections:
-  - `perSourceCostPlausibility`
-  - `memdirManifestConsistency`
-  - `libraryCoverageStatusCompleteness`
-  - `architectureFitSelfTest`
-  - `contextBudgetRegression`
+    - `perSourceCostPlausibility`
+    - `memdirManifestConsistency`
+    - `libraryCoverageStatusCompleteness`
+    - `architectureFitSelfTest`
+    - `contextBudgetRegression`
 - `TEST_INTELLIGENCE_CONTRACT_VERSION` bumps from `1.7.0` to `1.8.0`.
 - `CONTRACT_VERSION` bumps from `4.41.0` to `4.42.0`.
 
@@ -3230,26 +3288,26 @@ Additive public-contract changes:
 
 - New runtime constants exported from `src/contracts/index.ts` and the
   package root:
-  - `RELEASE_QUALITY_GATES_REPORT_ARTIFACT_FILENAME = "release-quality-gates.json"`
-  - `RELEASE_QUALITY_GATES_REPORT_SCHEMA_VERSION = "1.0.0"`
-  - `RELEASE_QUALITY_GATES_THRESHOLDS = { minMutationKillRate: 0.85, minPromptCacheHitRate: 0.7, maxCacheBreakRate: 0.05 }`
-  - `ALLOWED_RELEASE_QUALITY_GATE_IDS = ["mutation_kill_rate", "prompt_cache_hit_rate", "tamper_detection_round_trip", "cache_break_rate"]`
+    - `RELEASE_QUALITY_GATES_REPORT_ARTIFACT_FILENAME = "release-quality-gates.json"`
+    - `RELEASE_QUALITY_GATES_REPORT_SCHEMA_VERSION = "1.0.0"`
+    - `RELEASE_QUALITY_GATES_THRESHOLDS = { minMutationKillRate: 0.85, minPromptCacheHitRate: 0.7, maxCacheBreakRate: 0.05 }`
+    - `ALLOWED_RELEASE_QUALITY_GATE_IDS = ["mutation_kill_rate", "prompt_cache_hit_rate", "tamper_detection_round_trip", "cache_break_rate"]`
 - New contract types:
-  - `ReleaseQualityGateId`
-  - `ReleaseQualityGateMutationFixture`
-  - `ReleaseQualityGatePromptCacheRole`
-  - `ReleaseQualityGateTamperSample`
-  - `ReleaseQualityGateCacheBreakSample`
-  - `ReleaseQualityGatesInput`
-  - `ReleaseQualityGateVerdict`
-  - `ReleaseQualityGatesReport`
+    - `ReleaseQualityGateId`
+    - `ReleaseQualityGateMutationFixture`
+    - `ReleaseQualityGatePromptCacheRole`
+    - `ReleaseQualityGateTamperSample`
+    - `ReleaseQualityGateCacheBreakSample`
+    - `ReleaseQualityGatesInput`
+    - `ReleaseQualityGateVerdict`
+    - `ReleaseQualityGatesReport`
 - New test-intelligence helpers (re-exported from
   `src/test-intelligence/index.ts`):
-  - `evaluateReleaseQualityGates` — pure evaluator.
-  - `isReleaseQualityGatesInput` — strict structural validator.
-  - `serializeReleaseQualityGatesReport` — canonical-JSON byte payload.
-  - `parseReleaseQualityGatesReport` — strict round-trip parser.
-  - `writeReleaseQualityGatesReport` — atomic tmp+rename writer.
+    - `evaluateReleaseQualityGates` — pure evaluator.
+    - `isReleaseQualityGatesInput` — strict structural validator.
+    - `serializeReleaseQualityGatesReport` — canonical-JSON byte payload.
+    - `parseReleaseQualityGatesReport` — strict round-trip parser.
+    - `writeReleaseQualityGatesReport` — atomic tmp+rename writer.
 - `TEST_INTELLIGENCE_CONTRACT_VERSION` bumps from `1.6.0` to `1.7.0`.
 
 The new `verify:release-quality-gates` package script consumes a
@@ -3274,20 +3332,20 @@ enforcement and canonical JSONL audit logging.
 Additive public-contract changes:
 
 - New runtime constants:
-  - `MIGRATIONS_LOG_ARTIFACT_FILENAME = "migrations.log.jsonl"`
-  - `MIGRATION_BUNDLE_SCHEMA_VERSION = "1.0.0"`
-  - `ALLOWED_MIGRATION_REFUSAL_CODES = ["migration_apply_failed", "migration_audit_log_invalid", "migration_registry_invalid", "migration_rollback_failed", "migration_rollback_required", "migration_state_invalid", "migration_unsigned"]`
+    - `MIGRATIONS_LOG_ARTIFACT_FILENAME = "migrations.log.jsonl"`
+    - `MIGRATION_BUNDLE_SCHEMA_VERSION = "1.0.0"`
+    - `ALLOWED_MIGRATION_REFUSAL_CODES = ["migration_apply_failed", "migration_audit_log_invalid", "migration_registry_invalid", "migration_rollback_failed", "migration_rollback_required", "migration_state_invalid", "migration_unsigned"]`
 - New contract types:
-  - `MigrationRefusalCode`
-  - `SignedMigrationBundleEntry`
-  - `SignedMigrationBundle`
+    - `MigrationRefusalCode`
+    - `SignedMigrationBundleEntry`
+    - `SignedMigrationBundle`
 - `ALLOWED_HARNESS_ARTIFACT_FILENAMES` now includes
   `migrations.log.jsonl`, so the harness artifact manifest may hash the
   migration audit log offline without re-running a job.
 - New public runtime helpers exported from the package root:
-  - `buildMigrationHash`
-  - `parseMigrationAuditLog`
-  - `runMigrations`
+    - `buildMigrationHash`
+    - `parseMigrationAuditLog`
+    - `runMigrations`
 
 Banking-profile governance for signed migration bundles:
 
@@ -3320,31 +3378,31 @@ Additive public-contract changes (no removals or renames):
 
 - New filename + schema-version constants and persisted artifact
   shapes:
-  - `AGENT_ITERATIONS_ARTIFACT_FILENAME`,
-    `AGENT_ITERATIONS_SCHEMA_VERSION`, `AgentIterationsArtifact`,
-    `AgentIterationRecord`, `ALLOWED_AGENT_ITERATION_OUTCOMES`,
-    `AgentIterationOutcome` — consolidated repair-iteration log.
-  - `CACHE_BREAK_EVENTS_LOG_ARTIFACT_FILENAME`,
-    `CACHE_BREAK_EVENTS_LOG_SCHEMA_VERSION`,
-    `CacheBreakEventLogEntry` — consolidated cache-break event log
-    (newline-delimited JSON).
-  - `COMPACT_BOUNDARY_LOG_ARTIFACT_FILENAME`,
-    `COMPACT_BOUNDARY_LOG_SCHEMA_VERSION`,
-    `CompactBoundaryLogEntry`,
-    `ALLOWED_COMPACT_BOUNDARY_LOG_TIERS`, `CompactBoundaryLogTier`
-    — consolidated compaction-boundary log (newline-delimited JSON).
-  - `LIBRARY_COVERAGE_REPORT_ARTIFACT_FILENAME`,
-    `LIBRARY_COVERAGE_REPORT_SCHEMA_VERSION`,
-    `LibraryCoverageReport`, `LibraryPrimitiveCoverageEntry`,
-    `LibraryCoverageReportCounts`,
-    `ALLOWED_LIBRARY_PRIMITIVE_STATUSES`, `LibraryPrimitiveStatus`
-    — per-release primitive-map status report.
-  - `HARNESS_ARTIFACT_MANIFEST_ARTIFACT_FILENAME`,
-    `HARNESS_ARTIFACT_MANIFEST_SCHEMA_VERSION`,
-    `HarnessArtifactManifest`, `HarnessArtifactManifestEntry`,
-    `ALLOWED_HARNESS_ARTIFACT_FILENAMES`, `HarnessArtifactFilename`
-    — per-job manifest pinning every artifact's
-    `{filename, schemaVersion, sha256, sizeBytes}`.
+    - `AGENT_ITERATIONS_ARTIFACT_FILENAME`,
+      `AGENT_ITERATIONS_SCHEMA_VERSION`, `AgentIterationsArtifact`,
+      `AgentIterationRecord`, `ALLOWED_AGENT_ITERATION_OUTCOMES`,
+      `AgentIterationOutcome` — consolidated repair-iteration log.
+    - `CACHE_BREAK_EVENTS_LOG_ARTIFACT_FILENAME`,
+      `CACHE_BREAK_EVENTS_LOG_SCHEMA_VERSION`,
+      `CacheBreakEventLogEntry` — consolidated cache-break event log
+      (newline-delimited JSON).
+    - `COMPACT_BOUNDARY_LOG_ARTIFACT_FILENAME`,
+      `COMPACT_BOUNDARY_LOG_SCHEMA_VERSION`,
+      `CompactBoundaryLogEntry`,
+      `ALLOWED_COMPACT_BOUNDARY_LOG_TIERS`, `CompactBoundaryLogTier`
+      — consolidated compaction-boundary log (newline-delimited JSON).
+    - `LIBRARY_COVERAGE_REPORT_ARTIFACT_FILENAME`,
+      `LIBRARY_COVERAGE_REPORT_SCHEMA_VERSION`,
+      `LibraryCoverageReport`, `LibraryPrimitiveCoverageEntry`,
+      `LibraryCoverageReportCounts`,
+      `ALLOWED_LIBRARY_PRIMITIVE_STATUSES`, `LibraryPrimitiveStatus`
+      — per-release primitive-map status report.
+    - `HARNESS_ARTIFACT_MANIFEST_ARTIFACT_FILENAME`,
+      `HARNESS_ARTIFACT_MANIFEST_SCHEMA_VERSION`,
+      `HarnessArtifactManifest`, `HarnessArtifactManifestEntry`,
+      `ALLOWED_HARNESS_ARTIFACT_FILENAMES`, `HarnessArtifactFilename`
+      — per-job manifest pinning every artifact's
+      `{filename, schemaVersion, sha256, sizeBytes}`.
 
 - New writer / validator / verify functions in
   `src/test-intelligence`:
@@ -3537,7 +3595,7 @@ the multi-agent harness (Story MA-3, parent #1758) writes per job:
 `<runDir>/agent-team-results.json`.
 
 The execution graph is a small canonical-JSON-stable adjacency-list
-DAG. It is *not* a workflow framework — there is no scheduler, no
+DAG. It is _not_ a workflow framework — there is no scheduler, no
 trigger, no conditional. Each node carries `roleStepId`, `role`,
 sorted `blocks` / `blockedBy` edges, sorted `requiredInputArtifacts`
 and `producedArtifacts`, and a closed `retryPolicy` literal. The
@@ -4004,14 +4062,14 @@ end-to-end run against the configured Azure deployment.
 **Renames (internal — no public-export surface change):**
 
 - `VISUAL_SIDECAR_RESPONSE_SCHEMA_NAME`
-  - before: `workspace-dev.test-intelligence.visual-sidecar.v1`
-  - after: `workspace-dev-visual-sidecar-v1`
+    - before: `workspace-dev.test-intelligence.visual-sidecar.v1`
+    - after: `workspace-dev-visual-sidecar-v1`
 - `GENERATED_TEST_CASE_LIST_SCHEMA_NAME` (template):
-  - before: `workspace-dev.test-intelligence.generated-test-case-list.v${V}`
-  - after: `workspace-dev-generated-test-case-list-v${V}`
+    - before: `workspace-dev.test-intelligence.generated-test-case-list.v${V}`
+    - after: `workspace-dev-generated-test-case-list-v${V}`
 - `llm-capability-probe.ts` probe `responseSchemaName`:
-  - before: `workspace-dev.test-intelligence.capability-probe.v1`
-  - after: `workspace-dev-capability-probe-v1`
+    - before: `workspace-dev.test-intelligence.capability-probe.v1`
+    - after: `workspace-dev-capability-probe-v1`
 
 The constant identifiers and JSON Schema `$id` fields are unchanged from a
 TypeScript-export perspective; only the runtime string values change. A
@@ -4346,14 +4404,14 @@ Wave 4.A multi-source consumers are unchanged.
   `MAX_JIRA_ATTACHMENT_COUNT = 50`, `MAX_JIRA_LINK_COUNT = 50`,
   `MAX_JIRA_CUSTOM_FIELD_COUNT = 50`.
 - New runtime enums:
-  - `ALLOWED_JIRA_ISSUE_TYPES` (`story|task|bug|epic|subtask|other`).
-  - `ALLOWED_JIRA_ADF_NODE_TYPES` (24 allow-listed ADF node types).
-  - `ALLOWED_JIRA_ADF_MARK_TYPES` (8 allow-listed ADF mark types).
-  - `ALLOWED_JIRA_ADF_REJECTION_CODES` (11 codes including
-    `jira_adf_payload_too_large`, `jira_adf_unknown_node_type`).
-  - `ALLOWED_JIRA_IR_REFUSAL_CODES` (19 codes including
-    `jira_issue_key_invalid`, `jira_jql_fragment_disallowed_token`,
-    `jira_field_unknown_excluded`).
+    - `ALLOWED_JIRA_ISSUE_TYPES` (`story|task|bug|epic|subtask|other`).
+    - `ALLOWED_JIRA_ADF_NODE_TYPES` (24 allow-listed ADF node types).
+    - `ALLOWED_JIRA_ADF_MARK_TYPES` (8 allow-listed ADF mark types).
+    - `ALLOWED_JIRA_ADF_REJECTION_CODES` (11 codes including
+      `jira_adf_payload_too_large`, `jira_adf_unknown_node_type`).
+    - `ALLOWED_JIRA_IR_REFUSAL_CODES` (19 codes including
+      `jira_issue_key_invalid`, `jira_jql_fragment_disallowed_token`,
+      `jira_field_unknown_excluded`).
 - New types: `JiraIssueIr`, `JiraAcceptanceCriterion`, `JiraComment`,
   `JiraAttachmentRef`, `JiraLinkRef`, `JiraIssueIrCustomField`,
   `JiraFieldSelectionProfile`, `JiraIssueIrDataMinimization`,
@@ -4403,7 +4461,7 @@ and replay-cache hits.
 - New env var `TEST_INTELLIGENCE_MULTISOURCE_ENV` (literal
   `FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE_MULTISOURCE`) gating Wave 4
   multi-source ingestion. Strictly nested behind `TEST_INTELLIGENCE_ENV`:
-  the gate fails closed unless *both* env vars and the parent
+  the gate fails closed unless _both_ env vars and the parent
   `WorkspaceStartOptions.testIntelligence.enabled` startup option are set.
 - New optional startup option
   `WorkspaceStartOptions.testIntelligence.multiSourceEnabled?: boolean`
@@ -4415,39 +4473,39 @@ and replay-cache hits.
 - New schema-version constant
   `MULTI_SOURCE_TEST_INTENT_ENVELOPE_SCHEMA_VERSION = "1.0.0"`.
 - New runtime enums:
-  - `ALLOWED_TEST_INTENT_SOURCE_KINDS` — `figma_local_json`,
-    `figma_plugin`, `figma_rest`, `jira_rest`, `jira_paste`, `custom_text`,
-    `custom_structured`. Type alias `TestIntentSourceKind`.
-  - `PRIMARY_TEST_INTENT_SOURCE_KINDS` — the five kinds (Figma trio plus
-    `jira_rest`, `jira_paste`) at least one of which must be present in
-    every envelope. Type alias `PrimaryTestIntentSourceKind`.
-  - `SUPPORTING_TEST_INTENT_SOURCE_KINDS` — `custom_text`,
-    `custom_structured`. Type alias `SupportingTestIntentSourceKind`.
-  - `ALLOWED_CONFLICT_RESOLUTION_POLICIES` — `priority`,
-    `reviewer_decides`, `keep_both`. Type alias `ConflictResolutionPolicy`.
-  - `ALLOWED_TEST_INTENT_CUSTOM_INPUT_FORMATS` — `plain_text`, `markdown`,
-    `structured_json`. Type alias `TestIntentCustomInputFormat`.
-  - `ALLOWED_MULTI_SOURCE_ENVELOPE_REFUSAL_CODES` — 26 stable refusal
-    codes covering envelope shape, source-mix, conflict policy, priority
-    order, Markdown hash, Jira issue-key, source-mix-plan, and
-    aggregate-hash mismatch checks.
-  - `ALLOWED_MULTI_SOURCE_MODE_GATE_REFUSAL_CODES` — four stable refusal
-    codes for the runtime mode gate (parent gate, env, startup option,
-    `llmCodegenMode` lock).
+    - `ALLOWED_TEST_INTENT_SOURCE_KINDS` — `figma_local_json`,
+      `figma_plugin`, `figma_rest`, `jira_rest`, `jira_paste`, `custom_text`,
+      `custom_structured`. Type alias `TestIntentSourceKind`.
+    - `PRIMARY_TEST_INTENT_SOURCE_KINDS` — the five kinds (Figma trio plus
+      `jira_rest`, `jira_paste`) at least one of which must be present in
+      every envelope. Type alias `PrimaryTestIntentSourceKind`.
+    - `SUPPORTING_TEST_INTENT_SOURCE_KINDS` — `custom_text`,
+      `custom_structured`. Type alias `SupportingTestIntentSourceKind`.
+    - `ALLOWED_CONFLICT_RESOLUTION_POLICIES` — `priority`,
+      `reviewer_decides`, `keep_both`. Type alias `ConflictResolutionPolicy`.
+    - `ALLOWED_TEST_INTENT_CUSTOM_INPUT_FORMATS` — `plain_text`, `markdown`,
+      `structured_json`. Type alias `TestIntentCustomInputFormat`.
+    - `ALLOWED_MULTI_SOURCE_ENVELOPE_REFUSAL_CODES` — 26 stable refusal
+      codes covering envelope shape, source-mix, conflict policy, priority
+      order, Markdown hash, Jira issue-key, source-mix-plan, and
+      aggregate-hash mismatch checks.
+    - `ALLOWED_MULTI_SOURCE_MODE_GATE_REFUSAL_CODES` — four stable refusal
+      codes for the runtime mode gate (parent gate, env, startup option,
+      `llmCodegenMode` lock).
 - New types:
-  - `TestIntentSourceRef` (`sourceId`, `kind`, `contentHash`, `capturedAt`,
-    optional `authorHandle`, `inputFormat`, `noteEntryId`,
-    `markdownSectionPath`, `canonicalIssueKey`, `redactedMarkdownHash`,
-    `plainTextDerivativeHash`).
-  - `MultiSourceTestIntentEnvelope` (`version`, `sources`,
-    `aggregateContentHash`, `conflictResolutionPolicy`, optional
-    `priorityOrder`, `sourceMixPlan`).
-  - `MultiSourceTestIntentSourceMixPlanRef` (`ownerIssue`, `planHash`) as the
-    #1441-owned source-mix orchestration hook.
-  - `MultiSourceEnvelopeIssue`, `MultiSourceEnvelopeRefusalCode`,
-    `MultiSourceEnvelopeValidationResult`.
-  - `MultiSourceModeGateInput`, `MultiSourceModeGateRefusal`,
-    `MultiSourceModeGateRefusalCode`, `MultiSourceModeGateDecision`.
+    - `TestIntentSourceRef` (`sourceId`, `kind`, `contentHash`, `capturedAt`,
+      optional `authorHandle`, `inputFormat`, `noteEntryId`,
+      `markdownSectionPath`, `canonicalIssueKey`, `redactedMarkdownHash`,
+      `plainTextDerivativeHash`).
+    - `MultiSourceTestIntentEnvelope` (`version`, `sources`,
+      `aggregateContentHash`, `conflictResolutionPolicy`, optional
+      `priorityOrder`, `sourceMixPlan`).
+    - `MultiSourceTestIntentSourceMixPlanRef` (`ownerIssue`, `planHash`) as the
+      #1441-owned source-mix orchestration hook.
+    - `MultiSourceEnvelopeIssue`, `MultiSourceEnvelopeRefusalCode`,
+      `MultiSourceEnvelopeValidationResult`.
+    - `MultiSourceModeGateInput`, `MultiSourceModeGateRefusal`,
+      `MultiSourceModeGateRefusalCode`, `MultiSourceModeGateDecision`.
 - New optional `BusinessTestIntentIr.sourceEnvelope?: MultiSourceTestIntentEnvelope`.
   Legacy `source: BusinessTestIntentIrSource`
   is preserved for one minor cycle.
@@ -4609,54 +4667,54 @@ core test-intelligence pipeline to OpenText ALM.
 ### Added (Issue #1373)
 
 - New schema constants for the Wave 3 delta + dedupe + traceability surface:
-  - `INTENT_DELTA_REPORT_SCHEMA_VERSION = "1.0.0"`,
-  - `INTENT_DELTA_REPORT_ARTIFACT_FILENAME = "intent-delta-report.json"`,
-  - `TEST_CASE_DELTA_REPORT_SCHEMA_VERSION = "1.0.0"`,
-  - `DEDUPE_REPORT_SCHEMA_VERSION = "1.0.0"`,
-  - `DEDUPE_REPORT_ARTIFACT_FILENAME = "dedupe-report.json"`,
-  - `TRACEABILITY_MATRIX_SCHEMA_VERSION = "1.0.0"`,
-  - `TRACEABILITY_MATRIX_ARTIFACT_FILENAME = "traceability-matrix.json"`.
+    - `INTENT_DELTA_REPORT_SCHEMA_VERSION = "1.0.0"`,
+    - `INTENT_DELTA_REPORT_ARTIFACT_FILENAME = "intent-delta-report.json"`,
+    - `TEST_CASE_DELTA_REPORT_SCHEMA_VERSION = "1.0.0"`,
+    - `DEDUPE_REPORT_SCHEMA_VERSION = "1.0.0"`,
+    - `DEDUPE_REPORT_ARTIFACT_FILENAME = "dedupe-report.json"`,
+    - `TRACEABILITY_MATRIX_SCHEMA_VERSION = "1.0.0"`,
+    - `TRACEABILITY_MATRIX_ARTIFACT_FILENAME = "traceability-matrix.json"`.
 - New enums (additive):
-  - `ALLOWED_INTENT_DELTA_KINDS` / `IntentDeltaKind`: `screen`, `field`,
-    `action`, `validation`, `navigation`, `visual_screen`.
-  - `ALLOWED_INTENT_DELTA_CHANGE_TYPES` / `IntentDeltaChangeType`: `added`,
-    `removed`, `changed`, `confidence_dropped`, `ambiguity_increased`.
-  - `ALLOWED_TEST_CASE_DELTA_VERDICTS` / `TestCaseDeltaVerdict`: `new`,
-    `unchanged`, `changed`, `obsolete`, `requires_review`.
-  - `ALLOWED_TEST_CASE_DELTA_REASONS` / `TestCaseDeltaReason`:
-    `absent_in_current`, `absent_in_prior`, `fingerprint_changed`,
-    `trace_screen_changed`, `trace_screen_removed`,
-    `visual_ambiguity_increased`, `visual_confidence_dropped`,
-    `reconciliation_conflict`.
-  - `ALLOWED_DEDUPE_SIMILARITY_SOURCES` / `DedupeSimilaritySource`:
-    `lexical`, `embedding`, `external_lookup`.
-  - `ALLOWED_DEDUPE_EXTERNAL_PROBE_STATES` / `DedupeExternalProbeState`:
-    `disabled`, `unconfigured`, `executed`.
+    - `ALLOWED_INTENT_DELTA_KINDS` / `IntentDeltaKind`: `screen`, `field`,
+      `action`, `validation`, `navigation`, `visual_screen`.
+    - `ALLOWED_INTENT_DELTA_CHANGE_TYPES` / `IntentDeltaChangeType`: `added`,
+      `removed`, `changed`, `confidence_dropped`, `ambiguity_increased`.
+    - `ALLOWED_TEST_CASE_DELTA_VERDICTS` / `TestCaseDeltaVerdict`: `new`,
+      `unchanged`, `changed`, `obsolete`, `requires_review`.
+    - `ALLOWED_TEST_CASE_DELTA_REASONS` / `TestCaseDeltaReason`:
+      `absent_in_current`, `absent_in_prior`, `fingerprint_changed`,
+      `trace_screen_changed`, `trace_screen_removed`,
+      `visual_ambiguity_increased`, `visual_confidence_dropped`,
+      `reconciliation_conflict`.
+    - `ALLOWED_DEDUPE_SIMILARITY_SOURCES` / `DedupeSimilaritySource`:
+      `lexical`, `embedding`, `external_lookup`.
+    - `ALLOWED_DEDUPE_EXTERNAL_PROBE_STATES` / `DedupeExternalProbeState`:
+      `disabled`, `unconfigured`, `executed`.
 - New artifact types (additive):
-  - `IntentDeltaReport` + `IntentDeltaEntry` + `TestCaseDeltaReport` +
-    `TestCaseDeltaRow` carrying type-level invariants
-    `rawScreenshotsIncluded: false`, `secretsIncluded: false`.
-  - `TestCaseDedupeReport` + `DedupeInternalFinding` +
-    `DedupeExternalFinding` + `DedupeCaseVerdict` carrying the same
-    type-level invariants.
-  - `TraceabilityMatrix` + `TraceabilityMatrixRow` +
-    `TraceabilityVisualObservation` + `TraceabilityReconciliationDecision`
-    carrying the same type-level invariants.
+    - `IntentDeltaReport` + `IntentDeltaEntry` + `TestCaseDeltaReport` +
+      `TestCaseDeltaRow` carrying type-level invariants
+      `rawScreenshotsIncluded: false`, `secretsIncluded: false`.
+    - `TestCaseDedupeReport` + `DedupeInternalFinding` +
+      `DedupeExternalFinding` + `DedupeCaseVerdict` carrying the same
+      type-level invariants.
+    - `TraceabilityMatrix` + `TraceabilityMatrixRow` +
+      `TraceabilityVisualObservation` + `TraceabilityReconciliationDecision`
+      carrying the same type-level invariants.
 - Extended `Wave1PocEvidenceArtifactCategory` union (additive) with three
   new literal categories: `intent_delta`, `dedupe_report`,
   `traceability_matrix`. Existing manifests continue to validate.
 - New public modules under `src/test-intelligence/`:
-  - `intent-delta.ts` exporting `computeIntentDelta`,
-    `writeIntentDeltaReport`, `INTENT_DELTA_DEFAULT_CONFIDENCE_DRIFT`.
-  - `test-case-delta.ts` exporting `classifyTestCaseDelta`,
-    `writeTestCaseDeltaReport`.
-  - `test-case-dedupe.ts` exporting `detectTestCaseDuplicatesExtended`,
-    `cosineSimilarity`, `writeTestCaseDedupeReport`,
-    `createDisabledExternalDedupeProbe`,
-    `createUnconfiguredExternalDedupeProbe`, plus the
-    `EmbeddingProvider` and `ExternalDedupeProbe` interfaces.
-  - `traceability-matrix.ts` exporting `buildTraceabilityMatrix`,
-    `writeTraceabilityMatrix`.
+    - `intent-delta.ts` exporting `computeIntentDelta`,
+      `writeIntentDeltaReport`, `INTENT_DELTA_DEFAULT_CONFIDENCE_DRIFT`.
+    - `test-case-delta.ts` exporting `classifyTestCaseDelta`,
+      `writeTestCaseDeltaReport`.
+    - `test-case-dedupe.ts` exporting `detectTestCaseDuplicatesExtended`,
+      `cosineSimilarity`, `writeTestCaseDedupeReport`,
+      `createDisabledExternalDedupeProbe`,
+      `createUnconfiguredExternalDedupeProbe`, plus the
+      `EmbeddingProvider` and `ExternalDedupeProbe` interfaces.
+    - `traceability-matrix.ts` exporting `buildTraceabilityMatrix`,
+      `writeTraceabilityMatrix`.
 
 ### Behaviour notes
 
@@ -4678,40 +4736,40 @@ core test-intelligence pipeline to OpenText ALM.
 ### Added (Issue #1372)
 
 - New schema constants for the controlled OpenText ALM API transfer pipeline:
-  - `TRANSFER_REPORT_SCHEMA_VERSION = "1.1.0"`,
-  - `TRANSFER_REPORT_ARTIFACT_FILENAME = "transfer-report.json"`,
-  - `QC_CREATED_ENTITIES_SCHEMA_VERSION = "1.0.0"`,
-  - `QC_CREATED_ENTITIES_ARTIFACT_FILENAME = "qc-created-entities.json"`.
+    - `TRANSFER_REPORT_SCHEMA_VERSION = "1.1.0"`,
+    - `TRANSFER_REPORT_ARTIFACT_FILENAME = "transfer-report.json"`,
+    - `QC_CREATED_ENTITIES_SCHEMA_VERSION = "1.0.0"`,
+    - `QC_CREATED_ENTITIES_ARTIFACT_FILENAME = "qc-created-entities.json"`.
 - New enums (additive):
-  - `ALLOWED_TRANSFER_REFUSAL_CODES` / `TransferRefusalCode` covering
-    `feature_disabled`, `admin_gate_disabled`, `bearer_token_missing`,
-    `mapping_profile_invalid`, `provider_mismatch`, `no_mapped_test_cases`,
-    `no_approved_test_cases`, `unapproved_test_cases_present`,
-    `policy_blocked_cases_present`, `schema_invalid_cases_present`,
-    `visual_sidecar_blocked`, `visual_sidecar_evidence_missing`,
-    `review_state_inconsistent`, `four_eyes_pending`, `dry_run_refused`,
-    `dry_run_missing`, `folder_resolution_failed`, `mode_not_implemented`.
-  - `ALLOWED_TRANSFER_ENTITY_OUTCOMES` / `TransferEntityOutcome`:
-    `created`, `skipped_duplicate`, `failed`, `refused`.
-  - `ALLOWED_TRANSFER_FAILURE_CLASSES` / `TransferFailureClass`:
-    `transport_error`, `auth_failed`, `permission_denied`,
-    `validation_rejected`, `conflict_unresolved`, `rate_limited`,
-    `server_error`, `unknown`.
+    - `ALLOWED_TRANSFER_REFUSAL_CODES` / `TransferRefusalCode` covering
+      `feature_disabled`, `admin_gate_disabled`, `bearer_token_missing`,
+      `mapping_profile_invalid`, `provider_mismatch`, `no_mapped_test_cases`,
+      `no_approved_test_cases`, `unapproved_test_cases_present`,
+      `policy_blocked_cases_present`, `schema_invalid_cases_present`,
+      `visual_sidecar_blocked`, `visual_sidecar_evidence_missing`,
+      `review_state_inconsistent`, `four_eyes_pending`, `dry_run_refused`,
+      `dry_run_missing`, `folder_resolution_failed`, `mode_not_implemented`.
+    - `ALLOWED_TRANSFER_ENTITY_OUTCOMES` / `TransferEntityOutcome`:
+      `created`, `skipped_duplicate`, `failed`, `refused`.
+    - `ALLOWED_TRANSFER_FAILURE_CLASSES` / `TransferFailureClass`:
+      `transport_error`, `auth_failed`, `permission_denied`,
+      `validation_rejected`, `conflict_unresolved`, `rate_limited`,
+      `server_error`, `unknown`.
 - New artifact types (additive):
-  - `TransferReportArtifact` with type-level invariants
-    `rawScreenshotsIncluded: false`, `credentialsIncluded: false`,
-    `transferUrlIncluded: false`, plus deterministic counts
-    (`createdCount`, `skippedDuplicateCount`, `failedCount`,
-    `refusedCount`) and `audit: TransferAuditMetadata`.
-  - `QcCreatedEntitiesArtifact` with type-level invariant
-    `transferUrlIncluded: false`.
-  - `TransferEntityRecord`, `QcCreatedEntity`, `TransferAuditMetadata`,
-    and `TransferEvidenceReferences`.
+    - `TransferReportArtifact` with type-level invariants
+      `rawScreenshotsIncluded: false`, `credentialsIncluded: false`,
+      `transferUrlIncluded: false`, plus deterministic counts
+      (`createdCount`, `skippedDuplicateCount`, `failedCount`,
+      `refusedCount`) and `audit: TransferAuditMetadata`.
+    - `QcCreatedEntitiesArtifact` with type-level invariant
+      `transferUrlIncluded: false`.
+    - `TransferEntityRecord`, `QcCreatedEntity`, `TransferAuditMetadata`,
+      and `TransferEvidenceReferences`.
 - New optional fields on `WorkspaceStartOptions.testIntelligence`:
-  - `allowApiTransfer?: boolean` (default `false` — fail-closed admin gate),
-  - `transferBearerToken?: string` (legacy single-principal token),
-  - `transferPrincipals?: TestIntelligenceTransferPrincipal[]`
-    (multi-principal idempotent audit lineage).
+    - `allowApiTransfer?: boolean` (default `false` — fail-closed admin gate),
+    - `transferBearerToken?: string` (legacy single-principal token),
+    - `transferPrincipals?: TestIntelligenceTransferPrincipal[]`
+      (multi-principal idempotent audit lineage).
 - New exported type `TestIntelligenceTransferPrincipal`.
 - New public module `src/test-intelligence/qc-alm-api-transfer.ts`
   exporting `runOpenTextAlmApiTransfer`, `buildTransferRollbackGuidance`,
@@ -5031,10 +5089,10 @@ core test-intelligence pipeline to OpenText ALM.
 - New optional `WorkspaceStartOptions.testIntelligence.reviewBearerToken` and `WorkspaceStartOptions.testIntelligence.artifactRoot` fields. The bearer token gates `POST /workspace/test-intelligence/review/...` write actions fail-closed (503 when unset). The artifact root overrides the default `<outputRoot>/test-intelligence` directory used by the Inspector UI.
 - New optional `WorkspaceStatus.testIntelligenceEnabled` boolean exposed from `GET /workspace`. The Inspector UI uses this flag to gate the "Test Intelligence" navigation entry.
 - New routes mounted at `/workspace/test-intelligence/...`. All routes return `503 FEATURE_DISABLED` when the existing test-intelligence dual-gate (`FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE=1` + `WorkspaceStartOptions.testIntelligence.enabled`) is not satisfied:
-  - `GET /workspace/test-intelligence/jobs` — list jobs that have on-disk artifacts.
-  - `GET /workspace/test-intelligence/jobs/<jobId>` — composite read of the per-job artifact bundle (generated test cases, validation report, policy report, coverage report, visual sidecar report, QC mapping preview, export report, review snapshot, review events). Returns `404 JOB_NOT_FOUND` when no artifact directory exists for the job.
-  - `GET /workspace/test-intelligence/review/<jobId>/state` — read the review-gate snapshot and event log via the existing in-process review handler.
-  - `POST /workspace/test-intelligence/review/<jobId>/<action>[/<testCaseId>]` — record a review-gate transition (`approve`, `reject`, `edit`, `note`, `review-started`). Bearer-protected fail-closed; rate-limited per IP+jobId.
+    - `GET /workspace/test-intelligence/jobs` — list jobs that have on-disk artifacts.
+    - `GET /workspace/test-intelligence/jobs/<jobId>` — composite read of the per-job artifact bundle (generated test cases, validation report, policy report, coverage report, visual sidecar report, QC mapping preview, export report, review snapshot, review events). Returns `404 JOB_NOT_FOUND` when no artifact directory exists for the job.
+    - `GET /workspace/test-intelligence/review/<jobId>/state` — read the review-gate snapshot and event log via the existing in-process review handler.
+    - `POST /workspace/test-intelligence/review/<jobId>/<action>[/<testCaseId>]` — record a review-gate transition (`approve`, `reject`, `edit`, `note`, `review-started`). Bearer-protected fail-closed; rate-limited per IP+jobId.
 
 ### Unchanged (Issue #1367)
 
@@ -5817,9 +5875,9 @@ Added:
 Added:
 
 - New stage names:
-  - `template.prepare`
-  - `validate.project`
-  - `git.pr`
+    - `template.prepare`
+    - `validate.project`
+    - `git.pr`
 - `WorkspaceJobInput.enableGitPr?: boolean` (`false` by default)
 - `WorkspaceGitPrStatus` payload on `WorkspaceJobStatus` and `WorkspaceJobResult`
 
@@ -5837,13 +5895,13 @@ Breaking changes:
 
 - `POST /workspace/submit` now returns `202 Accepted` and enqueues a real local generation job.
 - `WorkspaceJobInput` now requires:
-  - `figmaAccessToken`
-  - `repoUrl`
-  - `repoToken`
+    - `figmaAccessToken`
+    - `repoUrl`
+    - `repoToken`
 - `WorkspaceJobResult` changed from static `not_implemented` envelope to compact job result payload.
 - `WorkspaceStatus` now includes:
-  - `outputRoot`
-  - `previewEnabled`
+    - `outputRoot`
+    - `previewEnabled`
 
 Added:
 
