@@ -151,11 +151,15 @@ jobs:
       - name: Apply pending changesets and publish package
         shell: bash
         env:
-          NODE_AUTH_TOKEN: ${{ steps.npm_auth_mode.outputs.auth_mode == 'npm-token' && secrets.NPM_TOKEN || '' }}
-          NPM_TOKEN: ${{ steps.npm_auth_mode.outputs.auth_mode == 'npm-token' && secrets.NPM_TOKEN || '' }}
+          NPM_TOKEN_SECRET: ${{ secrets.NPM_TOKEN }}
           WORKSPACE_DEV_PUBLISH_AUTH_MODE: ${{ steps.npm_auth_mode.outputs.auth_mode }}
         run: |
           set -euo pipefail
+
+          if [[ "${WORKSPACE_DEV_PUBLISH_AUTH_MODE}" == "npm-token" ]]; then
+            export NODE_AUTH_TOKEN="${NPM_TOKEN_SECRET}"
+            export NPM_TOKEN="${NPM_TOKEN_SECRET}"
+          fi
 
           CHANGESET_COUNT="$(find .changeset -maxdepth 1 -type f -name '*.md' ! -name 'README.md' | wc -l | tr -d ' ')"
           echo "Detected ${CHANGESET_COUNT} pending changeset file(s)."

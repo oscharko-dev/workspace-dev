@@ -3,7 +3,7 @@
 import { spawn } from "node:child_process";
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(__dirname, "..");
@@ -33,11 +33,35 @@ const run = (command, args, env = process.env) =>
     });
   });
 
-const resolvePublishEnv = () => {
+const SUPPORTED_PUBLISH_AUTH_MODES = new Set([
+  "trusted-publisher-oidc",
+  "npm-token"
+]);
+
+export const resolvePublishEnv = () => {
   const publishEnv = { ...process.env };
   const publishAuthMode = String(
     publishEnv.WORKSPACE_DEV_PUBLISH_AUTH_MODE ?? "trusted-publisher-oidc"
   ).trim();
+
+  if (!SUPPORTED_PUBLISH_AUTH_MODES.has(publishAuthMode)) {
+    throw new Error(
+      `Unsupported WORKSPACE_DEV_PUBLISH_AUTH_MODE '${publishAuthMode}'. Expected trusted-publisher-oidc or npm-token.`
+    );
+  }
+
+  if (publishAuthMode === "npm-token") {
+    const token = String(
+      publishEnv.NODE_AUTH_TOKEN ?? publishEnv.NPM_TOKEN ?? ""
+    ).trim();
+    if (!token) {
+      throw new Error(
+        "NPM token publishing requested but NODE_AUTH_TOKEN/NPM_TOKEN is missing."
+      );
+    }
+    publishEnv.NODE_AUTH_TOKEN = token;
+    publishEnv.NPM_TOKEN = token;
+  }
 
   if (publishEnv.GITHUB_ACTIONS === "true") {
     const hasGitHubOidc =
@@ -56,21 +80,7 @@ const resolvePublishEnv = () => {
       delete publishEnv.NPM_CONFIG__AUTH_TOKEN;
       publishProvenance = true;
     } else if (publishAuthMode === "npm-token") {
-      const token = String(
-        publishEnv.NODE_AUTH_TOKEN ?? publishEnv.NPM_TOKEN ?? ""
-      ).trim();
-      if (!token) {
-        throw new Error(
-          "NPM token publishing requested but NODE_AUTH_TOKEN/NPM_TOKEN is missing."
-        );
-      }
-      publishEnv.NODE_AUTH_TOKEN = token;
-      publishEnv.NPM_TOKEN = token;
       publishProvenance = hasGitHubOidc;
-    } else {
-      throw new Error(
-        `Unsupported WORKSPACE_DEV_PUBLISH_AUTH_MODE '${publishAuthMode}'. Expected trusted-publisher-oidc or npm-token.`
-      );
     }
 
     // The release workflow already runs exhaustive quality gates in dedicated jobs.
@@ -131,7 +141,9 @@ const main = async () => {
   ], resolvePublishEnv());
 };
 
-main().catch((error) => {
-  console.error("[changesets-publish] Failed:", error);
-  process.exit(1);
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    console.error("[changesets-publish] Failed:", error);
+    process.exit(1);
+  });
+}
