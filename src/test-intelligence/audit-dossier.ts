@@ -35,6 +35,10 @@ import {
   summarizeCalibrationRefitHistory,
 } from "./self-improving-calibration.js";
 import { TENANT_BUNDLE_RESOLVED_ARTIFACT_FILENAME } from "./tenant-bundle.js";
+import {
+  loadPersistedExecutionEvidence,
+  summarizeExecutionEvidenceForDossier,
+} from "./test-execution-evidence-ingest.js";
 
 const MODEL_CARD_SUFFIX = ".model-card.json";
 const DEFAULT_BENCHMARK_PROTOCOL_PATH =
@@ -259,6 +263,16 @@ interface GenerateAuditDossierInput {
    * a sandbox tree.
    */
   readonly calibrationCurvesDir?: string;
+  /**
+   * Optional path to a per-tenant calibration-corpus root
+   * (`<output-root>/tenants/<id>/calibration-corpus/`). When supplied
+   * AND the directory contains an `execution-evidence/` partition
+   * tree the dossier renders the W8-4 execution-evidence summary
+   * (Issue #2186). Absent / empty → the section is skipped silently
+   * so dossiers for tenants that have not yet pulled evidence keep
+   * the existing shape.
+   */
+  readonly executionEvidenceCorpusDir?: string;
 }
 
 export interface GenerateAuditDossierResult {
@@ -926,6 +940,25 @@ export const generateAuditDossier = async (
       const bundle = buildCustomerBundleSection(resolvedArtifacts);
       return bundle === undefined ? {} : { customerBundle: bundle };
     })(),
+    ...(await (async () => {
+      if (input.executionEvidenceCorpusDir === undefined) return {};
+      const records = await loadPersistedExecutionEvidence(
+        input.executionEvidenceCorpusDir,
+      );
+      if (records.length === 0) return {};
+      const summary = summarizeExecutionEvidenceForDossier(records);
+      return {
+        executionEvidenceLoop: {
+          totalEvidence: summary.totalEvidence,
+          verdictCounts: summary.verdictCounts,
+          reviewerConflictCounts: summary.reviewerConflictCounts,
+          tmsAdapterCounts: summary.tmsAdapterCounts,
+          distinctSigningKeyFingerprints: summary.distinctSigningKeyFingerprints,
+          earliestExecutedAt: summary.earliestExecutedAt,
+          latestExecutedAt: summary.latestExecutedAt,
+        },
+      };
+    })()),
     ...(await (async () => {
       const refitDir =
         input.calibrationCurvesDir ??

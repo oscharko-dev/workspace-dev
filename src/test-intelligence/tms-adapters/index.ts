@@ -47,8 +47,10 @@ export {
   type TmsHttpRequest,
   type TmsHttpResponse,
   type TmsMappedCase,
+  type TmsPullExecutionsResult,
   type TmsPushAttemptResult,
   type TmsPushBatchResult,
+  type TmsRawExecutionEvidence,
   type TmsSyncStatus,
   type TmsValidateProjectResult,
 } from "./tms-adapter-contract.js";
@@ -65,6 +67,8 @@ export {
   executeWithRetry,
   isSupportedAuthKind,
   loadTmsCredentialsFromEnv,
+  MAX_EXECUTION_EVIDENCE_ROWS_PER_PULL,
+  parseRawExecutionEvidenceEnvelope,
   resolvePrincipalId,
   sanitizeTmsErrorDetail,
   TMS_ADAPTER_ENV_NAMES,
@@ -72,6 +76,8 @@ export {
   type ExecuteWithRetryInput,
   type LoadTmsCredentialsFromEnvInput,
   type LoadTmsCredentialsResult,
+  type ParseRawExecutionEvidenceEnvelopeInput,
+  type ParseRawExecutionEvidenceEnvelopeResult,
 } from "./tms-shared.js";
 export {
   loadMappingPreviewFromRunDir,

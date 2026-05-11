@@ -300,6 +300,45 @@ export class TmsRateLimitError extends TmsAdapterError {
 }
 
 /**
+ * Raw execution-evidence payload emitted by a TMS adapter's
+ * `pullExecutions` method (Issue #2186, W8-4).
+ *
+ * The shape mirrors {@link ExecutionEvidence} in
+ * `test-execution-evidence-ingest.ts` deliberately — the adapter is
+ * responsible for translating the TMS-specific response into this
+ * canonical, signature-bearing shape. The orchestrator then verifies
+ * each entry against the tenant's TMS-admin Ed25519 key and persists
+ * the accepted entries under the per-tenant calibration corpus.
+ *
+ * Hard invariants:
+ *   - Every entry MUST carry a non-empty
+ *     `attestationSignatureHex` (lower-case hex). Adapters MUST NOT
+ *     synthesise signatures; they only forward the bytes the TMS or
+ *     its trusted webhook signer attached to each row.
+ *   - `tenantId` MUST equal the session tenant the adapter is
+ *     connected as. Cross-tenant entries are dropped at ingest with
+ *     `tenant_mismatch`.
+ *   - `executedAt` MUST be ISO-8601 UTC ending with `Z`.
+ */
+export interface TmsRawExecutionEvidence {
+  readonly testCaseId: string;
+  readonly tenantId: string;
+  readonly tmsAdapterId: TmsAdapterId;
+  readonly tmsCaseId: string;
+  readonly executionVerdict: "pass" | "fail" | "blocked" | "skipped";
+  readonly reviewerVerdict?: "approved" | "rejected" | "revised";
+  readonly reviewerRationale?: string;
+  readonly executedAt: string;
+  readonly attestationSignatureHex: string;
+}
+
+/** Result of a `pullExecutions` call. */
+export interface TmsPullExecutionsResult {
+  /** Per-entry list, in adapter-defined order. The orchestrator sorts. */
+  readonly evidence: readonly TmsRawExecutionEvidence[];
+}
+
+/**
  * Provider-neutral adapter facade. Every method is async to keep the
  * lifecycle contract uniform across adapters.
  */
@@ -330,6 +369,24 @@ export interface TmsAdapter {
     session: TmsAdapterSession;
     tmsTestCaseId: string;
   }): Promise<TmsSyncStatus>;
+  /**
+   * Pull execution evidence for cases previously pushed by this
+   * adapter. The `sinceIso` argument is an ISO-8601 UTC timestamp;
+   * adapters MUST return only entries whose `executedAt >= sinceIso`.
+   *
+   * Each returned entry carries a signature bytes-string that MUST
+   * verify against the tenant's TMS-admin Ed25519 public key — the
+   * orchestrator (`ingestExecutionEvidence`) refuses unsigned and
+   * tampered entries (G12 hard gate).
+   *
+   * Adapters that cannot pull (e.g. read-disabled tenant) return an
+   * empty `evidence` array. Network errors propagate as
+   * {@link TmsTransportError} so the orchestrator can retry.
+   */
+  pullExecutions(input: {
+    session: TmsAdapterSession;
+    sinceIso: string;
+  }): Promise<TmsPullExecutionsResult>;
   disconnect(session: TmsAdapterSession): Promise<void>;
 }
 

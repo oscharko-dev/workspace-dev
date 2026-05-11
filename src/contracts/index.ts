@@ -162,7 +162,7 @@ export interface TestIntelligenceTransferPrincipal {
 }
 
 /** Contract version for the opt-in test-intelligence surface. */
-export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.35.0" as const;
+export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.36.0" as const;
 
 /**
  * Schema version for generated test case payloads.
@@ -13146,6 +13146,31 @@ export interface AuditDossierManifest {
     readonly hasNamingConvention: boolean;
     readonly hasCustomerEvalRubricRef: boolean;
     readonly appliedOverrides: readonly string[];
+  };
+  /**
+   * Test-execution evidence loop summary (Issue #2186, W8-4). Optional
+   * and additive: populated only when the dossier generator finds at
+   * least one persisted execution-evidence record under the per-tenant
+   * calibration corpus directory passed via
+   * `executionEvidenceCorpusDir`. Tenants that have not yet ingested
+   * TMS execution evidence keep the dossier shape stable.
+   */
+  readonly executionEvidenceLoop?: {
+    readonly totalEvidence: number;
+    readonly verdictCounts: {
+      readonly pass: number;
+      readonly fail: number;
+      readonly blocked: number;
+      readonly skipped: number;
+    };
+    readonly reviewerConflictCounts: {
+      readonly execution_fail_reviewer_approved: number;
+      readonly execution_pass_reviewer_rejected: number;
+    };
+    readonly tmsAdapterCounts: Readonly<Partial<Record<string, number>>>;
+    readonly distinctSigningKeyFingerprints: readonly string[];
+    readonly earliestExecutedAt: string;
+    readonly latestExecutedAt: string;
   };
   readonly regulatorCoverage: readonly AuditDossierRegulationCoverageEntry[];
   readonly summary: {

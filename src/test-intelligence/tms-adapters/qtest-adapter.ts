@@ -45,8 +45,10 @@ import {
   type TmsHttpClient,
   type TmsHttpResponse,
   type TmsMappedCase,
+  type TmsPullExecutionsResult,
   type TmsPushAttemptResult,
   type TmsPushBatchResult,
+  type TmsRawExecutionEvidence,
   type TmsSyncStatus,
   type TmsValidateProjectResult,
   DEFAULT_TMS_REQUEST_TIMEOUT_MS,
@@ -55,6 +57,7 @@ import {
   classifyTmsHttpFailure,
   computeTmsIdempotencyKey,
   executeWithRetry,
+  parseRawExecutionEvidenceEnvelope,
   resolvePrincipalId,
   sanitizeTmsErrorDetail,
 } from "./tms-shared.js";
@@ -315,6 +318,43 @@ export const createQtestAdapter = (
           message: sanitizeTmsErrorDetail(err),
         };
       }
+    },
+    async pullExecutions(args: {
+      session: TmsAdapterSession;
+      sinceIso: string;
+    }): Promise<TmsPullExecutionsResult> {
+      const path =
+        `/api/v3/projects/${encodeURIComponent(args.session.projectId)}/execution-evidence` +
+        `?since=${encodeURIComponent(args.sinceIso)}`;
+      const response = await runWithRetry(input, async () => {
+        const r = await input.http.request({
+          endpointAlias: args.session.endpointAlias,
+          path,
+          method: "GET",
+          headers: { Accept: "application/json" },
+          credentials: readCredentials(args.session),
+          timeoutMs: DEFAULT_TMS_REQUEST_TIMEOUT_MS,
+        });
+        if (r.status >= 400) {
+          throw classifyTmsHttpFailure({
+            adapterId: ADAPTER_ID,
+            status: r.status,
+            detail:
+              readErrorMessage(r) ?? `qTest pullExecutions http ${r.status}`,
+          });
+        }
+        return r;
+      });
+      const parsed = parseRawExecutionEvidenceEnvelope({
+        adapterId: ADAPTER_ID,
+        tenantId: args.session.tenantId,
+        body: response.value.body,
+        sinceIso: args.sinceIso,
+      });
+      const evidence: TmsRawExecutionEvidence[] = parsed.evidence.map((row) => ({
+        ...row,
+      }));
+      return { evidence };
     },
     async disconnect(session: TmsAdapterSession): Promise<void> {
       SESSION_CREDENTIALS.delete(session);

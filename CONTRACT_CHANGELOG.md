@@ -31,6 +31,90 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [1.36.0] - 2026-05-11
+
+Test-intelligence sub-contract bump for the Issue #2186 test-execution
+evidence loop (Wave 8 / W8-4). The harness now closes the loop from
+generated test cases back into the calibration corpus by ingesting
+execution outcomes (pass / fail / blocked / skipped) — and optional
+reviewer verdicts — pulled from the customer's TMS, with each entry
+verified against the customer's TMS-admin Ed25519 signing key. All
+changes are additive — no existing field, type, or command was removed
+or renamed.
+
+### Added (Issue #2186 — test-execution evidence loop)
+
+- New module `src/test-intelligence/test-execution-evidence-ingest.ts`
+  exposing the ingest pipeline:
+  - `ingestExecutionEvidence({ evidence, context }): Promise<{ accepted, rejected, report, ... }>`
+    — verify + persist + report a single batch of evidence under the
+    per-tenant calibration corpus.
+  - `loadPersistedExecutionEvidence(corpusDir)` — deterministic walk
+    over the persisted partitions, used by W7-3 refit reader and the
+    W6-1 audit-dossier.
+  - `summarizeExecutionEvidenceForDossier(records)` — pure summary
+    builder consumed by the audit-dossier renderer.
+  - `buildExecutionEvidenceSigningBytes(evidence)` /
+    `computeVerifyingKeyFingerprint(pem)` — reusable signing-payload
+    helpers so customer TMS-plugin authors do not have to re-derive
+    the canonicalisation rules.
+- New persisted-artifact constants:
+  - `EXECUTION_EVIDENCE_SCHEMA_VERSION` (`"1.0.0"`).
+  - `EXECUTION_EVIDENCE_CORPUS_DIRNAME` (`"execution-evidence"`).
+  - `EXECUTION_EVIDENCE_REPORT_FILENAME`
+    (`"execution-evidence-report.json"`).
+  - `G12_EXECUTION_EVIDENCE_SIGNED` — hard-gate code emitted when
+    `--strict-signature` rejects an unsigned/tampered batch.
+  - `MAX_EXECUTION_EVIDENCE_ROWS_PER_PULL` (`5000`) — adapter-side
+    cap on a single pullExecutions envelope.
+- New exported types:
+  - `ExecutionEvidence`, `ExecutionEvidenceBody`,
+    `ExecutionEvidenceReport`, `ExecutionEvidenceIngestContext`,
+    `IngestExecutionEvidenceInput`, `IngestExecutionEvidenceResult`,
+    `PersistedExecutionEvidenceRecord`,
+    `ExecutionEvidenceDossierSummary`,
+    `ExecutionEvidenceVerdictCounts`,
+    `ExecutionEvidenceConflictEntry`,
+    `ExecutionEvidenceRejectionEntry`,
+    `ExecutionEvidenceConflictCode`,
+    `ExecutionEvidenceRejectionCode`, `ExecutionVerdict`,
+    `ReviewerVerdict`, `TenantId`.
+  - `TmsRawExecutionEvidence`, `TmsPullExecutionsResult` on the TMS
+    adapter contract surface.
+  - `ParseRawExecutionEvidenceEnvelopeInput` /
+    `ParseRawExecutionEvidenceEnvelopeResult` on the shared TMS
+    helpers surface.
+- New error classes:
+  - `ExecutionEvidenceSignatureGateError`
+    (`code === "G12_EXECUTION_EVIDENCE_SIGNED"`).
+  - `ExecutionEvidenceTenantMismatchError`.
+- New required adapter method on `TmsAdapter`:
+  - `pullExecutions({ session, sinceIso }): Promise<TmsPullExecutionsResult>`.
+    Implemented on all four production adapters (Xray, ALM, qTest,
+    Polarion). Each adapter calls a TMS-specific
+    `…/execution-evidence?since=…` endpoint and parses the response
+    via the shared `parseRawExecutionEvidenceEnvelope` helper.
+- New optional `AuditDossierManifest.executionEvidenceLoop` section
+  carrying the per-tenant evidence summary (verdict counts, conflict
+  counts, distinct signing-key fingerprints, executedAt range). The
+  field is populated only when the dossier generator receives the
+  optional `executionEvidenceCorpusDir` input AND the directory
+  contains at least one persisted record — legacy runs keep the
+  manifest shape stable.
+- New CLI sub-command:
+  - `workspace-dev test-intelligence execution-pull --tms <id> --project <id> --since <iso> --tenant <id> --output-root <dir> [--endpoint <alias>] [--verifying-key <path>] [--strict-signature]`
+    — drives `connect → pullExecutions → ingestExecutionEvidence →
+    disconnect` end-to-end. Exit codes: `0` on success, `1` on
+    operator/config error, `2` on `G12_EXECUTION_EVIDENCE_SIGNED`
+    under `--strict-signature`.
+- New documentation: `docs/test-intelligence/execution-evidence-loop.md`
+  with the flow diagram + the customer's TMS-admin signing-key setup
+  procedure.
+
+### Changed (additive only)
+
+- `TEST_INTELLIGENCE_CONTRACT_VERSION` bumped `1.35.0` → `1.36.0`.
+
 ## [1.35.0] - 2026-05-11
 
 Test-intelligence sub-contract bump for the Issue #2185 self-service
