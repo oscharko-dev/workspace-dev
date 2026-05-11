@@ -360,7 +360,8 @@ export const parseAndCanonicalizeTenantBundle = (
       issues.push({
         path: "inheritsFromPolicyProfile",
         message:
-          'inheritsFromPolicyProfile must match /^[A-Za-z0-9][A-Za-z0-9_.-]+$/',
+          "inheritsFromPolicyProfile must start with [A-Za-z0-9] and contain only " +
+          "[A-Za-z0-9_.-] (1–128 characters)",
       });
     } else {
       inheritsFromPolicyProfile = value;
@@ -867,8 +868,10 @@ export class TenantBundleBaseProfileMismatchError extends Error {
 export class TenantBundleSafetyFloorViolationError extends Error {
   readonly code = "TENANT_BUNDLE_SAFETY_FLOOR_VIOLATION" as const;
   readonly field: string;
+  readonly direction: "minimum" | "maximum";
   readonly baseValue: number;
   readonly proposedValue: number;
+  readonly rationale: string;
 
   constructor(input: {
     readonly field: string;
@@ -883,8 +886,10 @@ export class TenantBundleSafetyFloorViolationError extends Error {
     );
     this.name = "TenantBundleSafetyFloorViolationError";
     this.field = input.field;
+    this.direction = input.direction;
     this.baseValue = input.baseValue;
     this.proposedValue = input.proposedValue;
+    this.rationale = input.rationale;
   }
 }
 

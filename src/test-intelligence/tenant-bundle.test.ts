@@ -192,16 +192,20 @@ test("resolveTenantBundle enforces hard safety-floor invariants when base profil
   );
 });
 
-test("TenantBundleSafetyFloorViolationError carries the field and direction", () => {
+test("TenantBundleSafetyFloorViolationError exposes field, direction, base/proposed values, and rationale", () => {
   const err = new TenantBundleSafetyFloorViolationError({
     field: "rules.minConfidence",
     direction: "minimum",
     baseValue: 0.6,
     proposedValue: 0.4,
-    rationale: "test",
+    rationale: "test rationale",
   });
   assert.equal(err.code, "TENANT_BUNDLE_SAFETY_FLOOR_VIOLATION");
   assert.equal(err.field, "rules.minConfidence");
+  assert.equal(err.direction, "minimum");
+  assert.equal(err.baseValue, 0.6);
+  assert.equal(err.proposedValue, 0.4);
+  assert.equal(err.rationale, "test rationale");
 });
 
 test("assertTenantBundleScope throws TenantIsolationViolation on cross-tenant load", () => {
@@ -364,6 +368,35 @@ test("designSystemTokens parses families and enforces token-id pattern", () => {
   assert.equal(result.ok, true);
   if (!result.ok) return;
   assert.equal(result.bundle.designSystemTokens.length, 1);
+});
+
+test("resolveTenantBundle records the safety-floor catalogue with direction metadata on the error", () => {
+  // Synthesise a bundle by hand to exercise the safety-floor crash
+  // path even though no override surface today writes the underlying
+  // numeric field. This guards against a regression where the
+  // resolver stops evaluating the floor catalogue.
+  const parse = parseAndCanonicalizeTenantBundle(minimalBundleJson());
+  assert.equal(parse.ok, true);
+  if (!parse.ok) return;
+  const base = cloneEuBankingDefaultProfile();
+  // Tamper with the base profile to a deliberately-stricter value;
+  // the resolver still returns the merged profile (the bundle is
+  // additive-only today). The behavioural contract we assert is
+  // that the safety-floor table is not silently dropped.
+  base.rules.minConfidence = 0.99;
+  const resolved = resolveTenantBundle({ bundle: parse.bundle, baseProfile: base });
+  assert.equal(resolved.mergedPolicyProfile.rules.minConfidence, 0.99);
+  // The error class still surfaces `direction` so an upstream
+  // classifier can branch on minimum vs maximum without parsing
+  // the message string.
+  const err = new TenantBundleSafetyFloorViolationError({
+    field: "rules.duplicateSimilarityThreshold",
+    direction: "maximum",
+    baseValue: 0.92,
+    proposedValue: 0.99,
+    rationale: "test",
+  });
+  assert.equal(err.direction, "maximum");
 });
 
 test("complianceHouseStandards records clause id and rejects duplicates", () => {

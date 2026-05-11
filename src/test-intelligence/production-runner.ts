@@ -1190,8 +1190,13 @@ export interface RunFigmaToQcTestCasesInput {
   customerProfile?: CustomerProfileInput;
   /**
    * Optional tenant bundle (Issue #2184). When supplied the runner:
-   *  - Parses + canonicalizes the bundle (PII redaction, allow-list,
-   *    deterministic sort) before any LLM call.
+   *  - Parses + canonicalizes the bundle (hard allow-list of
+   *    top-level fields, per-field shape validation, deterministic
+   *    sort, content-addressed `contentHash`) before any LLM call.
+   *    Note: free-text fields are length-bounded and pattern-checked
+   *    but NOT routed through the customer-profile PII-redaction +
+   *    prompt-injection scrub. Operators are expected to author the
+   *    bundle as a reviewed, version-controlled config file.
    *  - Asserts the bundle's `tenantId` matches the active `TenantScope`
    *    (multi-tenant isolation, Issue #2176) — mismatch crashes the
    *    run with `TenantIsolationViolation`.
@@ -1200,9 +1205,10 @@ export interface RunFigmaToQcTestCasesInput {
    *    while honouring the hard safety-floor invariants.
    *  - Persists `tenant-bundle-resolved.json` alongside the other
    *    artifacts so audit replay can reconstruct the merge.
-   *  - Merges the bundle's `terminologyGlossary` into the
-   *    customer-profile glossary that already flows into the prompt
-   *    compiler's `[5] CustomerDomainContext` section.
+   *  - Threads the bundle's `terminologyGlossary` into the prompt
+   *    compiler's `[5] CustomerDomainContext` section as a new
+   *    Markdown sub-section (alongside, not merged into, the
+   *    customer-profile glossary).
    *
    * A malformed or policy-violating bundle fails the job fast with
    * `TENANT_BUNDLE_INVALID`.
@@ -2941,7 +2947,22 @@ export const runFigmaToQcTestCases = async (
   // replaces `customerRubric` so downstream gates pick up the additive
   // overrides (e.g. extended `reviewOnlyRiskCategories`). The active
   // `TenantScope` cross-check happens inside `assertTenantBundleScope`.
+  //
+  // Fail fast when a bundle is supplied but the active policy profile
+  // is a stub (non-`eu-banking-default` id without `rules`): the
+  // merge cannot run safely against a stub, and silently skipping it
+  // would let operators believe their bundle applied when it didn't.
   const canonicalTenantBundle = parseTenantBundleInput(input.tenantBundle);
+  if (canonicalTenantBundle !== undefined && !("rules" in customerRubric)) {
+    throw new ProductionRunnerError({
+      failureClass: "TENANT_BUNDLE_INVALID",
+      message:
+        `tenantBundle rejected: active policy profile "${policyProfileId}" is not a full TestCasePolicyProfile; ` +
+        `tenant bundles can only resolve against built-in profiles that expose a complete \`rules\` surface. ` +
+        `Either pass --policy-profile eu-banking-default (or another full profile) or omit --tenant-bundle.`,
+      retryable: false,
+    });
+  }
   const baseProfileForBundle =
     canonicalTenantBundle !== undefined && "rules" in customerRubric
       ? (customerRubric as TestCasePolicyProfile)
@@ -9054,13 +9075,16 @@ const resolveCustomerEvalRubric = (
 };
 
 /**
- * Build the merged `CompiledPromptCustomContext` from an optional Markdown
- * body and an optional canonical customer profile. Either or both may be
- * present. Returns `undefined` only when both are absent.
+ * Build the merged `CompiledPromptCustomContext` from up to three optional
+ * inputs: a custom-context Markdown body, a canonical customer profile
+ * (Issue #1946), and a resolved tenant bundle (Issue #2184). Any subset
+ * may be present. Returns `undefined` only when all three are absent or
+ * none contribute a non-empty Markdown section.
  *
- * The customer-profile sections are rendered as deterministic Markdown and
- * appended to the markdown sections list so `buildCustomerDomainContextPayload`
- * in the prompt compiler surfaces them in the `[5] CustomerDomainContext` block.
+ * Each input is rendered as a deterministic Markdown sub-section and
+ * appended to the markdown sections list so
+ * `buildCustomerDomainContextPayload` in the prompt compiler surfaces
+ * them in the `[5] CustomerDomainContext` block.
  */
 const buildCompiledCustomContext = (
   markdown: ResolvedCustomContextMarkdown | undefined,

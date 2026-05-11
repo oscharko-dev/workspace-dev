@@ -112,6 +112,7 @@ export const TI_EVAL_FILES = Object.freeze([
   "src/test-intelligence/self-verify-rubric.test.ts",
   "src/test-intelligence/test-case-dedupe.property.test.ts",
   "src/test-intelligence/test-case-dedupe.test.ts",
+  "src/test-intelligence/tenant-bundle.test.ts",
   "src/test-intelligence/test-case-delta.property.test.ts",
   "src/test-intelligence/test-case-delta.test.ts",
   "src/test-intelligence/traceability-matrix.property.test.ts",
