@@ -551,6 +551,7 @@ export const parseTestIntelligenceRunArgs = (
 ): TestIntelligenceRunOptions => {
   let figmaUrl: string | undefined;
   let figmaJsonFile: string | undefined;
+  let figmaJsonFileFlag: "--figma-json-file" | "--figma-payload" | undefined;
   let output: string | undefined;
   let outputRunSubdir: TestIntelligenceOutputRunSubdirMode | undefined;
   let modelEndpoint: string | undefined =
@@ -678,14 +679,22 @@ export const parseTestIntelligenceRunArgs = (
       continue;
     }
 
-    if (arg === "--figma-json-file") {
+    if (arg === "--figma-json-file" || arg === "--figma-payload") {
       const value = next?.trim();
       if (!value) {
         throw new TestIntelligenceRunOperatorError(
-          "--figma-json-file requires a non-empty path",
+          `${arg} requires a non-empty path`,
+        );
+      }
+      if (figmaJsonFile !== undefined) {
+        throw new TestIntelligenceRunOperatorError(
+          figmaJsonFileFlag === arg
+            ? `${arg} may be specified at most once`
+            : "--figma-json-file and --figma-payload are aliases; specify only one",
         );
       }
       figmaJsonFile = value;
+      figmaJsonFileFlag = arg as "--figma-json-file" | "--figma-payload";
       index += 1;
       continue;
     }
@@ -1168,12 +1177,12 @@ export const parseTestIntelligenceRunArgs = (
 
   if (figmaUrl !== undefined && figmaJsonFile !== undefined) {
     throw new TestIntelligenceRunOperatorError(
-      "--figma-url and --figma-json-file are mutually exclusive; pass exactly one",
+      "--figma-url and --figma-json-file/--figma-payload are mutually exclusive; pass exactly one",
     );
   }
   if (figmaUrl === undefined && figmaJsonFile === undefined) {
     throw new TestIntelligenceRunOperatorError(
-      "One of --figma-url or --figma-json-file is required",
+      "One of --figma-url or --figma-json-file/--figma-payload is required",
     );
   }
   if (enableVisualSidecar && noVisualSidecar) {
@@ -4314,6 +4323,11 @@ Usage:
 Source (exactly one required):
   --figma-url <url>          Figma file URL (deep-linkable; node-id supported)
   --figma-json-file <path>   Local Figma REST JSON (FigmaRestFileSnapshot shape)
+  --figma-payload <path>     Alias of --figma-json-file. Use for sovereign-cloud
+                             / air-gap deployments where the Figma payload was
+                             pre-fetched on a connected machine via
+                             "workspace-dev test-intelligence figma-export"
+                             (Issue #2187).
 
 Output:
   --output <dir>             Run-artifact destination.

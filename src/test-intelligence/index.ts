@@ -999,8 +999,26 @@ export {
 } from "./test-case-coverage.js";
 export {
   cloneEuBankingDefaultProfile,
+  cloneEuBankingSovereignProfile,
   EU_BANKING_DEFAULT_POLICY_PROFILE,
+  EU_BANKING_SOVEREIGN_POLICY_PROFILE,
+  EU_BANKING_SOVEREIGN_POLICY_PROFILE_DESCRIPTION,
 } from "./policy-profile.js";
+export {
+  AIR_GAP_ALLOWED_HOSTS_ENV,
+  AIR_GAP_MODE_ENV,
+  AirGapNetworkPolicyError,
+  AirGapResourceLocationError,
+  assertLocalFilesystemPath,
+  createAirGapFetchGuard,
+  isAirGapModeEnabled,
+  readAirGapAllowedHosts,
+  type AirGapFetchGuardOptions,
+} from "./air-gap-guard.js";
+export {
+  createSovereignLlmGatewayClient,
+  type SovereignLlmGatewayOptions,
+} from "./llm-gateway-sovereign.js";
 export {
   evaluatePolicyGate,
   type EvaluatePolicyGateInput,

@@ -13,6 +13,7 @@ import {
   type RegionAttestationHostingRegion,
   type RegionAttestationReport,
 } from "../contracts/index.js";
+import { isAirGapModeEnabled } from "./air-gap-guard.js";
 import { canonicalJson } from "./content-hash.js";
 import type { AgentSourceLabel } from "./per-source-cost.js";
 
@@ -20,6 +21,22 @@ export const REGION_ATTESTATION_SIGNING_KEY_ENV =
   "WORKSPACE_TEST_SPACE_REGION_ATTESTATION_SIGNING_KEY" as const;
 export const REGION_ATTESTATION_PINNED_REGION_ENV =
   "WORKSPACE_TEST_SPACE_REGION_ATTESTED_REGION" as const;
+
+/**
+ * Issue #2187 — env flag operators set when their sovereign-cloud
+ * deployment exposes a signed deployment-manifest claim instead of an
+ * Azure-IMDS reachable instance. When set, the resolver routes the
+ * pinned region through {@link `sovereign-cloud`} attestation source
+ * (audit-grade, no `severity: "warning"`) rather than the legacy
+ * {@link `operator-pinned`} fallback.
+ *
+ * The flag is a binary opt-in (`"1"` / `"true"` / `"yes"`). When unset
+ * the resolver preserves its legacy behaviour — IMDS → TLS-cert →
+ * operator-pinned — so the sovereign-cloud path is strictly additive
+ * and cannot regress audit posture for Azure-served runs.
+ */
+export const REGION_ATTESTATION_SOVEREIGN_SOURCE_ENV =
+  "WORKSPACE_TEST_SPACE_REGION_ATTESTATION_SOVEREIGN_SOURCE" as const;
 
 const IMDS_ENDPOINT =
   "http://169.254.169.254/metadata/instance?api-version=2021-02-01" as const;
@@ -81,6 +98,24 @@ const readPinnedRegion = (
   const envValue = process.env[REGION_ATTESTATION_PINNED_REGION_ENV]?.trim();
   return isRegion(envValue) ? envValue : undefined;
 };
+
+const truthyEnv = (value: string | undefined): boolean => {
+  if (value === undefined) return false;
+  const lowered = value.trim().toLowerCase();
+  return lowered === "1" || lowered === "true" || lowered === "yes";
+};
+
+/**
+ * Issue #2187 — return `true` when the operator has explicitly enabled
+ * the sovereign-cloud attestation source. The flag is independent of
+ * `WORKSPACE_TEST_SPACE_AIR_GAP_MODE` (a sovereign deployment may run
+ * fully air-gapped *or* with a narrow allow-list of egress hosts), but
+ * air-gap mode implies sovereign-cloud attestation because IMDS / TLS
+ * probes are unreachable under the air-gap fetch guard.
+ */
+const isSovereignAttestationSourceEnabled = (): boolean =>
+  truthyEnv(process.env[REGION_ATTESTATION_SOVEREIGN_SOURCE_ENV]) ||
+  isAirGapModeEnabled();
 
 const buildObservationId = (input: {
   sourceLabel: AgentSourceLabel;
@@ -186,6 +221,36 @@ const resolveFromImds = async (
 export const resolveRegionAttestationObservation = async (
   input: ResolveRegionAttestationObservationInput,
 ): Promise<RegionAttestationObservation> => {
+  // Issue #2187 — sovereign-cloud short-circuit. When the operator has
+  // signalled a sovereign-cloud deployment (explicit env flag *or*
+  // strict air-gap mode), IMDS / TLS-probe paths are unreachable; the
+  // pinned region is the authoritative source and carries the
+  // `sovereign-cloud` attestation label so audit can distinguish it
+  // from the legacy `operator-pinned` fallback.
+  if (isSovereignAttestationSourceEnabled()) {
+    const sovereignPinned = readPinnedRegion(input.pinnedRegion);
+    if (sovereignPinned === undefined) {
+      throw new RangeError(
+        `Sovereign-cloud attestation enabled but no pinned region was provided for deployment "${input.deploymentId}". ` +
+          `Set ${REGION_ATTESTATION_PINNED_REGION_ENV} to one of the supported sovereign-cloud regions.`,
+      );
+    }
+    const attestedBy = "sovereign-cloud" as const;
+    return {
+      observationId: buildObservationId({
+        sourceLabel: input.sourceLabel,
+        deploymentId: input.deploymentId,
+        servedFromRegion: sovereignPinned,
+        observedAtUtc: input.observedAtUtc,
+        attestedBy,
+      }),
+      sourceLabel: input.sourceLabel,
+      deploymentId: input.deploymentId,
+      servedFromRegion: sovereignPinned,
+      observedAtUtc: input.observedAtUtc,
+      attestedBy,
+    };
+  }
   const fromImds = await resolveFromImds(input.fetchImpl);
   if (fromImds !== undefined) {
     const attestedBy = "azure-instance-metadata" as const;

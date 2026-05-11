@@ -87,6 +87,7 @@ import {
   TEST_INTELLIGENCE_EXECUTION_PULL_HELP,
   TestIntelligenceExecutionPullOperatorError,
 } from "./test-intelligence-execution-pull-cli.js";
+import { runFigmaExportCli } from "./test-intelligence-figma-export-cli.js";
 import path from "node:path";
 
 const DEFAULT_PORT = 1983;
@@ -1197,6 +1198,7 @@ Usage:
   workspace-dev test-intelligence onboard --tenant-id <id> --legal-name <name> --policy-profile <id> --output-root <dir>
   workspace-dev test-intelligence onboard --doctor --tenant-id <id> --output-root <dir>
   workspace-dev test-intelligence execution-pull --tms <id> --project <id> --since <iso> --tenant <id> --output-root <dir>
+  workspace-dev test-intelligence figma-export --figma-url <url> --output <path>
   workspace-dev --help
 
 Run "workspace-dev test-intelligence --help" for the test-intelligence subcommands.
@@ -1636,12 +1638,19 @@ const runTestIntelligenceSubCommand = async (
     });
     process.exit(exitCode);
   }
+  if (subCommand === "figma-export") {
+    const exitCode = await runFigmaExportCli(args.slice(1), {
+      stdout: (message) => process.stdout.write(message),
+      stderr: (message) => process.stderr.write(message),
+    });
+    process.exit(exitCode);
+  }
   if (subCommand !== "run") {
     process.stderr.write(
       `error: unknown sub-command for "test-intelligence": ${subCommand ?? "(none)"}\n`,
     );
     process.stderr.write(
-      "usage: workspace-dev test-intelligence <run|doctor|audit-dossier|audit-verify|verify-provenance|verify-seal|review|calibration-refit|tms-push|onboard|execution-pull> [options]\n",
+      "usage: workspace-dev test-intelligence <run|doctor|audit-dossier|audit-verify|verify-provenance|verify-seal|review|calibration-refit|tms-push|onboard|execution-pull|figma-export> [options]\n",
     );
     process.exit(1);
   }
