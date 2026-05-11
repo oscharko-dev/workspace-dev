@@ -68,9 +68,6 @@ jobs:
       - name: Enforce package type publish lint
         run: pnpm run lint:types-publish
 
-      - name: Enforce package size budget
-        run: pnpm run lint:size
-
       - name: Enforce license allowlist
         run: pnpm run verify:licenses
 

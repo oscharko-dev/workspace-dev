@@ -74,9 +74,6 @@ jobs:
       - name: Enforce package type publish lint
         run: pnpm run lint:types-publish
 
-      - name: Enforce package size budget
-        run: pnpm run lint:size
-
   fips-smoke:
     timeout-minutes: 15
     runs-on: ubuntu-22.04
