@@ -31,6 +31,112 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [1.33.0] - 2026-05-11
+
+Test-intelligence sub-contract bump that accompanies the Issue #2183
+production-grade TMS adapters (Wave 8). The bump records the new
+provider-neutral `TmsAdapter` contract surface, the persisted
+`tms-push-report.json` artifact, the four adapter implementations
+(Jira Xray, OpenText/HP ALM, Tricentis qTest, Siemens Polarion), and
+the new `test-intelligence tms-push` CLI sub-command. All changes
+are additive — no existing field, type, or command was removed or
+renamed.
+
+### Added (Issue #2183 — production-grade TMS adapters)
+
+- New persisted-artifact constants exported from
+  `src/contracts/index.ts`:
+  - `TMS_PUSH_REPORT_SCHEMA_VERSION` (`"1.0.0"`).
+  - `TMS_PUSH_REPORT_ARTIFACT_FILENAME` (`"tms-push-report.json"`).
+- New closed value sets exported from `src/contracts/index.ts`:
+  - `ALLOWED_TMS_ADAPTER_IDS` (`["alm", "polarion", "qtest", "xray"]`)
+    + the type alias `TmsAdapterId`.
+  - `ALLOWED_TMS_PUSH_VERDICTS`
+    (`["pushed", "skipped-dup", "failed"]`) + `TmsPushVerdict`.
+  - `ALLOWED_TMS_AUTH_KINDS` (`["pat", "oauth2", "bearer"]`) +
+    `TmsAuthKind`.
+  - `ALLOWED_TMS_PUSH_REFUSAL_CODES`
+    (`["credentials_missing", "credentials_invalid",
+       "project_validation_failed", "mapping_preview_missing",
+       "mapping_preview_unreadable", "no_mapped_test_cases",
+       "adapter_unsupported", "connect_failed"]`) +
+    `TmsPushRefusalCode`.
+- New persisted-artifact types:
+  - `TmsPushReportEntry` — per-case row with `testCaseId`,
+    `idempotencyKey`, `verdict`, `tmsTestCaseId`, `tmsErrorCode`,
+    `tmsErrorMessage`, `attemptCount`, `recordedAt`.
+  - `TmsPushReportArtifact` — aggregate envelope with `adapterId`,
+    `adapterVersion`, `tmsEndpointAlias`, `tmsProjectId`, `runId`,
+    `tenantId`, `generatedAt`, `refused`, `refusalCodes`, `dryRun`,
+    `entries`, `pushedCount`, `skippedDuplicateCount`,
+    `failedCount`, plus the hard-invariant flags
+    `rawScreenshotsIncluded: false`, `credentialsIncluded: false`,
+    `transferUrlIncluded: false`.
+- New module `src/test-intelligence/tms-adapters/` exporting:
+  - The provider-neutral `TmsAdapter` contract surface plus the
+    operational types `TmsAdapterClock`, `TmsAdapterSession`,
+    `TmsConnectInput`, `TmsCredentials`, `TmsHttpClient`,
+    `TmsHttpRequest`, `TmsHttpResponse`, `TmsMappedCase`,
+    `TmsPushAttemptResult`, `TmsPushBatchResult`,
+    `TmsSyncStatus`, `TmsValidateProjectResult`.
+  - The error classes `TmsAdapterError`, `TmsAuthError`,
+    `TmsRateLimitError`, `TmsTransportError`, `TmsValidationError`.
+  - Constants `DEFAULT_TMS_PUSH_BATCH_SIZE` (`50`),
+    `DEFAULT_TMS_REQUEST_TIMEOUT_MS` (`10_000`),
+    `MAX_TMS_FAILURE_DETAIL_LENGTH` (`240`),
+    `DEFAULT_TMS_RETRY_ATTEMPTS` (`4`),
+    `DEFAULT_TMS_RETRY_BASE_MS` (`250`),
+    `DEFAULT_TMS_RETRY_CEIL_MS` (`8_000`),
+    `DEFAULT_TMS_PRINCIPAL_ID` (`"tms-principal:default"`),
+    `TMS_ADAPTER_ENV_NAMES`.
+  - Pure helpers `computeTmsIdempotencyKey`,
+    `loadTmsCredentialsFromEnv`, `sanitizeTmsErrorDetail`,
+    `chunkBatches`, `executeWithRetry`, `classifyTmsHttpFailure`,
+    `buildBasicAuthHeader`, `resolvePrincipalId`,
+    `isSupportedAuthKind`, `buildTmsPushReportPath`,
+    `writeTmsAtomicJson`.
+  - Adapter factories `createXrayAdapter`, `createAlmAdapter`,
+    `createQtestAdapter`, `createPolarionAdapter`, plus the
+    pinned per-adapter version constants `XRAY_ADAPTER_VERSION`,
+    `ALM_ADAPTER_VERSION`, `QTEST_ADAPTER_VERSION`,
+    `POLARION_ADAPTER_VERSION` (all `"1.0.0"`).
+  - The orchestrator entry point `runTmsPushPipeline` plus the
+    helper `loadMappingPreviewFromRunDir`.
+  - The optional `PolarionWebDavClient` surface for two-protocol
+    Polarion attachment uploads (the default CLI omits WebDAV;
+    operators who need attachments call the adapter from a custom
+    entry point).
+- New module `src/test-intelligence/tms-adapters/default-http-client.ts`
+  exporting `createDefaultTmsHttpClient`, the `node:fetch`-backed
+  HTTP client used by the CLI. Resolves endpoint aliases from
+  `WORKSPACE_TEST_SPACE_TMS_<NAME>_<ALIAS>_BASE_URL` (or the
+  `_BASE_URL` fallback). Applies an SSRF guard refusing non-https
+  endpoints unless the alias starts with `mock-` (used by the
+  vendored mock servers in `fixtures/tms-adapters/`).
+- New CLI sub-command
+  `workspace-dev test-intelligence tms-push` (Issue #2183)
+  exposed by `src/test-intelligence-tms-push-cli.ts`. Required
+  flags: `--run-dir <path>`, `--tms <xray|alm|qtest|polarion>`,
+  `--project <id>`. Optional: `--endpoint <alias>`,
+  `--tenant <id>`, `--run-id <id>`, `--batch-size <n>`,
+  `--dry-run`. The sub-command is purely additive; existing
+  `test-intelligence run`, `doctor`, `audit-dossier`,
+  `audit-verify`, `verify-provenance`, `verify-seal`, `review`,
+  and `calibration-refit` continue to work unchanged.
+- Per-tenant credentials are read from
+  `WORKSPACE_TEST_SPACE_TMS_<NAME>_TOKEN` (PAT),
+  `WORKSPACE_TEST_SPACE_TMS_<NAME>_OAUTH_ACCESS_TOKEN` (+ optional
+  `_OAUTH_REFRESH_TOKEN` companion), or
+  `WORKSPACE_TEST_SPACE_TMS_<NAME>_BEARER`, where `<NAME>` ∈
+  {`XRAY`, `ALM`, `QTEST`, `POLARION`}. Tokens are NEVER persisted
+  to the report or echoed in CLI output.
+- `TEST_INTELLIGENCE_CONTRACT_VERSION` bumped `1.32.0` → `1.33.0`.
+- `migrationHash:` registration is not required for this release. The
+  signed migration registry carries forward unchanged because no
+  migration id, hash, or rollback semantics changed.
+
+---
+
 ## [1.32.0] - 2026-05-11
 
 Test-intelligence sub-contract bump that accompanies the Issue #2182
