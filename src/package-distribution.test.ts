@@ -223,6 +223,11 @@ test("profile pack distribution includes template lockfile but excludes template
       tarballListing,
       /package\/template\/react-tailwind-app\/ui-gate-/,
     );
+    assert.doesNotMatch(
+      tarballListing,
+      /package\/dist\/.+\.map/,
+      "Profile tarballs must exclude build sourcemaps to keep npm artifacts within size budgets.",
+    );
 
     await run({
       command: "tar",

@@ -5,6 +5,7 @@ import {
   cp,
   mkdir,
   mkdtemp,
+  readdir,
   readFile,
   rm,
   stat,
@@ -37,6 +38,7 @@ const distBuildProfileMarkerPath = path.join(
   "dist",
   "build-profile.json",
 );
+const stagedPackageIgnorePatterns = [/^dist\/.+\.map$/u];
 
 const parseArgs = (argv) => {
   const options = {
@@ -179,6 +181,35 @@ const copyAllowlistedPath = async ({ relativePath, stagingRoot }) => {
   });
 };
 
+const listFilesRecursive = async (root) => {
+  const entries = await readdir(root, { withFileTypes: true });
+  const files = [];
+  for (const entry of entries) {
+    const absolutePath = path.join(root, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...(await listFilesRecursive(absolutePath)));
+      continue;
+    }
+    if (entry.isFile()) {
+      files.push(absolutePath);
+    }
+  }
+  return files;
+};
+
+const toPackageRelativePath = (absolutePath, stagingRoot) =>
+  path.relative(stagingRoot, absolutePath).split(path.sep).join("/");
+
+const removeIgnoredStagedPackageFiles = async (stagingRoot) => {
+  const stagedFiles = await listFilesRecursive(stagingRoot);
+  for (const absolutePath of stagedFiles) {
+    const relativePath = toPackageRelativePath(absolutePath, stagingRoot);
+    if (stagedPackageIgnorePatterns.some((pattern) => pattern.test(relativePath))) {
+      await rm(absolutePath, { force: true });
+    }
+  }
+};
+
 const createPackagedManifest = async (profile) => {
   const manifest = JSON.parse(
     await readFile(path.join(packageRoot, "package.json"), "utf8"),
@@ -264,6 +295,8 @@ const stagePackage = async ({ profile, stagingRoot }) => {
       await copyAllowlistedPath({ relativePath, stagingRoot });
     }
   }
+
+  await removeIgnoredStagedPackageFiles(stagingRoot);
 };
 
 const selectPackedFilename = (value) => {
