@@ -433,8 +433,7 @@ export const createLlmGatewayClient = (
         : { ...defaultConstrainedDecoding },
     generate,
     getCircuitBreaker: () => breaker,
-    getIdempotencyMetrics: () =>
-      runtime.idempotencyCache?.getMetrics(),
+    getIdempotencyMetrics: () => runtime.idempotencyCache?.getMetrics(),
   };
 };
 
@@ -721,9 +720,7 @@ const dispatchOnce = async ({
           outcome: "error",
           errorClass: "canceled",
           message: "caller-supplied abortSignal aborted the request",
-          ...(constrainedDecoding !== undefined
-            ? { constrainedDecoding }
-            : {}),
+          ...(constrainedDecoding !== undefined ? { constrainedDecoding } : {}),
           retryable: false,
           attempt,
         };
@@ -767,6 +764,85 @@ const dispatchOnce = async ({
 const buildOpenAiChatUrl = (baseUrl: string): string => {
   const trimmed = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
   return `${trimmed}/chat/completions`;
+};
+
+/**
+ * Epic #2167 Q0 follow-up — bounded recovery for `wireStructuredOutputMode:
+ * "none"` responses that wrap valid JSON in markdown fences or prose.
+ *
+ * Tries, in order:
+ *   1. ```json … ``` or ``` … ``` fenced code block (first match).
+ *   2. First balanced `{ … }` object found in the string.
+ *   3. First balanced `[ … ]` array found in the string.
+ *
+ * Returns the parsed JSON value or `undefined` if no balanced
+ * extraction succeeds. Schema validation runs at the caller, so this
+ * helper never weakens the schema contract — it only widens the parse
+ * surface for syntactically valid JSON embedded in prose preludes.
+ *
+ * Bounded: walks the input at most once per pattern and stops at the
+ * first balanced match; `O(n)` time, no backtracking.
+ */
+export const extractFirstJsonObjectOrArray = (raw: string): unknown => {
+  if (typeof raw !== "string" || raw.length === 0) return undefined;
+  // Pattern 1: fenced code block ```json … ``` or ``` … ```.
+  const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)\s*```/iu);
+  if (fenceMatch !== null && typeof fenceMatch[1] === "string") {
+    const fenced = fenceMatch[1].trim();
+    if (fenced.length > 0) {
+      try {
+        return JSON.parse(fenced) as unknown;
+      } catch {
+        /* fall through to balanced-bracket scan */
+      }
+    }
+  }
+  // Pattern 2 + 3: balanced object / array. Scan for the first `{` or
+  // `[`, then walk forward respecting string escapes; balance counter
+  // tracks depth. First `0` at non-zero depth means the value is
+  // complete.
+  const balanced = (open: "{" | "[", close: "}" | "]"): unknown => {
+    const start = raw.indexOf(open);
+    if (start < 0) return undefined;
+    let depth = 0;
+    let inString = false;
+    let escape = false;
+    for (let i = start; i < raw.length; i += 1) {
+      const ch = raw[i];
+      if (inString) {
+        if (escape) {
+          escape = false;
+          continue;
+        }
+        if (ch === "\\") {
+          escape = true;
+          continue;
+        }
+        if (ch === '"') inString = false;
+        continue;
+      }
+      if (ch === '"') {
+        inString = true;
+        continue;
+      }
+      if (ch === open) depth += 1;
+      else if (ch === close) {
+        depth -= 1;
+        if (depth === 0) {
+          const candidate = raw.slice(start, i + 1);
+          try {
+            return JSON.parse(candidate) as unknown;
+          } catch {
+            return undefined;
+          }
+        }
+      }
+    }
+    return undefined;
+  };
+  const obj = balanced("{", "}");
+  if (obj !== undefined) return obj;
+  return balanced("[", "]");
 };
 
 interface OpenAiChatBody {
@@ -1189,14 +1265,31 @@ const parseOpenAiChatResponse = async ({
       try {
         content = JSON.parse(structuredContent) as unknown;
       } catch {
-        return {
-          outcome: "error",
-          errorClass: "schema_invalid",
-          message: "structured-output content is not valid JSON",
-          ...(constrainedDecoding !== undefined ? { constrainedDecoding } : {}),
-          retryable: false,
-          attempt,
-        };
+        // Epic #2167 Q0 follow-up (2026-05-11): `wireStructuredOutputMode:
+        // "none"` (the configured mode for `gpt-oss-120b` on Azure Foundry)
+        // sends no `response_format` to the model, relying on the system
+        // prompt to ask for raw JSON. On very large prompts (M7FGS
+        // ≥ 10 MB Figma payload) the model still emits prose preludes or
+        // ```json markdown fences around the JSON object. Before failing
+        // the request, attempt a bounded recovery: strip a single
+        // markdown fence if present, else extract the first balanced
+        // JSON object / array from the raw text. The recovered payload is
+        // still schema-validated below, so a successful extraction does
+        // not weaken the schema contract.
+        const recovered = extractFirstJsonObjectOrArray(structuredContent);
+        if (recovered === undefined) {
+          return {
+            outcome: "error",
+            errorClass: "schema_invalid",
+            message: "structured-output content is not valid JSON",
+            ...(constrainedDecoding !== undefined
+              ? { constrainedDecoding }
+              : {}),
+            retryable: false,
+            attempt,
+          };
+        }
+        content = recovered;
       }
     }
     const schemaViolation = validateJsonSchemaSubset(
@@ -1303,7 +1396,8 @@ const readResponseTextWithLimit = async (
     return { ok: true, text };
   }
 
-  const reader: ReadableStreamDefaultReader<Uint8Array> = response.body.getReader();
+  const reader: ReadableStreamDefaultReader<Uint8Array> =
+    response.body.getReader();
   const decoder = new TextDecoder();
   let totalBytes = 0;
   let text = "";

@@ -565,6 +565,230 @@ test("Issue #2168: state_transition_test_only transitions are silent unless a st
   assert.equal(stateTransitionWarnings[0]?.severity, "warning");
 });
 
+test("Epic #2167 Q0: mandatory tier aggregates at (screenId, trigger) — one covered field unblocks the whole screen", () => {
+  // P0 → Q0 root cause: the legacy per-(field × transition) check
+  // demanded one anchored test step for every (field × mandatory
+  // transition) pair, which is mathematically impossible on
+  // multi-section banking masks. xr6Nf saw 43 errors on Q0 for a
+  // 31-field screen × 2 mandatory triggers (validation_pass +
+  // validation_fail) — 62 required anchors vs. 23 generator-produced
+  // test-steps. The new aggregation groups by (screenId, trigger);
+  // one anchored step on any field of the screen covers the trigger
+  // for all similar fields on that screen.
+  //
+  // This regression pin builds a topology with two fields on the
+  // same screen, anchors validation_pass + validation_fail on the
+  // FIRST field only, and asserts the validator emits 0 errors
+  // (it would have emitted 2 errors for the second field's
+  // uncovered transitions under the pre-Q0 behaviour).
+  const topology: WorkflowTopology = {
+    ...buildWorkflowTopology(),
+    fieldLifecycles: [
+      {
+        fieldId: "s-payment::field::n-iban",
+        states: [
+          "initial",
+          "focused",
+          "in_progress",
+          "validated",
+          "error",
+          "terminal",
+        ],
+        transitions: [
+          {
+            transitionId: "FLT-iban-A1",
+            from: "initial",
+            to: "in_progress",
+            trigger: "user_input",
+          },
+          {
+            transitionId: "FLT-iban-A2",
+            from: "in_progress",
+            to: "validated",
+            trigger: "validation_pass",
+          },
+          {
+            transitionId: "FLT-iban-A3",
+            from: "in_progress",
+            to: "error",
+            trigger: "validation_fail",
+          },
+        ],
+      },
+      {
+        fieldId: "s-payment::field::n-amount",
+        states: [
+          "initial",
+          "focused",
+          "in_progress",
+          "validated",
+          "error",
+          "terminal",
+        ],
+        transitions: [
+          {
+            transitionId: "FLT-amt-B1",
+            from: "initial",
+            to: "in_progress",
+            trigger: "user_input",
+          },
+          {
+            transitionId: "FLT-amt-B2",
+            from: "in_progress",
+            to: "validated",
+            trigger: "validation_pass",
+          },
+          {
+            transitionId: "FLT-amt-B3",
+            from: "in_progress",
+            to: "error",
+            trigger: "validation_fail",
+          },
+        ],
+      },
+    ],
+  };
+  const report = validateGeneratedTestCases({
+    jobId: "job-2167-aggregation",
+    generatedAt: GENERATED_AT,
+    list: buildList([
+      buildCase({
+        id: "tc-aggregation",
+        steps: [
+          {
+            index: 1,
+            action: "Enter IBAN",
+            fieldLifecycleTransitionId: "FLT-iban-A1",
+          },
+          {
+            index: 2,
+            action: "Trigger validation pass on IBAN",
+            expected: "Confirmation displayed",
+            fieldLifecycleTransitionId: "FLT-iban-A2",
+          },
+          {
+            index: 3,
+            action: "Trigger validation fail on IBAN",
+            expected: "Validation error displayed",
+            fieldLifecycleTransitionId: "FLT-iban-A3",
+          },
+        ],
+      }),
+    ]),
+    intent: buildIntent(),
+    workflowTopology: topology,
+  });
+  const mandatoryErrors = report.issues.filter(
+    (issue) => issue.code === "uncovered_field_lifecycle_transition",
+  );
+  assert.equal(
+    mandatoryErrors.length,
+    0,
+    `Epic #2167 Q0 regression guard: (screen, trigger) aggregation must produce 0 errors when each trigger is covered on any field; got ${mandatoryErrors.length}: ${JSON.stringify(mandatoryErrors.map((e) => e.message))}`,
+  );
+});
+
+test("Epic #2167 Q0: mandatory tier emits ONE error per (screenId, trigger) group when no transition in the group is anchored", () => {
+  // Companion to the previous pin: when a screen has 2 fields with
+  // 2 mandatory triggers each (validation_pass + validation_fail) but
+  // the generator did NOT anchor any validation_pass or
+  // validation_fail steps, the validator must emit exactly TWO
+  // errors (one per trigger group), not four (one per field ×
+  // transition). The error message must reference the screen and
+  // trigger so an auditor can locate the gap.
+  const topology: WorkflowTopology = {
+    ...buildWorkflowTopology(),
+    fieldLifecycles: [
+      {
+        fieldId: "s-screen::field::n-1",
+        states: [
+          "initial",
+          "focused",
+          "in_progress",
+          "validated",
+          "error",
+          "terminal",
+        ],
+        transitions: [
+          {
+            transitionId: "FLT-1A",
+            from: "in_progress",
+            to: "validated",
+            trigger: "validation_pass",
+          },
+          {
+            transitionId: "FLT-1B",
+            from: "in_progress",
+            to: "error",
+            trigger: "validation_fail",
+          },
+        ],
+      },
+      {
+        fieldId: "s-screen::field::n-2",
+        states: [
+          "initial",
+          "focused",
+          "in_progress",
+          "validated",
+          "error",
+          "terminal",
+        ],
+        transitions: [
+          {
+            transitionId: "FLT-2A",
+            from: "in_progress",
+            to: "validated",
+            trigger: "validation_pass",
+          },
+          {
+            transitionId: "FLT-2B",
+            from: "in_progress",
+            to: "error",
+            trigger: "validation_fail",
+          },
+        ],
+      },
+    ],
+  };
+  const report = validateGeneratedTestCases({
+    jobId: "job-2167-no-anchors",
+    generatedAt: GENERATED_AT,
+    list: buildList([
+      buildCase({
+        id: "tc-no-anchors",
+        // No steps anchor any mandatory transition.
+        steps: [
+          {
+            index: 1,
+            action: "Just focus the field",
+            expected: "Field is focused",
+          },
+        ],
+      }),
+    ]),
+    intent: buildIntent(),
+    workflowTopology: topology,
+  });
+  const mandatoryErrors = report.issues.filter(
+    (issue) => issue.code === "uncovered_field_lifecycle_transition",
+  );
+  assert.equal(
+    mandatoryErrors.length,
+    2,
+    `Epic #2167 Q0 regression guard: 2 fields × 2 triggers must aggregate to 2 errors (one per trigger group), not 4; got ${mandatoryErrors.length}`,
+  );
+  assert.ok(
+    mandatoryErrors.every((err) => err.message.includes('screen "s-screen"')),
+    "error messages must name the screen",
+  );
+  assert.ok(
+    mandatoryErrors.some((err) => err.message.includes('"validation_pass"')) &&
+      mandatoryErrors.some((err) => err.message.includes('"validation_fail"')),
+    "must surface both validation_pass and validation_fail trigger groups",
+  );
+});
+
 test("field lifecycle transitions pass when every transition is covered by generated steps", () => {
   const report = validateGeneratedTestCases({
     jobId: "job-1",

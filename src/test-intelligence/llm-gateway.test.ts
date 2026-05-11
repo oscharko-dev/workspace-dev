@@ -618,8 +618,8 @@ test("structured-output success: accepts message.content text-part arrays", asyn
             message: {
               role: "assistant",
               content: [
-                { type: "text", text: "{\"ack\":\"" },
-                { type: "text", text: "ok\"}" },
+                { type: "text", text: '{"ack":"' },
+                { type: "text", text: 'ok"}' },
               ],
             },
           },
@@ -670,7 +670,7 @@ test("structured-output success: accepts reasoning_content only when it satisfie
             message: {
               role: "assistant",
               content: "",
-              reasoning_content: "{\"ack\":\"ok\"}",
+              reasoning_content: '{"ack":"ok"}',
             },
           },
         ],
@@ -1038,7 +1038,9 @@ test("incomplete finish_reason triggers bounded output-token expansion and retri
     sleep: async () => undefined,
     retryBackoffMs: [0, 0, 0],
   });
-  const result = await client.generate(sampleRequest({ maxOutputTokens: 1_000 }));
+  const result = await client.generate(
+    sampleRequest({ maxOutputTokens: 1_000 }),
+  );
   assert.equal(attempts, 2);
   assert.equal(payloadLimits.length, 2);
   assert.deepEqual(payloadLimits, [1_000, 2_000]);
@@ -1449,6 +1451,102 @@ test('wireStructuredOutputMode: "none" surfaces schema_invalid when free-form co
   if (result.outcome === "error") {
     assert.equal(result.errorClass, "schema_invalid");
     assert.match(result.message, /not valid JSON/);
+  }
+});
+
+test('Epic #2167 Q0: "none" mode recovers JSON wrapped in a ```json markdown fence', async () => {
+  // Real production behavior on Azure Foundry: `gpt-oss-120b` with
+  // `wireStructuredOutputMode: "none"` wraps the JSON object in a
+  // ```json … ``` markdown fence ~5-15 % of the time on large prompts
+  // (M7FGS / Test-View-03 banking mask). The extractor must recover
+  // the JSON before the response is rejected; the recovered payload
+  // is still schema-validated below.
+  const client = createLlmGatewayClient(
+    { ...baseConfig, wireStructuredOutputMode: "none" },
+    {
+      fetchImpl: async () =>
+        okJsonResponse({
+          choices: [
+            {
+              finish_reason: "stop",
+              message: {
+                role: "assistant",
+                content:
+                  'Hier ist das Ergebnis:\n\n```json\n{"ack":"ok"}\n```\n',
+              },
+            },
+          ],
+          usage: { prompt_tokens: 10, completion_tokens: 5 },
+        }),
+      apiKeyProvider: () => "k",
+    },
+  );
+  const result = await client.generate(sampleRequest());
+  assert.equal(result.outcome, "success");
+  if (result.outcome === "success") {
+    assert.deepEqual(result.content, { ack: "ok" });
+  }
+});
+
+test('Epic #2167 Q0: "none" mode recovers JSON from a prose prelude', async () => {
+  // Companion to the fence-recovery case: model emits prose first,
+  // then a balanced JSON object. The bracket-balanced scanner must
+  // recover the first complete object without choking on the prose.
+  const client = createLlmGatewayClient(
+    { ...baseConfig, wireStructuredOutputMode: "none" },
+    {
+      fetchImpl: async () =>
+        okJsonResponse({
+          choices: [
+            {
+              finish_reason: "stop",
+              message: {
+                role: "assistant",
+                content:
+                  'Sure, here you go: {"ack":"ok"} — let me know if you need more.',
+              },
+            },
+          ],
+          usage: { prompt_tokens: 10, completion_tokens: 5 },
+        }),
+      apiKeyProvider: () => "k",
+    },
+  );
+  const result = await client.generate(sampleRequest());
+  assert.equal(result.outcome, "success");
+  if (result.outcome === "success") {
+    assert.deepEqual(result.content, { ack: "ok" });
+  }
+});
+
+test('Epic #2167 Q0: "none" mode recovery still rejects JSON that violates the schema', async () => {
+  // The recovery widens the parse surface but must NOT weaken the
+  // schema contract. Content that parses as JSON but fails the
+  // `responseSchema` check must still surface as `schema_invalid`.
+  const client = createLlmGatewayClient(
+    { ...baseConfig, wireStructuredOutputMode: "none" },
+    {
+      fetchImpl: async () =>
+        okJsonResponse({
+          choices: [
+            {
+              finish_reason: "stop",
+              message: {
+                role: "assistant",
+                content: 'Result:\n```json\n{"wrong_field":"value"}\n```',
+              },
+            },
+          ],
+          usage: { prompt_tokens: 10, completion_tokens: 5 },
+        }),
+      apiKeyProvider: () => "k",
+    },
+  );
+  const result = await client.generate(sampleRequest());
+  assert.equal(result.outcome, "error");
+  if (result.outcome === "error") {
+    assert.equal(result.errorClass, "schema_invalid");
+    assert.match(result.message, /violates response schema/);
   }
 });
 
