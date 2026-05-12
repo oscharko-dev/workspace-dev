@@ -56,7 +56,7 @@ export function useImportSessionEvents(
       if (fetchImpl !== undefined) {
         const response = await fetchImpl(url);
         const text = await response.text();
-        let parsed: unknown = {};
+        let parsed: unknown;
         try {
           parsed = text.trim().length > 0 ? JSON.parse(text) : {};
         } catch {
