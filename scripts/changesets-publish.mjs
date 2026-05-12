@@ -38,8 +38,7 @@ const SUPPORTED_PUBLISH_AUTH_MODES = new Set([
   "npm-token"
 ]);
 
-export const resolvePublishEnv = () => {
-  const publishEnv = { ...process.env };
+export const resolvePublishAuthMode = (publishEnv = process.env) => {
   const publishAuthMode = String(
     publishEnv.WORKSPACE_DEV_PUBLISH_AUTH_MODE ?? "trusted-publisher-oidc"
   ).trim();
@@ -49,6 +48,13 @@ export const resolvePublishEnv = () => {
       `Unsupported WORKSPACE_DEV_PUBLISH_AUTH_MODE '${publishAuthMode}'. Expected trusted-publisher-oidc or npm-token.`
     );
   }
+
+  return publishAuthMode;
+};
+
+export const resolvePublishEnv = () => {
+  const publishEnv = { ...process.env };
+  const publishAuthMode = resolvePublishAuthMode(publishEnv);
 
   if (publishAuthMode === "npm-token") {
     const token = String(
@@ -99,9 +105,7 @@ export const resolvePublishEnv = () => {
 };
 
 export const resolvePublishCommand = (npmTag, publishEnv = process.env) => {
-  const publishAuthMode = String(
-    publishEnv.WORKSPACE_DEV_PUBLISH_AUTH_MODE ?? "trusted-publisher-oidc"
-  ).trim();
+  const publishAuthMode = resolvePublishAuthMode(publishEnv);
 
   if (publishEnv.GITHUB_ACTIONS === "true" && publishAuthMode === "trusted-publisher-oidc") {
     return {

@@ -40,5 +40,24 @@ test("changesets release workflow: trusted publishing uses token-free npmrc and 
   assert.match(authStep, /ACTIONS_ID_TOKEN_REQUEST_TOKEN/);
   assert.match(authStep, /audience=npm%3Aregistry\.npmjs\.org/);
   assert.match(authStep, /echo "::add-mask::\$\{NPM_ID_TOKEN\}"/);
-  assert.match(authStep, /echo "NPM_ID_TOKEN=\$\{NPM_ID_TOKEN\}" >> "\$GITHUB_ENV"/);
+  assert.match(authStep, /NPM_ID_TOKEN_FILE="\$\{RUNNER_TEMP\}\/npm-id-token"/);
+  assert.match(authStep, /printf '%s' "\$\{NPM_ID_TOKEN\}" > "\$\{NPM_ID_TOKEN_FILE\}"/);
+  assert.match(authStep, /chmod 600 "\$\{NPM_ID_TOKEN_FILE\}"/);
+  assert.match(authStep, /echo "NPM_ID_TOKEN_FILE=\$\{NPM_ID_TOKEN_FILE\}" >> "\$GITHUB_ENV"/);
+  assert.doesNotMatch(authStep, /NPM_ID_TOKEN=\$\{NPM_ID_TOKEN\}" >> "\$GITHUB_ENV"/);
+});
+
+test("changesets release workflow: trusted publishing token is scoped to publish step", async () => {
+  const workflow = await readReleaseWorkflow();
+  const publishStep = extractStep(
+    workflow,
+    "Apply pending changesets and publish package",
+    "Create GitHub release and attach evidence assets",
+  );
+
+  assert.match(publishStep, /cleanup_npm_id_token\(\)/);
+  assert.match(publishStep, /trap cleanup_npm_id_token EXIT/);
+  assert.match(publishStep, /NPM_ID_TOKEN="\$\(< "\$\{NPM_ID_TOKEN_FILE\}"\)"/);
+  assert.match(publishStep, /export NPM_ID_TOKEN/);
+  assert.match(publishStep, /rm -f "\$\{NPM_ID_TOKEN_FILE\}"/);
 });
