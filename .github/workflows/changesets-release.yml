@@ -94,9 +94,23 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          pnpm add --global --ignore-scripts npm@11.13.0
+          npm install --global --ignore-scripts npm@11.14.1
           hash -r
-          npm --version
+          NPM_CLI_VERSION="$(npm --version)"
+          echo "npm CLI version: ${NPM_CLI_VERSION}"
+          node - "${NPM_CLI_VERSION}" <<'NODE'
+          const rawVersion = String(process.argv[2] ?? "").trim();
+          const version = rawVersion.split(".").map(Number);
+          if (version.length < 3 || version.some((part) => !Number.isInteger(part))) {
+            console.error(`Unable to parse npm CLI version: ${rawVersion}`);
+            process.exit(1);
+          }
+          const [major, minor, patch] = version;
+          if (major < 11 || (major === 11 && (minor < 5 || (minor === 5 && patch < 1)))) {
+            console.error(`npm trusted publishing requires npm CLI >= 11.5.1; found ${rawVersion}`);
+            process.exit(1);
+          }
+          NODE
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
