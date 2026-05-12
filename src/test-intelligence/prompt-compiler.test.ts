@@ -9,7 +9,6 @@ import {
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
   type CoveragePlan,
-  type TestDesignModel,
   VISUAL_SIDECAR_SCHEMA_VERSION,
   type CompiledPromptCustomContext,
   type CompiledPromptModelBinding,
@@ -146,246 +145,6 @@ test("compiler: produces stable inputHash, promptHash, schemaHash, cacheKey", as
   assert.equal(a.request.hashes.cacheKey, b.request.hashes.cacheKey);
 });
 
-test("compiler: replay identity ignores volatile execution jobId", async () => {
-  const { intent, visual } = await loadFixture();
-  const a = compilePrompt({
-    jobId: "ti-cli-111",
-    intent,
-    visual,
-    modelBinding: sampleModelBinding,
-    visualBinding: sampleVisualBinding,
-    policyBundleVersion: "policy-2026-04-25",
-  });
-  const b = compilePrompt({
-    jobId: "ti-cli-222",
-    intent,
-    visual,
-    modelBinding: sampleModelBinding,
-    visualBinding: sampleVisualBinding,
-    policyBundleVersion: "policy-2026-04-25",
-  });
-  assert.equal(a.request.hashes.inputHash, b.request.hashes.inputHash);
-  assert.equal(a.request.hashes.cacheKey, b.request.hashes.cacheKey);
-  assert.equal(a.prefix, b.prefix);
-});
-
-test("compiler: replay identity ignores volatile coverage visual refs", async () => {
-  const intent = await loadBaselineSimpleFormIntent();
-  const buildPlan = (visualRefs: readonly string[]): CoveragePlan => ({
-    jobId: "job-volatile-visual-refs",
-    schemaVersion: "1.0.0",
-    mutationKillRateTarget: 0.85,
-    perScreen: [
-      {
-        screenId: "s-newsletter",
-        techniqueQuotas: [
-          { technique: "equivalence_partitioning", minCount: 1 },
-        ],
-      },
-    ],
-    perElement: [
-      {
-        screenId: "s-newsletter",
-        elementId: "email",
-        mustHaveCase: true,
-        riskClass: "medium",
-      },
-    ],
-    minimumCases: [
-      {
-        requirementId: `volatile-${visualRefs.join("-")}`,
-        technique: "equivalence_partitioning",
-        reasonCode: "element_partition",
-        screenId: "s-newsletter",
-        targetIds: ["email"],
-        sourceRefs: ["figma-primary"],
-        visualRefs,
-      },
-    ],
-    recommendedCases: [],
-    techniques: ["equivalence_partitioning"],
-  });
-  const a = compilePrompt({
-    jobId: "ti-cli-visual-a",
-    intent,
-    coveragePlan: buildPlan(["visual:s-newsletter:1", "visual:s-newsletter:2"]),
-    modelBinding: sampleModelBinding,
-    visualBinding: sampleVisualBinding,
-    policyBundleVersion: "policy-2026-04-25",
-  });
-  const b = compilePrompt({
-    jobId: "ti-cli-visual-b",
-    intent,
-    coveragePlan: buildPlan(["visual:s-newsletter:9"]),
-    modelBinding: sampleModelBinding,
-    visualBinding: sampleVisualBinding,
-    policyBundleVersion: "policy-2026-04-25",
-  });
-
-  assert.equal(a.request.hashes.inputHash, b.request.hashes.inputHash);
-  assert.equal(a.request.hashes.cacheKey, b.request.hashes.cacheKey);
-  assert.equal(a.prefix, b.prefix);
-  assert.equal(a.request.userPrompt.includes("visual:s-newsletter:"), false);
-});
-
-test("compiler: replay identity ignores visual-only model drift", async () => {
-  const intent = await loadBaselineSimpleFormIntent();
-  const buildModel = (input: {
-    sourceHash: string;
-    visualRefs: readonly string[];
-    visualQuestionId: string;
-    visualQuestionText: string;
-    visualConstraintId: string;
-    visualConstraintText: string;
-  }): TestDesignModel => ({
-    schemaVersion: "1.0.0",
-    jobId: "job-visual-model-drift",
-    sourceHash: input.sourceHash,
-    screens: [
-      {
-        screenId: "s-newsletter",
-        name: "Newsletter",
-        elements: [
-          {
-            elementId: "email",
-            label: "Email",
-            kind: "text",
-          },
-        ],
-        actions: [],
-        validations: [],
-        calculations: [],
-        visualRefs: input.visualRefs,
-        sourceRefs: ["figma-primary"],
-      },
-    ],
-    businessRules: [],
-    calculationConstraints: [
-      {
-        constraintId: "calc-constraint-stable",
-        kind: "exclude_component",
-        subject: "financing_need",
-        component: "vat",
-        evidenceText:
-          "custom_context_markdown: Die MwSt. ist nicht Teil des Finanzierungsbedarfs.",
-      },
-      {
-        constraintId: input.visualConstraintId,
-        kind: "exclude_component",
-        subject: "financing_need",
-        component: "vat",
-        evidenceText: input.visualConstraintText,
-      },
-    ],
-    assumptions: [],
-    openQuestions: [
-      {
-        openQuestionId: "open-question-stable",
-        text: "custom_context_markdown: Confirm whether Email is mandatory.",
-      },
-      {
-        openQuestionId: input.visualQuestionId,
-        text: input.visualQuestionText,
-      },
-    ],
-    riskSignals: [],
-  });
-  const buildPlan = (visualQuestionId: string): CoveragePlan => ({
-    jobId: "job-visual-model-drift",
-    schemaVersion: "1.0.0",
-    mutationKillRateTarget: 0.85,
-    perScreen: [
-      {
-        screenId: "s-newsletter",
-        techniqueQuotas: [
-          { technique: "equivalence_partitioning", minCount: 1 },
-        ],
-      },
-    ],
-    perElement: [
-      {
-        screenId: "s-newsletter",
-        elementId: "email",
-        mustHaveCase: true,
-        riskClass: "medium",
-      },
-    ],
-    minimumCases: [
-      {
-        requirementId: "cov-email",
-        technique: "equivalence_partitioning",
-        reasonCode: "element_partition",
-        screenId: "s-newsletter",
-        targetIds: ["email"],
-        sourceRefs: ["figma-primary"],
-        visualRefs: ["visual:s-newsletter:volatile"],
-      },
-    ],
-    recommendedCases: [
-      {
-        requirementId: "cov-stable-question",
-        technique: "error_guessing",
-        reasonCode: "open_question_probe",
-        targetIds: ["open-question-stable"],
-        sourceRefs: ["custom-context-markdown"],
-        visualRefs: [],
-      },
-      {
-        requirementId: `cov-${visualQuestionId}`,
-        technique: "error_guessing",
-        reasonCode: "open_question_probe",
-        targetIds: [visualQuestionId],
-        sourceRefs: ["figma-primary"],
-        visualRefs: ["visual:s-newsletter:volatile"],
-      },
-    ],
-    techniques: ["equivalence_partitioning", "error_guessing"],
-  });
-  const a = compilePrompt({
-    jobId: "ti-cli-visual-model-a",
-    intent,
-    testDesignModel: buildModel({
-      sourceHash: "a".repeat(64),
-      visualRefs: ["visual:s-newsletter:email-input"],
-      visualQuestionId: "open-question-visual-a",
-      visualQuestionText:
-        'Visual region "Email field" on screen "Newsletter" was not mapped to an intent element or action. Should test coverage include it?',
-      visualConstraintId: "calc-constraint-visual-a",
-      visualConstraintText:
-        'Visual region "VAT" on screen "Newsletter" is ambiguous: None.',
-    }),
-    coveragePlan: buildPlan("open-question-visual-a"),
-    modelBinding: sampleModelBinding,
-    visualBinding: sampleVisualBinding,
-    policyBundleVersion: "policy-2026-04-25",
-  });
-  const b = compilePrompt({
-    jobId: "ti-cli-visual-model-b",
-    intent,
-    testDesignModel: buildModel({
-      sourceHash: "b".repeat(64),
-      visualRefs: ["visual:s-newsletter:1"],
-      visualQuestionId: "open-question-visual-b",
-      visualQuestionText:
-        'Visual region "1" on screen "Newsletter" was not mapped to an intent element or action. Should test coverage include it?',
-      visualConstraintId: "calc-constraint-visual-b",
-      visualConstraintText:
-        'Visual region "1" on screen "Newsletter" is ambiguous: None.',
-    }),
-    coveragePlan: buildPlan("open-question-visual-b"),
-    modelBinding: sampleModelBinding,
-    visualBinding: sampleVisualBinding,
-    policyBundleVersion: "policy-2026-04-25",
-  });
-
-  assert.equal(a.request.hashes.inputHash, b.request.hashes.inputHash);
-  assert.equal(a.request.hashes.cacheKey, b.request.hashes.cacheKey);
-  assert.equal(a.prefix, b.prefix);
-  assert.equal(a.request.userPrompt.includes("Visual region"), false);
-  assert.equal(a.request.userPrompt.includes("open-question-visual"), false);
-  assert.equal(a.request.userPrompt.includes("calc-constraint-visual"), false);
-});
-
 test("compiler: hash differs when modelRevision changes", async () => {
   const { intent, visual } = await loadFixture();
   const a = compilePrompt({
@@ -431,7 +190,7 @@ test("compiler: hash differs when policy bundle version changes", async () => {
   assert.notEqual(a.request.hashes.cacheKey, b.request.hashes.cacheKey);
 });
 
-test("compiler: replay identity ignores optional visual sidecar deployment changes", async () => {
+test("compiler: hash differs when visual sidecar deployment changes", async () => {
   const { intent, visual } = await loadFixture();
   const primary = compilePrompt({
     jobId: "job-1",
@@ -453,13 +212,13 @@ test("compiler: replay identity ignores optional visual sidecar deployment chang
     },
     policyBundleVersion: "policy-2026-04-25",
   });
-  assert.equal(
+  assert.notEqual(
     primary.request.hashes.cacheKey,
     fallback.request.hashes.cacheKey,
   );
 });
 
-test("compiler: replay identity ignores optional visual fixture hash changes", async () => {
+test("compiler: hash differs when fixture image hash changes", async () => {
   const { intent, visual } = await loadFixture();
   const a = compilePrompt({
     jobId: "job-1",
@@ -477,7 +236,7 @@ test("compiler: replay identity ignores optional visual fixture hash changes", a
     visualBinding: { ...sampleVisualBinding, fixtureImageHash: "0".repeat(64) },
     policyBundleVersion: "policy-2026-04-25",
   });
-  assert.equal(a.request.hashes.cacheKey, b.request.hashes.cacheKey);
+  assert.notEqual(a.request.hashes.cacheKey, b.request.hashes.cacheKey);
 });
 
 test("compiler: includes the unresolved-validation anti-fabrication rule in the prompt preamble", () => {

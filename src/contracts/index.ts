@@ -8934,7 +8934,6 @@ export interface ReplayCacheKey {
   seed?: number;
   sourceMixPlanHash?: string;
   contextBudgetHash?: string;
-  deterministicPostProcessingVersion?: string;
   constrainedDecodingAdapterId?: LlmConstrainedDecodingAdapterId;
   constrainedDecodingAdapterVersion?: string;
   constrainedDecodingFallbackReason?: string;

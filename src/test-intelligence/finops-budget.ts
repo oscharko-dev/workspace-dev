@@ -29,7 +29,6 @@ import {
 export const ADVERSARIAL_CRITIC_BUDGET_FRACTION = 0.25 as const;
 export const PRODUCTION_GENERATOR_WALL_CLOCK_MS: number =
   24 * 60 * 60 * 1000;
-export const VISUAL_SIDECAR_WALL_CLOCK_MS = 60_000 as const;
 
 export interface AdversarialCriticBudgetLimits {
   readonly maxInputTokens?: number;
@@ -127,7 +126,7 @@ export const EU_BANKING_DEFAULT_FINOPS_BUDGET: FinOpsBudgetEnvelope =
       visual_primary: Object.freeze({
         maxInputTokensPerRequest: 100_000,
         maxOutputTokensPerRequest: 16_000,
-        maxWallClockMsPerRequest: VISUAL_SIDECAR_WALL_CLOCK_MS,
+        maxWallClockMsPerRequest: 300_000,
         maxRetriesPerRequest: 4,
         maxAttempts: 6,
         maxImageBytesPerRequest: 16 * 1024 * 1024,
@@ -135,7 +134,7 @@ export const EU_BANKING_DEFAULT_FINOPS_BUDGET: FinOpsBudgetEnvelope =
       visual_fallback: Object.freeze({
         maxInputTokensPerRequest: 100_000,
         maxOutputTokensPerRequest: 16_000,
-        maxWallClockMsPerRequest: VISUAL_SIDECAR_WALL_CLOCK_MS,
+        maxWallClockMsPerRequest: 300_000,
         maxRetriesPerRequest: 4,
         maxAttempts: 6,
         maxImageBytesPerRequest: 16 * 1024 * 1024,
@@ -442,9 +441,9 @@ export const PRODUCTION_FINOPS_BUDGET_ENVELOPE: FinOpsBudgetEnvelope =
         // 6 attempts — primary path is best-effort but we want maximum
         // coverage before falling through to the fallback.
         maxAttempts: 6,
-        // 60s per request — visual sidecar is optional and must not hold
-        // deterministic replay hostage behind slow vision-deployment starts.
-        maxWallClockMsPerRequest: VISUAL_SIDECAR_WALL_CLOCK_MS,
+        // 5 minutes per request — accommodates slow first-byte from
+        // vision-deployment cold starts.
+        maxWallClockMsPerRequest: 300_000,
       }),
       visual_fallback: Object.freeze({
         // Same generous caps as primary; the only difference is the
@@ -455,9 +454,9 @@ export const PRODUCTION_FINOPS_BUDGET_ENVELOPE: FinOpsBudgetEnvelope =
         maxImageBytesPerRequest: 16 * 1024 * 1024,
         maxRetriesPerRequest: 4,
         maxAttempts: 6,
-        // Same wall-clock as primary: fallback is for graceful degradation,
-        // not an unbounded second wait path before deterministic replay.
-        maxWallClockMsPerRequest: VISUAL_SIDECAR_WALL_CLOCK_MS,
+        // 5 minutes per request — fallback deployments tolerate a longer
+        // first byte than the primary.
+        maxWallClockMsPerRequest: 300_000,
         // 6 fallback attempts before giving up — quality-first stance:
         // a failed visual binding contaminates faithfulness scoring.
         maxFallbackAttempts: 6,

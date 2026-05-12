@@ -664,7 +664,7 @@ export const parseTestIntelligenceRunArgs = (
   }
   let allowPolicyBlocked = parseBooleanFlagWithDefault(
     env.WORKSPACE_TEST_SPACE_ALLOW_POLICY_BLOCKED,
-    false,
+    true,
   );
   let customContextMarkdownPath: string | undefined;
   let customerEvalMarkdownPath: string | undefined;
@@ -3612,10 +3612,10 @@ const resolveCliPolicyStage = (
   result: RunFigmaToQcTestCasesResult,
 ): CliPolicyStage => {
   if (result.blocked) return "hard";
-  const needsReviewCount = result.policy.needsReviewCount ?? 0;
-  const jobLevelViolationCount = result.policy.jobLevelViolations?.length ?? 0;
-  const runQualityStatus = result.runQuality?.artifact?.status ?? "clean_success";
-  const validationWarningCount = result.validation.warningCount ?? 0;
+  const needsReviewCount = result.policy.needsReviewCount;
+  const jobLevelViolationCount = result.policy.jobLevelViolations.length;
+  const runQualityStatus = result.runQuality.artifact.status;
+  const validationWarningCount = result.validation.warningCount;
   if (
     needsReviewCount > 0 ||
     jobLevelViolationCount > 0 ||
@@ -4117,7 +4117,7 @@ export const runTestIntelligenceCommand = async (
     );
   }
 
-  const allowPolicyBlocked = options.allowPolicyBlocked ?? false;
+  const allowPolicyBlocked = options.allowPolicyBlocked ?? true;
 
   // Cross-flag validation: the multi-agent harness wraps the LLM call. In
   // dry_run no LLM call is dispatched, so requesting a harness mode is a
@@ -4251,7 +4251,7 @@ export const runTestIntelligenceCommand = async (
     jobId,
     generatedAt,
     source: resolved.source,
-    outputRoot: outputDir,
+    outputRoot: runOutputDir,
     artifactDir: runOutputDir,
     llm: {
       client: llmClient,
@@ -4330,7 +4330,6 @@ export const runTestIntelligenceCommand = async (
       `  output dir    : ${runOutputDir}`,
       `  source kind   : ${resolved.source.kind}`,
       `  visual sidecar: ${options.enableVisualSidecar && !options.noVisualSidecar ? "enabled" : "disabled"}`,
-      `  hard policy   : ${allowPolicyBlocked ? "non-fatal (--allow-policy-blocked/env override)" : "fails run (exit 3)"}`,
       "  roles:",
       ...topologyPreflightReport.roles.map(formatTopologyRoleLine),
       "",

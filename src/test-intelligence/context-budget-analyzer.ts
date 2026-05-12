@@ -26,8 +26,6 @@ const RETENTION_ORDER: readonly ContextBudgetCategoryKind[] = [
   "system_instructions",
 ] as const;
 
-const CONTEXT_BUDGET_HASH_RUN_ID = "stable-context-budget-input" as const;
-
 const compactedBlock = (input: {
   kind: ContextBudgetCategoryKind;
   artifactHashes: readonly string[];
@@ -190,25 +188,6 @@ const buildReport = (input: {
   };
 };
 
-const buildContextBudgetHash = (input: {
-  renderedUserPrompt: string;
-  report: ContextBudgetReport;
-}): string => {
-  const reportForHash: ContextBudgetReport = {
-    ...input.report,
-    jobId: CONTEXT_BUDGET_HASH_RUN_ID,
-    ...(input.report.parentJobId !== undefined
-      ? { parentJobId: CONTEXT_BUDGET_HASH_RUN_ID }
-      : {}),
-  };
-  return sha256Hex(
-    canonicalJson({
-      renderedUserPrompt: input.renderedUserPrompt,
-      report: reportForHash,
-    }),
-  );
-};
-
 const invalidBudgetReport = (
   input: AnalyzeContextBudgetInput,
   estimatedInputTokens: number,
@@ -225,7 +204,12 @@ const invalidBudgetReport = (
     report,
     renderedUserPrompt,
     finalEstimatedInputTokens: estimatedInputTokens,
-    contextBudgetHash: buildContextBudgetHash({ renderedUserPrompt, report }),
+    contextBudgetHash: sha256Hex(
+      canonicalJson({
+        renderedUserPrompt,
+        report,
+      }),
+    ),
   };
 };
 
@@ -322,7 +306,12 @@ export const analyzeContextBudget = (
     action,
     estimatedInputTokens: finalEstimatedInputTokens,
   });
-  const contextBudgetHash = buildContextBudgetHash({ renderedUserPrompt, report });
+  const contextBudgetHash = sha256Hex(
+    canonicalJson({
+      renderedUserPrompt,
+      report,
+    }),
+  );
   return {
     report,
     renderedUserPrompt,

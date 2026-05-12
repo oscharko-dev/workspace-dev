@@ -101,8 +101,6 @@ const USER_PROMPT_PREAMBLE = [
   "For every screen with input fields you MUST emit at least one type=\"accessibility\" test case anchored to that screen via figmaTraceRefs[].screenId; cover keyboard navigation, focus order/visible focus, label-for-input, and screen-reader announcements (aria-live).",
 ].join(" ");
 
-const PROMPT_CACHE_RUN_ID = "stable-generation-input" as const;
-
 const PREFIX_END_MARKER = "--- prefix end ---" as const;
 
 const DEFAULT_ROLE_STEP_ID = "test_generation" as const;
@@ -253,18 +251,6 @@ export const compilePrompt = (
       jobId: input.jobId,
       coveragePlan,
     });
-  const promptTestDesignModel = normalizeTestDesignModelForPrompt(testDesignModel);
-  const promptCoveragePlan = normalizeCoveragePlanForPrompt(
-    coveragePlan,
-    new Set(
-      promptTestDesignModel.openQuestions.map(
-        (openQuestion) => openQuestion.openQuestionId,
-      ),
-    ),
-  );
-  const promptWorkflowTopology =
-    normalizeRunIdentityForPrompt(workflowTopology);
-  const promptRiskRanking = normalizeRunIdentityForPrompt(riskRanking);
   const customerRubric = normalizeCustomerRubric(
     input.customerRubric,
     input.policyBundleVersion,
@@ -281,16 +267,15 @@ export const compilePrompt = (
   const stablePrefixSection = buildStablePrefixSection({
     roleStepId,
     testDesignModelPromptJson: serializePromptTestDesignModel(
-      promptTestDesignModel,
+      testDesignModel,
       input.intent,
     ),
     customerRubric,
     agentLessonsJson: canonicalJson(agentLessons),
   });
-  const coveragePlanSection = buildCoveragePlanSection(promptCoveragePlan);
-  const workflowTopologySection =
-    buildWorkflowTopologySection(promptWorkflowTopology);
-  const riskPrioritiesSection = buildRiskPrioritiesSection(promptRiskRanking);
+  const coveragePlanSection = buildCoveragePlanSection(coveragePlan);
+  const workflowTopologySection = buildWorkflowTopologySection(workflowTopology);
+  const riskPrioritiesSection = buildRiskPrioritiesSection(riskRanking);
   const sourceContextSection = buildSourceContextSection({
     customContext,
     sourceMixPlan,
@@ -339,9 +324,10 @@ export const compilePrompt = (
   const cacheablePrefixHash = sha256Hex(prefix);
 
   const inputHash = computeInputHash(
-    promptTestDesignModel,
-    promptCoveragePlan,
-    promptRiskRanking,
+    testDesignModel,
+    coveragePlan,
+    riskRanking,
+    visualBinding,
     customerRubric,
     agentLessons,
     customContext,
@@ -366,10 +352,13 @@ export const compilePrompt = (
     policyBundleVersion: input.policyBundleVersion,
     redactionPolicyVersion: REDACTION_POLICY_VERSION,
     visualSidecarSchemaVersion: VISUAL_SIDECAR_SCHEMA_VERSION,
-    visualSelectedDeployment: "optional-visual-sidecar",
-    visualFallbackReason: "none",
+    visualSelectedDeployment: visualBinding.selectedDeployment,
+    visualFallbackReason: visualBinding.fallbackReason,
     promptTemplateVersion: TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
     cacheablePrefixHash,
+    ...(visualBinding.fixtureImageHash !== undefined
+      ? { fixtureImageHash: visualBinding.fixtureImageHash }
+      : {}),
     ...(input.modelBinding.seed !== undefined
       ? { seed: input.modelBinding.seed }
       : {}),
@@ -1115,146 +1104,11 @@ const normalizeAgentLessons = (
   return Object.freeze(lessons.map((lesson) => toPromptSafeAgentLesson(lesson)));
 };
 
-const normalizeRunIdentityForPrompt = <T extends { readonly jobId: string }>(
-  value: T,
-): T => ({ ...value, jobId: PROMPT_CACHE_RUN_ID });
-
-const normalizeTestDesignModelForPrompt = (
-  model: TestDesignModel,
-): TestDesignModel => {
-  const screens = model.screens.map((screen) => ({
-    ...screen,
-    visualRefs: [],
-  }));
-  const calculationConstraints = model.calculationConstraints.filter(
-    (constraint) => !isVisualSidecarText(constraint.evidenceText),
-  );
-  const openQuestions = model.openQuestions.filter(
-    (openQuestion) => !isVisualSidecarOpenQuestion(openQuestion.text),
-  );
-  const riskSignals = model.riskSignals.filter(
-    (riskSignal) => !isVisualSidecarRiskSignal(riskSignal.text),
-  );
-  const promptModel: TestDesignModel = {
-    ...normalizeRunIdentityForPrompt(model),
-    sourceHash: sha256Hex({
-      schemaVersion: model.schemaVersion,
-      screens,
-      businessRules: model.businessRules,
-      calculationConstraints,
-      assumptions: model.assumptions,
-      openQuestions,
-      riskSignals,
-    }),
-    screens,
-    calculationConstraints,
-    openQuestions,
-    riskSignals,
-  };
-  return promptModel;
-};
-
-const isVisualSidecarOpenQuestion = (text: string): boolean =>
-  /^Visual region ".+" on screen ".+" (?:was not mapped|is ambiguous)\b/u.test(
-    text,
-  );
-
-const isVisualSidecarText = (text: string): boolean =>
-  /^Visual region ".+"/u.test(text) ||
-  /^Visual sidecar flagged \S+ on region \S+/u.test(text);
-
-const isVisualSidecarRiskSignal = (text: string): boolean =>
-  isVisualSidecarText(text);
-
-const normalizeCoveragePlanForPrompt = (
-  coveragePlan: CoveragePlan,
-  allowedOpenQuestionIds: ReadonlySet<string>,
-): CoveragePlan => ({
-  ...normalizeRunIdentityForPrompt(coveragePlan),
-  minimumCases: normalizeCoverageRequirementsForPrompt(
-    coveragePlan.minimumCases,
-    allowedOpenQuestionIds,
-  ),
-  recommendedCases: normalizeCoverageRequirementsForPrompt(
-    coveragePlan.recommendedCases,
-    allowedOpenQuestionIds,
-  ),
-});
-
-const normalizeCoverageRequirementsForPrompt = (
-  requirements: CoveragePlan["minimumCases"],
-  allowedOpenQuestionIds: ReadonlySet<string>,
-): CoveragePlan["minimumCases"] =>
-  requirements
-    .filter((requirement) =>
-      isCoverageRequirementAllowedInPrompt(requirement, allowedOpenQuestionIds),
-    )
-    .map(toPromptStableCoverageRequirement)
-    .sort(compareRequirements);
-
-const isCoverageRequirementAllowedInPrompt = (
-  requirement: CoveragePlan["minimumCases"][number],
-  allowedOpenQuestionIds: ReadonlySet<string>,
-): boolean => {
-  if (requirement.reasonCode !== "open_question_probe") {
-    return true;
-  }
-  return requirement.targetIds.every((targetId) =>
-    allowedOpenQuestionIds.has(targetId),
-  );
-};
-
-const toPromptStableCoverageRequirement = (
-  requirement: CoveragePlan["minimumCases"][number],
-): CoveragePlan["minimumCases"][number] => {
-  const targetIds = uniqueSorted(requirement.targetIds);
-  const sourceRefs = uniqueSorted(requirement.sourceRefs);
-  return {
-    requirementId: buildPromptStableCoverageRequirementId({
-      ...requirement,
-      targetIds,
-      sourceRefs,
-    }),
-    technique: requirement.technique,
-    reasonCode: requirement.reasonCode,
-    ...(requirement.screenId !== undefined
-      ? { screenId: requirement.screenId }
-      : {}),
-    targetIds,
-    sourceRefs,
-    visualRefs: [],
-  };
-};
-
-const buildPromptStableCoverageRequirementId = (
-  requirement: Pick<
-    CoveragePlan["minimumCases"][number],
-    "technique" | "reasonCode" | "screenId" | "targetIds" | "sourceRefs"
-  >,
-): string =>
-  `cov-${sha256Hex({
-    technique: requirement.technique,
-    reasonCode: requirement.reasonCode,
-    screenId: requirement.screenId ?? null,
-    targetIds: [...requirement.targetIds],
-    sourceRefs: [...requirement.sourceRefs],
-  }).slice(0, 16)}`;
-
-const compareRequirements = (
-  left: CoveragePlan["minimumCases"][number],
-  right: CoveragePlan["minimumCases"][number],
-): number =>
-  (left.screenId ?? "").localeCompare(right.screenId ?? "") ||
-  left.technique.localeCompare(right.technique) ||
-  left.reasonCode.localeCompare(right.reasonCode) ||
-  left.targetIds.join("\0").localeCompare(right.targetIds.join("\0")) ||
-  left.sourceRefs.join("\0").localeCompare(right.sourceRefs.join("\0")) ||
-  left.requirementId.localeCompare(right.requirementId);
-
 const computeInputHash = (
   testDesignModel: TestDesignModel,
   coveragePlan: CoveragePlan,
   riskRanking: RiskRanking,
+  visualBinding: CompiledPromptVisualBinding,
   customerRubric: Record<string, unknown>,
   agentLessons: readonly ReturnType<typeof toPromptSafeAgentLesson>[],
   customContext: CompiledPromptCustomContext | undefined,
@@ -1265,6 +1119,7 @@ const computeInputHash = (
     testDesignModel,
     coveragePlan,
     riskRanking,
+    visualBinding,
     customerRubric,
     ...(agentLessons.length > 0 ? { agentLessons } : {}),
     ...(customContext !== undefined ? { customContext } : {}),

@@ -229,44 +229,6 @@ test("buildCoveragePlan selects deterministic techniques from model evidence", (
   );
 });
 
-test("buildCoveragePlan keeps requirement identity stable across visual evidence drift", () => {
-  const basePlan = buildCoveragePlan({
-    model: buildModel(),
-  });
-  const driftedPlan = buildCoveragePlan({
-    model: {
-      ...buildModel(),
-      screens: buildModel().screens.map((screen) =>
-        screen.screenId === "loan"
-          ? {
-              ...screen,
-              visualRefs: [
-                "visual:loan:principal",
-                "visual:loan:volatile-overlay-1",
-              ],
-            }
-          : screen,
-      ),
-    },
-  });
-
-  const toIdentity = (plan: ReturnType<typeof buildCoveragePlan>) =>
-    plan.minimumCases.map((requirement) => ({
-      requirementId: requirement.requirementId,
-      technique: requirement.technique,
-      reasonCode: requirement.reasonCode,
-      screenId: requirement.screenId ?? null,
-      targetIds: requirement.targetIds,
-      sourceRefs: requirement.sourceRefs,
-    }));
-
-  assert.deepEqual(toIdentity(driftedPlan), toIdentity(basePlan));
-  assert.notDeepEqual(
-    driftedPlan.minimumCases.map((requirement) => requirement.visualRefs),
-    basePlan.minimumCases.map((requirement) => requirement.visualRefs),
-  );
-});
-
 test("buildCoveragePlan keeps semantic helper copy and headings as coverage targets", () => {
   const plan = buildCoveragePlan({
     model: {
