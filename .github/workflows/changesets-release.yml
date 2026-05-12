@@ -145,6 +145,9 @@ jobs:
           case "${AUTH_MODE}" in
             trusted-publisher-oidc)
               echo "Using npm trusted publishing via GitHub OIDC."
+              TRUSTED_NPMRC="${RUNNER_TEMP}/npm-trusted-publisher.npmrc"
+              echo "registry=https://registry.npmjs.org/" > "${TRUSTED_NPMRC}"
+              echo "NPM_CONFIG_USERCONFIG=${TRUSTED_NPMRC}" >> "$GITHUB_ENV"
               ;;
             npm-token)
               if [[ -z "${NPM_TOKEN}" ]]; then
