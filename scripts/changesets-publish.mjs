@@ -76,6 +76,7 @@ export const resolvePublishEnv = () => {
       // Enforce OIDC trusted publishing and prevent token fallback in CI.
       delete publishEnv.NODE_AUTH_TOKEN;
       delete publishEnv.NPM_TOKEN;
+      delete publishEnv.NPM_TOKEN_SECRET;
       delete publishEnv.npm_config__authToken;
       delete publishEnv.NPM_CONFIG__AUTH_TOKEN;
       publishProvenance = true;
