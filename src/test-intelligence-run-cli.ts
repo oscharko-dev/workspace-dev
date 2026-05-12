@@ -121,9 +121,7 @@ import {
   buildSubprocessorRegister,
   SUBPROCESSOR_REGISTER_ARTIFACT_FILENAME,
 } from "./test-intelligence/subprocessor-register.js";
-import {
-  type LlmGatewayClientBundle,
-} from "./test-intelligence/llm-gateway-bundle.js";
+import { type LlmGatewayClientBundle } from "./test-intelligence/llm-gateway-bundle.js";
 import { type LlmGatewayClient } from "./test-intelligence/llm-gateway.js";
 import {
   buildProductionRoleClientConfig,
@@ -137,8 +135,7 @@ const TEST_INTELLIGENCE_RUN_MODES = [
   "dry_run",
 ] as const;
 
-const TEST_INTELLIGENCE_GENERATOR_RECOMMENDED_DEPLOYMENT =
-  "mistral-large-3";
+const TEST_INTELLIGENCE_GENERATOR_RECOMMENDED_DEPLOYMENT = "mistral-large-3";
 const TEST_INTELLIGENCE_GENERATOR_LEGACY_DEPLOYMENT = "gpt-oss-120b";
 const TEST_INTELLIGENCE_LOGIC_JUDGE_RECOMMENDED_DEPLOYMENT = "gpt-oss-120b";
 const TEST_INTELLIGENCE_VISUAL_PRIMARY_RECOMMENDED_DEPLOYMENT =
@@ -487,7 +484,7 @@ export interface TestIntelligenceRunOptions {
   harnessMaxRepairIterations: number | undefined;
   /**
    * Optional override for the Figma REST payload cap (bytes) consumed by
-   * the production runner. `undefined` → runner default (10 MiB). Operators
+   * the production runner. `undefined` → runner default (128 MiB). Operators
    * working against real Banking-scale design files (~28 MiB JSON for a
    * single fully-expanded frame) supply a higher value here on a per-job
    * basis. Validated as a positive safe integer; out-of-range values are
@@ -604,7 +601,7 @@ export const parseTestIntelligenceRunArgs = (
     maxFigmaPayloadBytes > MAX_FIGMA_PAYLOAD_BYTES_CEILING
   ) {
     throw new TestIntelligenceRunOperatorError(
-      `WORKSPACE_TEST_SPACE_MAX_FIGMA_PAYLOAD_BYTES=${maxFigmaPayloadBytes} exceeds the security hard ceiling of ${MAX_FIGMA_PAYLOAD_BYTES_CEILING} bytes (64 MiB). Streaming larger payloads is tracked as a follow-up; until then 64 MiB is the audited safe ceiling.`,
+      `WORKSPACE_TEST_SPACE_MAX_FIGMA_PAYLOAD_BYTES=${maxFigmaPayloadBytes} exceeds the security hard ceiling of ${MAX_FIGMA_PAYLOAD_BYTES_CEILING} bytes (128 MiB). Streaming larger payloads is tracked as a follow-up; until then 128 MiB is the audited safe ceiling.`,
     );
   }
   let allowPolicyBlocked = parseBooleanFlagWithDefault(
@@ -1021,7 +1018,7 @@ export const parseTestIntelligenceRunArgs = (
       }
       if (parsed > MAX_FIGMA_PAYLOAD_BYTES_CEILING) {
         throw new TestIntelligenceRunOperatorError(
-          `--max-figma-payload-bytes ${parsed} exceeds the security hard ceiling of ${MAX_FIGMA_PAYLOAD_BYTES_CEILING} bytes (64 MiB). Streaming larger payloads is tracked as a follow-up; until then 64 MiB is the audited safe ceiling.`,
+          `--max-figma-payload-bytes ${parsed} exceeds the security hard ceiling of ${MAX_FIGMA_PAYLOAD_BYTES_CEILING} bytes (128 MiB). Streaming larger payloads is tracked as a follow-up; until then 128 MiB is the audited safe ceiling.`,
         );
       }
       maxFigmaPayloadBytes = parsed;
@@ -1438,7 +1435,7 @@ export const parseTestIntelligenceVerifyProvenanceArgs = (
     return { runDir: argv[1]! };
   }
   throw new TestIntelligenceRunOperatorError(
-    'usage: workspace-dev test-intelligence verify-provenance <run-dir> or workspace-dev test-intelligence --verify-provenance <run-dir>',
+    "usage: workspace-dev test-intelligence verify-provenance <run-dir> or workspace-dev test-intelligence --verify-provenance <run-dir>",
   );
 };
 
@@ -1491,12 +1488,12 @@ export const parseTestIntelligenceAuditDossierArgs = (
 
   if (!runDir) {
     throw new TestIntelligenceRunOperatorError(
-      'usage: workspace-dev test-intelligence audit-dossier --run-dir <path> --output <dir> [--sign-key <path>]',
+      "usage: workspace-dev test-intelligence audit-dossier --run-dir <path> --output <dir> [--sign-key <path>]",
     );
   }
   if (!outputDir) {
     throw new TestIntelligenceRunOperatorError(
-      'usage: workspace-dev test-intelligence audit-dossier --run-dir <path> --output <dir> [--sign-key <path>]',
+      "usage: workspace-dev test-intelligence audit-dossier --run-dir <path> --output <dir> [--sign-key <path>]",
     );
   }
   if (!signKeyPath) {
@@ -1517,7 +1514,7 @@ export const parseTestIntelligenceAuditVerifyArgs = (
     return { bundle: argv[1]! };
   }
   throw new TestIntelligenceRunOperatorError(
-    'usage: workspace-dev test-intelligence audit-verify <bundle-prefix-or-json> or workspace-dev test-intelligence audit-verify --bundle <bundle-prefix-or-json>',
+    "usage: workspace-dev test-intelligence audit-verify <bundle-prefix-or-json> or workspace-dev test-intelligence audit-verify --bundle <bundle-prefix-or-json>",
   );
 };
 
@@ -1597,7 +1594,7 @@ export const parseTestIntelligenceVerifySealArgs = (
   }
   if (!bundle) {
     throw new TestIntelligenceRunOperatorError(
-      'usage: workspace-dev test-intelligence verify-seal --bundle <path> [--key <path>] [--expected-hmac <hex>] [--expected-merkle-root <hex>] [--json] [--output <path>]',
+      "usage: workspace-dev test-intelligence verify-seal --bundle <path> [--key <path>] [--expected-hmac <hex>] [--expected-merkle-root <hex>] [--json] [--output <path>]",
     );
   }
   return {
@@ -1642,11 +1639,7 @@ const runChild = (
   new Promise((resolvePromise, reject) => {
     const child = spawn(command, args, {
       cwd,
-      stdio: [
-        "ignore",
-        options.captureStdout ? "pipe" : "ignore",
-        "pipe",
-      ],
+      stdio: ["ignore", options.captureStdout ? "pipe" : "ignore", "pipe"],
     });
     let stderr = "";
     let stdout = "";
@@ -1667,8 +1660,7 @@ const runChild = (
       // A signal-terminated child reports `code === null`. Treat that
       // as a non-zero exit so callers do not silently accept a
       // signal-killed `tar`/`unzip` extraction as success.
-      const normalizedCode =
-        code !== null ? code : signal !== null ? 128 : 1;
+      const normalizedCode = code !== null ? code : signal !== null ? 128 : 1;
       resolvePromise({ code: normalizedCode, signal, stderr, stdout });
     });
   });
@@ -1698,7 +1690,9 @@ const enforceSafeArchiveEntries = async (
   listArgs: readonly string[],
   archive: string,
 ): Promise<void> => {
-  const result = await runChild(command, listArgs, ".", { captureStdout: true });
+  const result = await runChild(command, listArgs, ".", {
+    captureStdout: true,
+  });
   if (result.code !== 0) {
     throw new TestIntelligenceRunOperatorError(
       `${command} failed to enumerate '${archive}' (exit ${String(result.code)}): ${result.stderr.trim() || "no stderr"}.`,
@@ -1731,7 +1725,9 @@ const enforceNoSymlinkOrHardlinkEntries = async (
   listArgs: readonly string[],
   archive: string,
 ): Promise<void> => {
-  const result = await runChild(command, listArgs, ".", { captureStdout: true });
+  const result = await runChild(command, listArgs, ".", {
+    captureStdout: true,
+  });
   if (result.code !== 0) {
     throw new TestIntelligenceRunOperatorError(
       `${command} failed to enumerate '${archive}' (exit ${String(result.code)}): ${result.stderr.trim() || "no stderr"}.`,
@@ -1755,9 +1751,7 @@ const enforceNoSymlinkOrHardlinkEntries = async (
  * a verbose-listing format we did not anticipate). A symlink left in
  * place could be followed by a later compromised process.
  */
-const enforceNoSymlinksUnderDirectory = async (
-  root: string,
-): Promise<void> => {
+const enforceNoSymlinksUnderDirectory = async (root: string): Promise<void> => {
   const stack: string[] = [root];
   while (stack.length > 0) {
     const dir = stack.pop()!;
@@ -1797,7 +1791,10 @@ const enforceNoSymlinksUnderDirectory = async (
  */
 export const extractSealBundleArchive = async (
   bundlePath: string,
-): Promise<{ readonly directory: string; readonly cleanup: () => Promise<void> }> => {
+): Promise<{
+  readonly directory: string;
+  readonly cleanup: () => Promise<void>;
+}> => {
   const suffix = matchedArchiveSuffix(bundlePath);
   if (suffix === undefined) {
     throw new TestIntelligenceRunOperatorError(
@@ -1832,9 +1829,7 @@ export const extractSealBundleArchive = async (
       }
     } else {
       const listArgs =
-        suffix === ".tar"
-          ? ["-tf", absoluteBundle]
-          : ["-tzf", absoluteBundle];
+        suffix === ".tar" ? ["-tf", absoluteBundle] : ["-tzf", absoluteBundle];
       await enforceSafeArchiveEntries("tar", listArgs, absoluteBundle);
       // Verbose tar listing emits a Unix-style mode column where the
       // first character is `l` for symlink and `h` for hardlink.
@@ -2421,8 +2416,9 @@ const collectDeprecatedTopologyAliasErrors = (
   return errors;
 };
 
-const formatTopologyRoleName = (role: TopologyRoleReportEntry["role"]): string =>
-  role.replaceAll("_", "-");
+const formatTopologyRoleName = (
+  role: TopologyRoleReportEntry["role"],
+): string => role.replaceAll("_", "-");
 
 const formatTopologyRoleLine = (entry: TopologyRoleReportEntry): string => {
   const deployment =
@@ -2470,7 +2466,8 @@ const buildTopologyPreflightReport = ({
   report: TopologyPreflightReport;
   errors: string[];
 } => {
-  const visualSidecarEnabled = options.enableVisualSidecar && !options.noVisualSidecar;
+  const visualSidecarEnabled =
+    options.enableVisualSidecar && !options.noVisualSidecar;
   const roles: TopologyRoleReportEntry[] = [];
   const errors: string[] = [];
   const strictModeEnabled =
@@ -2520,7 +2517,8 @@ const buildTopologyPreflightReport = ({
       deployment: options.logicJudgeDeployment,
       source: optionSources?.logicJudgeDeployment ?? "default",
       status: "disabled",
-      skipReason: "matches generator deployment; legacy fallback collapses to a single model",
+      skipReason:
+        "matches generator deployment; legacy fallback collapses to a single model",
     });
     if (strictModeEnabled) {
       errors.push(
@@ -2534,7 +2532,9 @@ const buildTopologyPreflightReport = ({
       source: optionSources?.logicJudgeDeployment ?? "default",
       status: "configured",
     });
-    if (INCOMPATIBLE_OPENAI_CHAT_DEPLOYMENTS.has(options.logicJudgeDeployment)) {
+    if (
+      INCOMPATIBLE_OPENAI_CHAT_DEPLOYMENTS.has(options.logicJudgeDeployment)
+    ) {
       errors.push(
         `logic-judge deployment "${options.logicJudgeDeployment}" is incompatible with the openai_chat role contract`,
       );
@@ -2584,13 +2584,15 @@ const buildTopologyPreflightReport = ({
     role: "coverage_planner",
     deployment: options.coveragePlannerDeployment,
     source: optionSources?.coveragePlannerDeployment ?? "default",
-    disabledReason: "not configured; deterministic-only coverage planning remains active",
+    disabledReason:
+      "not configured; deterministic-only coverage planning remains active",
   });
   pushOptionalTextRole({
     role: "risk_ranker",
     deployment: options.riskRankerDeployment,
     source: optionSources?.riskRankerDeployment ?? "default",
-    disabledReason: "not configured; deterministic-only risk ranking remains active",
+    disabledReason:
+      "not configured; deterministic-only risk ranking remains active",
   });
 
   const visualPrimaryDeployment = options.visualPrimaryDeployment;
@@ -2653,9 +2655,7 @@ const buildTopologyPreflightReport = ({
         source: visualPrimarySource,
         status: "configured",
       });
-      if (
-        INCOMPATIBLE_OPENAI_CHAT_DEPLOYMENTS.has(visualPrimaryDeployment)
-      ) {
+      if (INCOMPATIBLE_OPENAI_CHAT_DEPLOYMENTS.has(visualPrimaryDeployment)) {
         errors.push(
           `visual-primary deployment "${visualPrimaryDeployment}" is incompatible with the chat-completion visual sidecar role contract`,
         );
@@ -2680,9 +2680,7 @@ const buildTopologyPreflightReport = ({
         source: visualFallbackSource,
         status: "configured",
       });
-      if (
-        INCOMPATIBLE_OPENAI_CHAT_DEPLOYMENTS.has(visualFallbackDeployment)
-      ) {
+      if (INCOMPATIBLE_OPENAI_CHAT_DEPLOYMENTS.has(visualFallbackDeployment)) {
         errors.push(
           `visual-fallback deployment "${visualFallbackDeployment}" is incompatible with the chat-completion visual sidecar role contract`,
         );
@@ -2705,7 +2703,8 @@ const buildTopologyPreflightReport = ({
         deployment: null,
         source: a11ySource,
         status: "disabled",
-        skipReason: "not configured; deterministic accessibility evaluation remains active",
+        skipReason:
+          "not configured; deterministic accessibility evaluation remains active",
       });
       if (strictModeEnabled) {
         errors.push(
@@ -2770,7 +2769,8 @@ const buildDoctorReport = (
       ),
     });
   } else if (
-    options.modelDeployment === TEST_INTELLIGENCE_GENERATOR_RECOMMENDED_DEPLOYMENT
+    options.modelDeployment ===
+    TEST_INTELLIGENCE_GENERATOR_RECOMMENDED_DEPLOYMENT
   ) {
     pushRole({
       role: "generator",
@@ -2966,7 +2966,8 @@ const buildDoctorReport = (
   const visualPrimaryDeployment = options.visualPrimaryDeployment;
   const visualFallbackDeployment = options.visualFallbackDeployment;
   const a11yJudgeDeployment = options.a11yJudgeDeployment;
-  const visualPrimarySource = options.topologyInputSources.visualPrimaryDeployment;
+  const visualPrimarySource =
+    options.topologyInputSources.visualPrimaryDeployment;
   const visualFallbackSource =
     options.topologyInputSources.visualFallbackDeployment;
   const a11ySource = options.topologyInputSources.a11yJudgeDeployment;
@@ -3041,7 +3042,8 @@ const buildDoctorReport = (
     role: "visual_primary",
     deployment: visualPrimaryDeployment,
     source: visualPrimarySource,
-    recommendedDeployment: TEST_INTELLIGENCE_VISUAL_PRIMARY_RECOMMENDED_DEPLOYMENT,
+    recommendedDeployment:
+      TEST_INTELLIGENCE_VISUAL_PRIMARY_RECOMMENDED_DEPLOYMENT,
     envVar: "WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT",
     unsetSummary:
       "unset; the visual-sidecar primary role is required by the runbook",
@@ -3750,7 +3752,10 @@ const resolveRunOutputDir = (input: {
     return join(input.outputDir, input.jobId);
   }
   if (input.mode === "timestamp") {
-    return join(input.outputDir, formatTimestampForRunSubdir(input.generatedAt));
+    return join(
+      input.outputDir,
+      formatTimestampForRunSubdir(input.generatedAt),
+    );
   }
   return input.outputDir;
 };
@@ -3782,8 +3787,7 @@ export const runTestIntelligenceCommand = async (
     runtime.loadCustomContextMarkdownFile ??
     defaultLoadCustomContextMarkdownFile;
   const loadCustomerEvalMarkdownFile =
-    runtime.loadCustomerEvalMarkdownFile ??
-    defaultLoadCustomerEvalMarkdownFile;
+    runtime.loadCustomerEvalMarkdownFile ?? defaultLoadCustomerEvalMarkdownFile;
   const loadCustomerProfileFile =
     runtime.loadCustomerProfileFile ?? defaultLoadCustomerProfileFile;
   const loadTenantBundleFile =
@@ -4151,7 +4155,9 @@ export const runTestIntelligenceCommand = async (
       ...(coveragePlannerClient !== undefined
         ? { coveragePlanner: coveragePlannerClient }
         : {}),
-      ...(riskRankerClient !== undefined ? { riskRanker: riskRankerClient } : {}),
+      ...(riskRankerClient !== undefined
+        ? { riskRanker: riskRankerClient }
+        : {}),
       maxWallClockMs: 240_000,
     },
     ...(finopsBudget !== undefined ? { finopsBudget } : {}),
@@ -4182,9 +4188,7 @@ export const runTestIntelligenceCommand = async (
           },
         }
       : {}),
-    ...(options.enableMutationEval
-      ? { mutationEval: { enabled: true } }
-      : {}),
+    ...(options.enableMutationEval ? { mutationEval: { enabled: true } } : {}),
     roleConfigurationSources: {
       generator: options.topologyInputSources?.modelDeployment ?? "default",
       logic_judge:
@@ -4293,7 +4297,9 @@ export const runTestIntelligenceCommand = async (
     if (!allowPolicyBlocked) {
       return 3;
     }
-    summaryLines.push("  policy status       : blocked (manual review required)");
+    summaryLines.push(
+      "  policy status       : blocked (manual review required)",
+    );
   }
   if (finopsTotalsLine) summaryLines.push(finopsTotalsLine);
   if (evidenceDigestLine) summaryLines.push(evidenceDigestLine);
@@ -4387,9 +4393,9 @@ Figma payload:
   --max-figma-payload-bytes <n>
                              Override the maximum Figma REST payload (in
                              bytes) the runner will accept. Soft default
-                             ${MAX_FIGMA_PAYLOAD_BYTES} (10 MiB). Hard
+                             ${MAX_FIGMA_PAYLOAD_BYTES} (128 MiB). Hard
                              ceiling ${MAX_FIGMA_PAYLOAD_BYTES_CEILING}
-                             (64 MiB) — values above this ceiling are
+                             (128 MiB) — values above this ceiling are
                              rejected at parse time as a security
                              precaution against memory-pressure / DoS
                              from oversized payloads (validated again at

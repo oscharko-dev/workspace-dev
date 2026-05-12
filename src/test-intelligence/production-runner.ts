@@ -238,11 +238,9 @@ import {
   renderCustomerMarkdown,
 } from "./customer-markdown-renderer.js";
 import {
-  buildCustomerMarkdownPdf,
-  buildJiraStorySectionBody,
-  buildScreenshotReferenceSectionBody,
+  buildCustomerMarkdownMappe,
   extractJiraStoryFromCustomContext,
-} from "./customer-markdown-pdf.js";
+} from "./customer-markdown-pdf-mappe.js";
 import {
   fetchFigmaFileForTestIntelligence,
   fetchFigmaScreenCapturesForTestIntelligence,
@@ -487,17 +485,19 @@ export const PROMPT_MAX_FIELDS_PER_SCREEN = 60 as const;
 export const PROMPT_MAX_ACTIONS_PER_SCREEN = 30 as const;
 export const PROMPT_MAX_VALIDATIONS_PER_SCREEN = 30 as const;
 export const PROMPT_MAX_NAVIGATION_PER_SCREEN = 30 as const;
-export const MAX_FIGMA_PAYLOAD_BYTES: number = 10 * 1024 * 1024;
+export const MAX_FIGMA_PAYLOAD_BYTES: number = 128 * 1024 * 1024;
 
 /**
  * Hard ceiling for the {@link maxFigmaPayloadBytes} override (Issue #2172).
  * Operator-supplied caps above this value are rejected at both the CLI parse
  * site and the programmatic `resolveFigmaPayloadCap` validator (defense in
  * depth) to bound peak heap pressure when ingesting tier-1 banking masks.
- * Streaming larger payloads is tracked as a follow-up; until then 64 MiB is
- * the audited safe ceiling.
+ * Streaming larger payloads is tracked as a follow-up; until then 128 MiB is
+ * the audited safe ceiling — bumped from 64 MiB on 2026-05-11 after the
+ * larger end-to-end test fixtures (Test-View-03 etc.) exceeded the prior
+ * default.
  */
-export const MAX_FIGMA_PAYLOAD_BYTES_CEILING: number = 64 * 1024 * 1024;
+export const MAX_FIGMA_PAYLOAD_BYTES_CEILING: number = 128 * 1024 * 1024;
 
 /**
  * Stable failure-class enum surfaced to callers (request handler maps
@@ -1046,7 +1046,7 @@ export interface RunFigmaToQcTestCasesInput {
   llm: ProductionRunnerLlmConfig;
   /**
    * Optional override for the maximum Figma REST payload accepted by the
-   * runner. Defaults to {@link MAX_FIGMA_PAYLOAD_BYTES} (10 MiB) which is
+   * runner. Defaults to {@link MAX_FIGMA_PAYLOAD_BYTES} (128 MiB) which is
    * defensive enough for synthetic fixtures and the live-E2E lane but too
    * tight for real Banking-scale design files (the customer's Test-View-03
    * frame ships ~28 MiB of REST JSON on its own). Operators with vetted
@@ -1516,12 +1516,13 @@ export interface RunFigmaToQcTestCasesResult {
     combined: string;
     perCase: ReadonlyArray<string>;
     /**
-     * Path to the deterministic PDF rendering of the customer artefacts
-     * (sibling of `testfaelle.md` in the customer-markdown directory).
-     * The PDF contains three structural sections: combined
-     * `testfaelle.md`, `JIRA_STORY.md` content extracted from custom
-     * context when present (placeholder otherwise), and screenshot
-     * SHA-256 references. Raw screenshot bytes are never embedded.
+     * Path to the customer presentation Mappe PDF (sibling of
+     * `testfaelle.md` in the customer-markdown directory). The
+     * Mappe always contains a deep-green cover, an inhaltsverzeichnis,
+     * full-page captured-mask screenshots, the Jira story (when
+     * supplied via `customContextMarkdown`, with a placeholder
+     * otherwise), and the formatted test-case Markdown. The encoder
+     * is byte-stable: identical inputs produce a byte-identical PDF.
      */
     pdf: string;
   };
@@ -6074,37 +6075,33 @@ export const runFigmaToQcTestCases = async (
         bytes: Buffer.from(file.body, "utf8"),
       });
     }
-    // Deterministic PDF rendering of the customer artefacts.
-    //
-    // Three structural sections are always emitted:
-    //   1. `testfaelle.md` — the combined customer Markdown
-    //   2. `JIRA_STORY.md` — populated from a
-    //      `customContextMarkdown` `## JIRA_STORY` heading; falls back
-    //      to a placeholder that documents how to configure it. No
-    //      content is fabricated when the source is absent.
-    //   3. `Screen Shots der Maske` — hash references to the visual
-    //      captures persisted by `persistVisualCaptureArtifacts`. Raw
-    //      image bytes are NEVER embedded — the hard invariant from
-    //      `eingabemasken-fixtures.test.ts:294` /
-    //      `baseline-fixtures.test.ts:189` continues to hold.
-    const jiraStoryBody = buildJiraStorySectionBody(
-      extractJiraStoryFromCustomContext(customContextMarkdown?.bodyMarkdown),
+    // Customer presentation PDF "Mappe" — deep-green cover, TOC,
+    // screenshot pages with the captured mask image embedded
+    // verbatim, formatted Jira story, formatted test-case markdown.
+    // Hand-rolled deterministic encoder; same inputs always produce
+    // byte-identical output.
+    const jiraStoryFromContext = extractJiraStoryFromCustomContext(
+      customContextMarkdown?.bodyMarkdown,
     );
-    const screenshotReferenceBody = buildScreenshotReferenceSectionBody(
+    const mappeScreenshots =
       visualCaptureArtifacts?.files.map((file) => ({
-        screenId: file.screenId,
-        filename: file.filename,
-        sha256: file.sha256,
-        byteLength: file.byteLength,
-      })) ?? [],
-    );
-    const pdfBytes = buildCustomerMarkdownPdf({
-      title: `Test-Case Ergebnisse — ${customerLabel}`,
-      sections: [
-        { heading: "testfaelle.md", body: rendered.combinedMarkdown },
-        { heading: "JIRA_STORY.md", body: jiraStoryBody },
-        { heading: "Screen Shots der Maske", body: screenshotReferenceBody },
-      ],
+        label: `${file.screenId} — ${file.filename}`,
+        pngBytes: file.bytes,
+      })) ?? [];
+    // Only pass the *extracted* Jira-story section, not the whole
+    // `customContextMarkdown` body. The body is allowed to mix other
+    // operator-context content (rubrics, acceptance criteria, …)
+    // that does not belong in the "Jira Story zur Maske" page; when
+    // the dedicated heading is missing, the renderer's placeholder
+    // is the correct output.
+    const pdfBytes = buildCustomerMarkdownMappe({
+      title: customerLabel,
+      subtitle: sourceLabel,
+      generatedAt: input.generatedAt,
+      jobId: input.jobId,
+      jiraStoryMarkdown: jiraStoryFromContext,
+      testfaelleMarkdown: rendered.combinedMarkdown,
+      screenshots: mappeScreenshots,
     });
     const pdfPath = join(markdownDir, "testfaelle.pdf");
     await writeAtomicBytes(pdfPath, pdfBytes);
@@ -6706,6 +6703,11 @@ export const runFigmaToQcTestCases = async (
         bytes: artifact.bytes,
         category: "export" as const,
       })),
+      {
+        filename: "customer-markdown/testfaelle.pdf",
+        bytes: pdfBytes,
+        category: "export" as const,
+      },
       ...(mutationReportBytes === undefined
         ? []
         : [
@@ -7131,7 +7133,7 @@ const resolveFigmaPayloadCap = (override: number | undefined): number => {
   if (override > MAX_FIGMA_PAYLOAD_BYTES_CEILING) {
     throw new ProductionRunnerError({
       failureClass: "FIGMA_URL_REJECTED",
-      message: `maxFigmaPayloadBytes ${override} exceeds the security hard ceiling of ${MAX_FIGMA_PAYLOAD_BYTES_CEILING} bytes (64 MiB).`,
+      message: `maxFigmaPayloadBytes ${override} exceeds the security hard ceiling of ${MAX_FIGMA_PAYLOAD_BYTES_CEILING} bytes (128 MiB).`,
       retryable: false,
     });
   }

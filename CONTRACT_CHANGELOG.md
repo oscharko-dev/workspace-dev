@@ -31,14 +31,77 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
-## Internal implementation note - 2026-05-11
+## [1.44.10] - 2026-05-11
+
+Review-feedback follow-up for **Issue #2238** (post-merge clean-up of
+PR #2243). No public contract surface change — this entry exists only
+because the same release touches modules listed under
+`RELEVANT_CONTRACT_FILE_PREFIXES`.
+
+### Changed (Issue #2238 — Mappe review-feedback follow-up)
+
+- `src/test-intelligence/customer-markdown-pdf-mappe.ts`: tighten the
+  PNG decoder with explicit bounds checks on every chunk header and
+  data slice; cap the cover title at two lines with a visible
+  ellipsis; refresh the `stripInlineMarkdown` docstring to describe
+  what the function actually does (it intentionally keeps
+  backticks); drop a useless local assignment in `layoutJiraStory`.
+- `src/test-intelligence/production-runner.ts`: pass only the
+  extracted Jira-story section to the Mappe renderer (no longer
+  bleed the whole `customContextMarkdown` body into the "Jira Story
+  zur Maske" page); register `customer-markdown/testfaelle.pdf` in
+  the evidence-artefact list so the PDF is covered by the Wave-1
+  evidence manifest, region-attestation pass and sealing chain
+  alongside the existing Markdown files.
+- Documentation: this changelog file marks 1.44.8's
+  `customer-markdown-pdf.ts` entry as "superseded in 1.44.9" and
+  states explicitly that the module is removed.
+
+### Migration
+
+None. The evidence-manifest scope widens to cover the existing PDF
+artefact, so consumers of the manifest get a strictly stronger
+guarantee.
+
+## [1.44.9] - 2026-05-11
+
+Customer-Markdown PDF promoted to a presentation Mappe for **Issue #2238**.
+
+The PDF emitted under
+`<outputRoot>/jobs/<jobId>/test-intelligence/customer-markdown/testfaelle.pdf`
+is now a deterministic, multi-page German presentation Mappe (cover
+with deep-green branding, TOC, full-resolution mask screenshots,
+formatted Jira story, formatted test-cases). The encoder is still
+hand-rolled (zero runtime deps; `node:zlib` only) and byte-stable.
+
+### Changed (Issue #2238 — customer-markdown PDF Mappe)
+
+- `src/test-intelligence/customer-markdown-pdf-mappe.ts` (new):
+  public `buildCustomerMarkdownMappe(input)` returns the deterministic
+  PDF buffer; embeds raw screenshot bytes from the visual-sidecar
+  pipeline (PNG → raw RGB → FlateDecode XObject); contains a
+  hand-rolled PNG decoder for color_type 2/6 + bit_depth 8.
+- `src/test-intelligence/production-runner.ts`: switched the PDF
+  write call from the text-only `buildCustomerMarkdownPdf` to the
+  new `buildCustomerMarkdownMappe`. `customerMarkdownPaths.pdf`
+  still resolves to the same path; the bytes are now the rich
+  Mappe rendering instead of the plain-text fallback.
+
+`src/test-intelligence/customer-markdown-pdf.ts` (and its public
+exports `buildCustomerMarkdownPdf`, `buildJiraStorySectionBody`,
+`buildScreenshotReferenceSectionBody`, plus the
+`CustomerMarkdownPdfInput` / `CustomerMarkdownPdfSection` /
+`ScreenshotReference` types) is **removed** in this release — the
+Mappe renderer is now the only PDF surface. The
+`extractJiraStoryFromCustomContext` helper, which is the only export
+that still has callers, has been moved into
+`customer-markdown-pdf-mappe.ts` and is re-exported from there. The
+1.44.8 entry below documents the previous intermediate API; that API
+is no longer available.
+
+## [1.44.8] - 2026-05-11
 
 Customer-Markdown PDF output for **Issue #2238**.
-
-This note is intentionally not a `TEST_INTELLIGENCE_CONTRACT_VERSION`
-bump. The PDF path is an internal production-runner result field; it is
-not exported from `src/contracts/index.ts`, not exposed through package
-`exports`, and not an over-the-wire HTTP response contract.
 
 A `testfaelle.pdf` sibling is now emitted under
 `<outputRoot>/jobs/<jobId>/test-intelligence/customer-markdown/`
@@ -53,26 +116,31 @@ existing `no raw screenshots` invariant from
 `eingabemasken-fixtures.test.ts` / `baseline-fixtures.test.ts`
 continues to hold.
 
-### Changed (Issue #2238 - customer-markdown PDF artefact)
+### Changed (Issue #2238 — customer-markdown PDF artefact)
 
-- `RunFigmaToQcTestCasesResult.customerMarkdownPaths` gains an internal
+- `RunFigmaToQcTestCasesResult.customerMarkdownPaths` gains a required
   `pdf: string` field pointing at the new `testfaelle.pdf` artefact
-  on disk. All in-repo runner-result stubs and CLI consumers are kept
-  in sync with the production runner shape.
-- `src/test-intelligence/customer-markdown-pdf.ts` (new): internal
-  helper module with `buildCustomerMarkdownPdf`,
+  on disk. Minor bump under the "new optional field"-equivalent rule
+  because the field is part of an internal result object, not an
+  over-the-wire HTTP response shape; CLI consumers were updated in
+  the same PR.
+- `src/test-intelligence/customer-markdown-pdf.ts` (new, **superseded
+  in 1.44.9**): public helpers `buildCustomerMarkdownPdf`,
   `extractJiraStoryFromCustomContext`,
   `buildJiraStorySectionBody`,
   `buildScreenshotReferenceSectionBody`, plus the
   `CustomerMarkdownPdfInput` / `CustomerMarkdownPdfSection` /
-  `ScreenshotReference` types.
+  `ScreenshotReference` types. The module was removed in the next
+  release; `extractJiraStoryFromCustomContext` was migrated to
+  `customer-markdown-pdf-mappe.ts`, the other exports have no
+  successor.
 
 ### Migration
 
 Consumers reading `RunFigmaToQcTestCasesResult.customerMarkdownPaths`
-inside this repository will see a new required `pdf` string field; the
-file is written atomically before the result resolves, so the path is
-always live when the result is observed.
+will see a new required `pdf` string field; the file is written
+atomically before the result resolves, so the path is always live
+when the result is observed.
 
 ## [1.44.7] - 2026-05-11
 
