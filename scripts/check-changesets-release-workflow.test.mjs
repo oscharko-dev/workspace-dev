@@ -15,6 +15,20 @@ const extractStep = (workflow, stepName, nextStepName) => {
   return workflow.slice(start, end);
 };
 
+test("changesets release workflow: npm CLI upgrade is effective and guarded", async () => {
+  const workflow = await readReleaseWorkflow();
+  const upgradeStep = extractStep(
+    workflow,
+    "Upgrade npm for trusted publishing",
+    "Install dependencies",
+  );
+
+  assert.match(upgradeStep, /npm install --global --ignore-scripts npm@11\./);
+  assert.doesNotMatch(upgradeStep, /pnpm add --global.*npm@11/);
+  assert.match(upgradeStep, /NPM_CLI_VERSION="\$\(npm --version\)"/);
+  assert.match(upgradeStep, /npm trusted publishing requires npm CLI >= 11\.5\.1/);
+});
+
 test("changesets release workflow: trusted publishing uses token-free npmrc and explicit OIDC token", async () => {
   const workflow = await readReleaseWorkflow();
   const authStep = extractStep(
