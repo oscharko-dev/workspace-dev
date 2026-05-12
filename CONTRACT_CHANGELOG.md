@@ -31,6 +31,40 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [1.44.12] - 2026-05-12
+
+Test-intelligence prompt-size and generation stability follow-up for
+**Issue #2280**.
+
+### Changed (Issue #2280 — bounded generator prompts and deterministic coverage)
+
+- `src/test-intelligence/prompt-compiler.ts`: generator prompts now
+  expose `CoveragePlan.generationTargets` as the concrete base-field
+  coverage contract, preventing equivalence-partitioning quotas from
+  being satisfied by repeatedly varying the same field.
+- `src/test-intelligence/production-runner.ts`: large-form generator
+  prompts use a targeted slice while deterministic post-processing
+  preserves full field coverage; generator prompt compilation now uses
+  a conservative input-token safety margin before gateway dispatch.
+- `src/test-intelligence/llm-gateway.ts`: retry/fallback behavior is
+  hardened for empty structured-output content, and Mistral deployments
+  receive `max_tokens` instead of OpenAI-specific
+  `max_completion_tokens`.
+- `src/test-intelligence/production-topology-clients.ts` and
+  `src/test-intelligence/finops-budget.ts`: production generator
+  retry and wall-clock budgets are aligned so long-running fallback
+  calls remain observable instead of failing silently.
+- `TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION` advances to `1.7.2`;
+  the prompt-template lock and golden snapshot were refreshed with the
+  new compiler hash.
+
+### Migration
+
+No persisted artifact migration is required. Operators should expect
+large fachliche masks to emit a smaller generator prompt while retaining
+the same full deterministic coverage targets in persisted artifacts and
+validation reports.
+
 ## [1.44.11] - 2026-05-12
 
 Test-intelligence production-runner stabilization for **Issue #2279**.
