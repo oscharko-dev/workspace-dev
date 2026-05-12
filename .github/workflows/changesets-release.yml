@@ -2,6 +2,15 @@ name: workspace-dev changesets release
 
 on:
   workflow_dispatch:
+    inputs:
+      publish_auth_mode:
+        description: npm publish authentication mode for this manual release run
+        required: false
+        default: trusted-publisher-oidc
+        type: choice
+        options:
+          - trusted-publisher-oidc
+          - npm-token
 
 permissions:
   contents: write
@@ -152,7 +161,7 @@ jobs:
         id: npm_auth_mode
         shell: bash
         env:
-          REQUESTED_PUBLISH_AUTH_MODE: ${{ vars['WORKSPACE_DEV_PUBLISH_AUTH_MODE'] || '' }}
+          REQUESTED_PUBLISH_AUTH_MODE: ${{ inputs.publish_auth_mode }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
