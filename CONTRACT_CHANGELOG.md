@@ -31,6 +31,28 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [1.44.13] - 2026-05-12
+
+Controlled revert of the unintended T7 direct merges from **Issue #2315**
+and **Issue #2317**. This entry exists because the revert touches modules
+covered by the contract/export changelog guard and restores `dev` to the
+pre-T7-merge public surface before the change is reintroduced through a
+reviewed PR.
+
+### Changed (Issue #2315, Issue #2317 — revert unintended T7 direct merges)
+
+- Reverted the replay-cache determinism changes from `#2315` and the
+  follow-up quality-gate adjustments from `#2317` out of `dev`.
+- Restored the prior prompt/compiler, replay-cache, and related
+  test-intelligence contract-adjacent files to the last reviewed `dev`
+  baseline.
+
+### Migration
+
+No persisted artifact migration is required. This is a rollback entry so
+operators should treat the reverted `dev` state as the canonical baseline
+until the T7 change is reintroduced through a fresh PR.
+
 ## [1.44.12] - 2026-05-12
 
 Test-intelligence prompt-size and generation stability follow-up for
