@@ -154,8 +154,8 @@ export const createPersistentReplayCache = (
             })),
           );
         }
-      } catch (err) {
-        await quarantineCorruptCacheEntry(path, digest);
+      } catch {
+        await quarantineCorruptCacheEntry(path);
         return { hit: false, key: digest };
       }
 
@@ -316,7 +316,6 @@ const writeAtomicJson = async (path: string, value: unknown): Promise<void> => {
 
 const quarantineCorruptCacheEntry = async (
   path: string,
-  _digest: string,
 ): Promise<void> => {
   const quarantinePath = `${path}.corrupt-${Date.now().toString(36)}`;
   try {
