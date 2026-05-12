@@ -326,7 +326,12 @@ export const createLlmGatewayClient = (
 
       // Failure path. Decide whether to feed the breaker a transient signal
       // or a non-transient (policy) signal.
-      if (result.retryable && isTransientFailure(result.errorClass)) {
+      const shouldRetry =
+        result.retryable &&
+        (isTransientFailure(result.errorClass) ||
+          isRetryableStructuredOutputSyntaxFailure(result));
+
+      if (shouldRetry) {
         breaker.recordTransientFailure();
       } else {
         breaker.recordNonTransientOutcome();
@@ -349,7 +354,7 @@ export const createLlmGatewayClient = (
         }
       }
 
-      if (!result.retryable || attempt >= maxAttempts) {
+      if (!shouldRetry || attempt >= maxAttempts) {
         return result;
       }
 
@@ -611,6 +616,13 @@ const isTransientFailure = (errorClass: LlmGatewayErrorClass): boolean => {
     errorClass === "incomplete"
   );
 };
+
+const isRetryableStructuredOutputSyntaxFailure = (
+  result: LlmGenerationFailure,
+): boolean =>
+  result.errorClass === "schema_invalid" &&
+  result.retryable &&
+  result.message === "structured-output content is not valid JSON";
 
 const expandMaxOutputTokensForRetry = (current: number): number => {
   if (!Number.isSafeInteger(current) || current <= 0) return current;
@@ -1295,7 +1307,7 @@ const parseOpenAiChatResponse = async ({
             ...(constrainedDecoding !== undefined
               ? { constrainedDecoding }
               : {}),
-            retryable: false,
+            retryable: true,
             attempt,
           };
         }

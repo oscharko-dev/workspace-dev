@@ -1799,7 +1799,10 @@ export interface TestCasePolicyProfileRules {
    * When the adversarial-critic loop did not run (no judge client
    * wired) or exited with `stopReason === "critic_failed"`, the gate
    * status is always `"skipped"` regardless of `gateMode` — skip is
-   * an explicit, audit-visible status and is never silently a pass.
+   * an explicit, audit-visible status and is never silently a pass. When
+   * the runner applies the deterministic negative-case fallback, the trace
+   * records `stopReason === "deterministic_fallback_applied"` and the
+   * gate is evaluated normally against the resulting coverage accounting.
    *
    * Optional for backward compatibility: when omitted the production
    * runner falls back to the documented default of
@@ -5301,9 +5304,14 @@ export const FAITHFULNESS_VERDICT_SCHEMA_VERSION = "1.1.0" as const;
  * the state-transition tier (steps belonging to a `state_transition`
  * technique case) so the judge prefers `evidence_partial` over `mismatch`
  * when the workflow transition is intermediate (e.g. only the in-flight
- * frame is captured). The verdict-emission contract is unchanged. */
+ * frame is captured). The verdict-emission contract is unchanged.
+ *
+ * `faithfulness-judge.v4` — runtime response schema requires per-step
+ * verdicts and the prompt clarifies that screenshots represent the baseline
+ * state before test execution, so future user-entered values are partial
+ * evidence rather than visible-label mismatches. */
 export const FAITHFULNESS_JUDGE_PROMPT_TEMPLATE_VERSION =
-  "faithfulness-judge.v3" as const;
+  "faithfulness-judge.v4" as const;
 
 /** Canonical filename for the persisted faithfulness-judge prompt artifact. */
 export const FAITHFULNESS_JUDGE_COMPILED_PROMPT_ARTIFACT_FILENAME =
@@ -5346,9 +5354,9 @@ export type FaithfulnessStepVerdictLabel =
 /** Per-step faithfulness verdict emitted by the cross-family judge.
  *
  * `stepIndex` mirrors `GeneratedTestCaseStep.index` (1-based). `message` is
- * a short reviewer-readable rationale. The judge MAY omit step verdicts —
- * older callers that only consume the legacy `hallucinations` / `mismatches`
- * arrays continue to work. */
+ * a short reviewer-readable rationale. Persisted verdicts keep the field
+ * optional for backwards compatibility with schema 1.0.0 artifacts; new
+ * runtime judge calls require it in their response schema. */
 export interface FaithfulnessStepVerdict {
   readonly testCaseId: string;
   readonly stepIndex: number;

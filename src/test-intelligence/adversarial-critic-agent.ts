@@ -16,6 +16,7 @@ import type {
   RiskRanking,
 } from "../contracts/index.js";
 import { canonicalJson, sha256Hex } from "./content-hash.js";
+import { generateWithLocalWallClockGuard } from "./llm-generation-guard.js";
 import type { LlmGatewayClient } from "./llm-gateway.js";
 
 export const ADVERSARIAL_CRITIC_FINDING_SCHEMA_VERSION = "1.0.0" as const;
@@ -116,6 +117,7 @@ export interface AdversarialCriticTraceArtifact {
   readonly stopReason:
     | "converged_no_new_findings"
     | "critic_failed"
+    | "deterministic_fallback_applied"
     | "max_rounds_reached"
     | "no_rounds_needed";
   readonly negativeCoverage: NegativeCoverageAccounting;
@@ -519,24 +521,33 @@ export const runAdversarialCriticRound = async (
 ): Promise<RunAdversarialCriticRoundResult> => {
   const prompt = buildPrompt(input);
   const startedAt = Date.now();
-  const gatewayResult = await input.client.generate({
-    jobId: input.jobId,
-    systemPrompt: prompt.systemPrompt,
-    userPrompt: prompt.userPrompt,
-    responseSchema: buildResponseSchema(),
-    responseSchemaName: ADVERSARIAL_CRITIC_RESPONSE_SCHEMA_NAME,
-    ...(input.maxInputTokens !== undefined
-      ? { maxInputTokens: input.maxInputTokens }
-      : {}),
-    ...(input.maxOutputTokens !== undefined
-      ? { maxOutputTokens: input.maxOutputTokens }
-      : {}),
+  const gatewayResult = await generateWithLocalWallClockGuard({
+    client: input.client,
+    operationLabel: "adversarial critic gateway request",
+    request: {
+      jobId: input.jobId,
+      systemPrompt: prompt.systemPrompt,
+      userPrompt: prompt.userPrompt,
+      responseSchema: buildResponseSchema(),
+      responseSchemaName: ADVERSARIAL_CRITIC_RESPONSE_SCHEMA_NAME,
+      ...(input.maxInputTokens !== undefined
+        ? { maxInputTokens: input.maxInputTokens }
+        : {}),
+      ...(input.maxOutputTokens !== undefined
+        ? { maxOutputTokens: input.maxOutputTokens }
+        : {}),
+      ...(input.maxWallClockMs !== undefined
+        ? { maxWallClockMs: input.maxWallClockMs }
+        : {}),
+      ...(input.maxRetries !== undefined
+        ? { maxRetries: input.maxRetries }
+        : {}),
+      ...(input.abortSignal !== undefined
+        ? { abortSignal: input.abortSignal }
+        : {}),
+    },
     ...(input.maxWallClockMs !== undefined
-      ? { maxWallClockMs: input.maxWallClockMs }
-      : {}),
-    ...(input.maxRetries !== undefined ? { maxRetries: input.maxRetries } : {}),
-    ...(input.abortSignal !== undefined
-      ? { abortSignal: input.abortSignal }
+      ? { defaultWallClockMs: input.maxWallClockMs }
       : {}),
   });
   const durationMs = Date.now() - startedAt;

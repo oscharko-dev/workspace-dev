@@ -91,6 +91,7 @@ import {
   type ActiveModelBinding,
   type AgentSourceLabel,
   type BusinessTestIntentIr,
+  type CoveragePlan,
   type FinOpsBudgetEnvelope,
   type FinOpsBudgetReport,
   type GeneratedTestCase,
@@ -119,6 +120,7 @@ import {
   type TestCasePriority,
   type TestCaseRiskCategory,
   type TestCaseTechnique29119,
+  type TechniqueCoverageMinimumPolicy,
   type TestDesignModel,
   type TestCaseType,
   type TestCaseValidationReport,
@@ -257,12 +259,16 @@ import {
 } from "./intent-derivation.js";
 import type { LlmGatewayClient } from "./llm-gateway.js";
 import type { LlmGatewayClientBundle } from "./llm-gateway-bundle.js";
+import { generateWithLocalWallClockGuard } from "./llm-generation-guard.js";
 import { scanLessons, selectRelevantLessons } from "./agent-lessons-memdir.js";
 import {
   compilePrompt,
   type CompilePromptSuffixSection,
 } from "./prompt-compiler.js";
-import { mergeGeneratedTestCaseLists } from "./case-merger.js";
+import {
+  buildCaseMergerSignature,
+  mergeGeneratedTestCaseLists,
+} from "./case-merger.js";
 import {
   voteGeneratedTestCaseSamples,
   writeSelfConsistencyReport,
@@ -355,6 +361,7 @@ import {
   GENERIC_VALIDATION_EXPECTED_RESULT,
 } from "./unresolved-validation-rules.js";
 import { runValidationPipeline } from "./validation-pipeline.js";
+import { resolveTechniqueQuotas } from "./technique-quota.js";
 import {
   buildMutationKillRateSummary,
   encodeCanonicalReportBytes as encodeMutationReportBytes,
@@ -2334,7 +2341,9 @@ const buildRunQualityArtifact = (input: {
           ? "recovered"
           : input.judgeAccepted
             ? "clean"
-            : "blocked",
+            : input.blocked
+              ? "blocked"
+              : "degraded",
     },
     {
       stage: "visual_sidecar",
@@ -2362,37 +2371,46 @@ const buildRunQualityArtifact = (input: {
       attempts: 1,
       successes: 1,
       failures: 0,
-      finalOutcome: input.blocked ? "blocked" : "clean",
+      finalOutcome: input.validation.policy.blocked
+        ? "blocked"
+        : input.validation.policy.needsReviewCount > 0 ||
+            input.validation.policy.jobLevelViolations.length > 0
+          ? "degraded"
+          : "clean",
     },
   ];
   const degradedReasons = new Set<string>();
+  if (!input.judgeAccepted) {
+    degradedReasons.add("judge_consensus_not_accepted");
+  }
+  if (
+    input.validation.policy.needsReviewCount > 0 ||
+    input.validation.policy.jobLevelViolations.length > 0
+  ) {
+    degradedReasons.add("policy_attention_required");
+  }
+  if (input.judgeConsensus.repairHistory.finalOutcome === "needs_review") {
+    degradedReasons.add("repair_budget_exhausted");
+  }
+  if (input.judgeConsensus.repairHistory.finalOutcome === "budget_exhausted") {
+    // Issue #2016: the loop refused to start the next regeneration because
+    // the FinOps generator-side budget would have been breached. The latest
+    // best-effort list is still handed downstream; surface the cause so
+    // operators don't conflate this with the signature-stall outcome.
+    degradedReasons.add("repair_budget_exhausted");
+  }
+  if (input.judgeConsensus.repairHistory.finalOutcome === "convergence_stalled") {
+    degradedReasons.add("repair_convergence_stalled");
+  }
+  if (input.judgeConsensus.repairHistory.finalOutcome === "rejected") {
+    degradedReasons.add("repair_rejected_post_iteration");
+  }
   if (input.blocked) {
-    if (input.validation.policy.blockedCount > 0) {
+    if (
+      input.validation.policy.blocked ||
+      input.validation.policy.blockedCount > 0
+    ) {
       degradedReasons.add("policy_blocked");
-    }
-    if (!input.judgeAccepted) {
-      degradedReasons.add("judge_consensus_not_accepted");
-    }
-    if (input.judgeConsensus.repairHistory.finalOutcome === "needs_review") {
-      degradedReasons.add("repair_budget_exhausted");
-    }
-    if (
-      input.judgeConsensus.repairHistory.finalOutcome === "budget_exhausted"
-    ) {
-      // Issue #2016: the loop refused to start the next regeneration
-      // because the FinOps generator-side budget would have been
-      // breached. The latest best-effort list is still handed downstream;
-      // surface the cause so operators don't conflate this with the
-      // signature-stall outcome.
-      degradedReasons.add("repair_budget_exhausted");
-    }
-    if (
-      input.judgeConsensus.repairHistory.finalOutcome === "convergence_stalled"
-    ) {
-      degradedReasons.add("repair_convergence_stalled");
-    }
-    if (input.judgeConsensus.repairHistory.finalOutcome === "rejected") {
-      degradedReasons.add("repair_rejected_post_iteration");
     }
   } else {
     if (attemptSummaries[2]!.finalOutcome === "degraded") {
@@ -3496,6 +3514,16 @@ export const runFigmaToQcTestCases = async (
       input.harness?.roleStepId ?? PRODUCTION_RUNNER_HARNESS_ROLE_STEP_ID;
     const harnessTestDepth: AgentHarnessTestDepth =
       input.harness?.testDepth ?? "standard";
+    const explicitLogicJudgeClient =
+      input.llm.bundle?.logicJudge ?? input.llm.logicJudge;
+    const collapsedLogicJudgeTopology =
+      explicitLogicJudgeClient !== undefined &&
+      explicitLogicJudgeClient.deployment === input.llm.client.deployment;
+    const negativeCaseLiftConfig = resolveNegativeCaseLiftConfig({
+      profileRules: policyProfileRules,
+      override: input.qualityGates?.negativeCaseLift,
+    });
+
     // Issue #1898: Logic-Judge defaults to ON. Callers that need the
     // legacy single-pass behaviour (deterministic generator-only
     // classification) must pass `logicJudge: { enabled: false }`
@@ -3509,15 +3537,17 @@ export const runFigmaToQcTestCases = async (
     // reusing the same model on the judge. When the slot is absent the
     // judge falls back to `input.llm.client` so existing operator
     // configurations keep working unchanged.
-    const logicJudgeEnabled = input.logicJudge?.enabled !== false;
+    const logicJudgeEnabled =
+      input.logicJudge?.enabled !== false && !collapsedLogicJudgeTopology;
     const logicJudgeClient: LlmGatewayClient =
       input.llm.bundle?.logicJudge ?? input.llm.logicJudge ?? input.llm.client;
     const crossFamilyGeneratorClient =
       input.llm.bundle?.testGenerationSecondary;
+    const deterministicAdversarialCriticEnabled =
+      negativeCaseLiftConfig.gateMode !== "off" && collapsedLogicJudgeTopology;
     const adversarialCriticEnabled =
-      logicJudgeEnabled &&
-      (input.llm.bundle?.logicJudge !== undefined ||
-        input.llm.logicJudge !== undefined);
+      deterministicAdversarialCriticEnabled ||
+      (logicJudgeEnabled && explicitLogicJudgeClient !== undefined);
 
     const compileGenerationPass = (
       pass: GenerationPassConfig,
@@ -3692,8 +3722,14 @@ export const runFigmaToQcTestCases = async (
                   : {}),
               },
             });
-            const llmResult =
-              await generationClient.generate(generationRequest);
+            const llmResult = await generateWithLocalWallClockGuard({
+              client: generationClient,
+              request: generationRequest,
+              operationLabel: "test generation gateway request",
+              ...(effectiveMaxWallClockMs !== undefined
+                ? { defaultWallClockMs: effectiveMaxWallClockMs }
+                : {}),
+            });
             if (
               capturedLlmResult === undefined ||
               inputPass.pass.passId === undefined ||
@@ -3900,7 +3936,14 @@ export const runFigmaToQcTestCases = async (
           const request = buildGenerationRequest(compiled);
           request.maxRetries = 0;
           const requestStartedAt = Date.now();
-          const llmResult = await input.llm.client.generate(request);
+          const llmResult = await generateWithLocalWallClockGuard({
+            client: input.llm.client,
+            request,
+            operationLabel: "generator regeneration gateway request",
+            ...(request.maxWallClockMs !== undefined
+              ? { defaultWallClockMs: request.maxWallClockMs }
+              : {}),
+          });
           const llmDurationMs = Date.now() - requestStartedAt;
           await recordFinopsGatewayAttempt({
             role: "test_generation",
@@ -4116,6 +4159,11 @@ export const runFigmaToQcTestCases = async (
       artifactFilename: string;
       domain: string;
       findings: readonly AdversarialCriticFinding[];
+      artifactDigest?: {
+        filename: string;
+        sha256: string;
+        bytes: number;
+      };
       regeneratedListHash?: string;
       generatedCaseCount?: number;
     }> = [];
@@ -4125,12 +4173,88 @@ export const runFigmaToQcTestCases = async (
     let adversarialCriticStopReason:
       | "converged_no_new_findings"
       | "critic_failed"
+      | "deterministic_fallback_applied"
       | "max_rounds_reached"
       | "no_rounds_needed" = "no_rounds_needed";
     let adversarialCriticTraceArtifact:
       | AdversarialCriticTraceArtifact
       | undefined;
-    if (adversarialCriticEnabled) {
+    if (deterministicAdversarialCriticEnabled) {
+      const deterministicRound = buildDeterministicAdversarialFallbackRound({
+        jobId: input.jobId,
+        domain: adversarialCriticDomain,
+        baselineList: baselineGeneratedList,
+        generatedList,
+        intent,
+        model: compiled.artifacts.payload.testDesignModel!,
+        workflowTopology,
+        thresholdRatio: negativeCaseLiftConfig.thresholdRatio,
+      });
+      if (deterministicRound.artifact.outputs.findingCount > 0) {
+        const roundArtifactFilename = `agent-role-runs/${ADVERSARIAL_CRITIC_ROUND_ARTIFACT_PREFIX}${deterministicRound.artifact.round}.json`;
+        const roundArtifactBytes = Buffer.from(
+          `${canonicalJson(deterministicRound.artifact)}\n`,
+          "utf8",
+        );
+        adversarialCriticRoundArtifacts.push(deterministicRound.artifact);
+        adversarialCriticProvenanceRounds.push({
+          round: deterministicRound.artifact.round,
+          artifactFilename: roundArtifactFilename,
+          domain: deterministicRound.artifact.domain,
+          findings: deterministicRound.artifact.outputs.findings,
+          artifactDigest: {
+            filename: roundArtifactFilename,
+            sha256: createHash("sha256")
+              .update(roundArtifactBytes)
+              .digest("hex"),
+            bytes: roundArtifactBytes.byteLength,
+          },
+          regeneratedListHash: sha256Hex(deterministicRound.list),
+          generatedCaseCount: deterministicRound.list.testCases.length,
+        });
+        await writeAdversarialCriticRoundArtifact({
+          runDir: artifactDir,
+          artifact: deterministicRound.artifact,
+        });
+        generatedList = stabilizeGeneratedListForAcceptance({
+          list: deterministicRound.list,
+          model: compiled.artifacts.payload.testDesignModel!,
+          jobId: input.jobId,
+        });
+        generatedList = {
+          ...generatedList,
+          testCases: generatedList.testCases.map((testCase) =>
+            enrichWorkflowTopologyCoverage({
+              testCase,
+              workflowTopology,
+            }),
+          ),
+        };
+        adversarialCriticStopReason = "deterministic_fallback_applied";
+      } else {
+        adversarialCriticStopReason = "converged_no_new_findings";
+      }
+      adversarialCriticTraceArtifact = {
+        schemaVersion: "1.0.0",
+        jobId: input.jobId,
+        domain: adversarialCriticDomain,
+        roundsExecuted: adversarialCriticRoundArtifacts.length,
+        stopReason: adversarialCriticStopReason,
+        negativeCoverage: computeNegativeCoverageAccounting({
+          baselineList: baselineGeneratedList,
+          finalList: generatedList,
+        }),
+        rounds: adversarialCriticRoundArtifacts.map((artifact) => ({
+          round: artifact.round,
+          findingCount: artifact.outputs.findingCount,
+          dedupeKeys: artifact.outputs.dedupeKeys,
+        })),
+      };
+      await writeAdversarialCriticTraceArtifact({
+        runDir: artifactDir,
+        artifact: adversarialCriticTraceArtifact,
+      });
+    } else if (adversarialCriticEnabled) {
       const adversarialCriticBudgetLimits =
         resolveAdversarialCriticBudgetLimits(
           finopsBudget.roles.test_generation,
@@ -4194,12 +4318,21 @@ export const runFigmaToQcTestCases = async (
           },
         };
         const roundArtifactFilename = `agent-role-runs/${ADVERSARIAL_CRITIC_ROUND_ARTIFACT_PREFIX}${normalizedArtifact.round}.json`;
+        const roundArtifactBytes = Buffer.from(
+          `${canonicalJson(normalizedArtifact)}\n`,
+          "utf8",
+        );
         adversarialCriticRoundArtifacts.push(normalizedArtifact);
         const provenanceRound: {
           round: number;
           artifactFilename: string;
           domain: string;
           findings: readonly AdversarialCriticFinding[];
+          artifactDigest?: {
+            filename: string;
+            sha256: string;
+            bytes: number;
+          };
           regeneratedListHash?: string;
           generatedCaseCount?: number;
         } = {
@@ -4207,6 +4340,13 @@ export const runFigmaToQcTestCases = async (
           artifactFilename: roundArtifactFilename,
           domain: normalizedArtifact.domain,
           findings: normalizedArtifact.outputs.findings,
+          artifactDigest: {
+            filename: roundArtifactFilename,
+            sha256: createHash("sha256")
+              .update(roundArtifactBytes)
+              .digest("hex"),
+            bytes: roundArtifactBytes.byteLength,
+          },
         };
         adversarialCriticProvenanceRounds.push(provenanceRound);
         await writeAdversarialCriticRoundArtifact({
@@ -4250,7 +4390,14 @@ export const runFigmaToQcTestCases = async (
         });
         generatedList = stabilizeGeneratedListForAcceptance({
           list: regenerateWithAdversarialCaseCountCeiling({
-            list: regeneration.list,
+            // Keep prior adversarial coverage in the candidate pool instead of
+            // letting a regeneration rewrite the suite and accidentally drop
+            // existing negative cases. The ceiling below still enforces the
+            // original case-count budget after the merge.
+            list: mergeAdversarialRegeneratedTestCaseLists({
+              previousList: generatedList,
+              regeneratedList: regeneration.list,
+            }),
             maxCaseCount: baselineGeneratedList.testCases.length,
           }),
           model: compiled.artifacts.payload.testDesignModel!,
@@ -4301,10 +4448,6 @@ export const runFigmaToQcTestCases = async (
     // unconditionally so audit can distinguish skip from pass; enforcement
     // is deferred until after every artifact is sealed so a failure still
     // leaves a complete evidence bundle on disk.
-    const negativeCaseLiftConfig = resolveNegativeCaseLiftConfig({
-      profileRules: policyProfileRules,
-      override: input.qualityGates?.negativeCaseLift,
-    });
     const negativeCaseLiftGateResult = evaluateNegativeCaseLiftGate({
       config: negativeCaseLiftConfig,
       adversarialCriticEnabled,
@@ -4734,7 +4877,14 @@ export const runFigmaToQcTestCases = async (
               const repairRequest = buildGenerationRequest(repairCompiled);
               repairRequest.maxRetries = 0;
               const startedAtRepair = Date.now();
-              const llmResult = await input.llm.client.generate(repairRequest);
+              const llmResult = await generateWithLocalWallClockGuard({
+                client: input.llm.client,
+                request: repairRequest,
+                operationLabel: `repair iteration ${iteration} generator gateway request`,
+                ...(repairRequest.maxWallClockMs !== undefined
+                  ? { defaultWallClockMs: repairRequest.maxWallClockMs }
+                  : {}),
+              });
               const llmDurationMs = Date.now() - startedAtRepair;
               await recordFinopsGatewayAttempt({
                 role: "test_generation",
@@ -5211,6 +5361,15 @@ export const runFigmaToQcTestCases = async (
 
     // 8. Validation pipeline.
     emit({ phase: "validation_started", timestamp: monotonicMs() });
+    generatedList = prepareGeneratedListForValidation({
+      list: generatedList,
+      intent,
+      workflowTopology,
+      coveragePlan: coveragePlanResult.plan,
+      ...(logicJudgeTechniqueCoverageMinimum !== undefined
+        ? { techniqueCoverageMinimum: logicJudgeTechniqueCoverageMinimum }
+        : {}),
+    });
     const policyOverridesForValidation:
       | ReadonlyArray<{
           ruleId: string;
@@ -5259,12 +5418,14 @@ export const runFigmaToQcTestCases = async (
       untrustedContentReport: normalizedUntrusted.report,
       activeModelBindings,
     });
-    const blocked = validation.blocked || !judgeAccepted;
+    const policyStage = resolveRunPolicyStage({ validation, judgeAccepted });
+    const blocked = policyStage === "hard";
     emit({
       phase: "validation_complete",
       timestamp: monotonicMs(),
       details: {
         blocked,
+        policyStage,
         errorCount: validation.validation.errorCount,
         warningCount: validation.validation.warningCount,
         cases: validation.generatedTestCases.testCases.length,
@@ -5275,6 +5436,7 @@ export const runFigmaToQcTestCases = async (
       timestamp: monotonicMs(),
       details: {
         blocked,
+        policyStage,
         profileId: validation.policy.policyProfileId,
         approved: validation.policy.approvedCount,
         blockedCount: validation.policy.blockedCount,
@@ -5526,10 +5688,7 @@ export const runFigmaToQcTestCases = async (
       artifactDir,
       TEST_CASE_COVERAGE_REPORT_ARTIFACT_FILENAME,
     );
-    const finopsOutcomeOverride = deriveFinopsOutcomeFromValidation(
-      validation,
-      judgeAccepted,
-    );
+    const finopsOutcomeOverride = deriveFinopsOutcomeFromValidation(validation);
     const explicitWallClockOverrideMs =
       finopsBudget.roles.test_generation?.maxTotalWallClockMs;
     const resolvedWallClockBudget = resolveTestGenerationWallClockBudget({
@@ -7537,13 +7696,9 @@ const buildHarnessAttemptResult = (
 
 const deriveFinopsOutcomeFromValidation = (
   validation: ReturnType<typeof runValidationPipeline>,
-  judgeAccepted: boolean,
 ): FinOpsJobOutcome | undefined => {
   if (validation.visual !== undefined && validation.visual.blocked) {
     return "visual_sidecar_failed";
-  }
-  if (!judgeAccepted) {
-    return "validation_blocked";
   }
   if (validation.policy.blocked) {
     return "policy_blocked";
@@ -7552,6 +7707,24 @@ const deriveFinopsOutcomeFromValidation = (
     return "validation_blocked";
   }
   return undefined;
+};
+
+type RunPolicyStage = "clean" | "weich" | "mittel" | "hard";
+
+const resolveRunPolicyStage = (input: {
+  validation: ReturnType<typeof runValidationPipeline>;
+  judgeAccepted: boolean;
+}): RunPolicyStage => {
+  if (input.validation.blocked) return "hard";
+  if (
+    !input.judgeAccepted ||
+    input.validation.policy.needsReviewCount > 0 ||
+    input.validation.policy.jobLevelViolations.length > 0
+  ) {
+    return "mittel";
+  }
+  if (input.validation.validation.warningCount > 0) return "weich";
+  return "clean";
 };
 
 const mapHarnessOutcomeToProductionRunnerError = (
@@ -7942,11 +8115,125 @@ const mergeUniqueSortedIds = (
   right: Iterable<string>,
 ): string[] => [...new Set([...(left ?? []), ...right])].sort();
 
+const screenIdFromWorkflowFieldId = (fieldId: string): string | undefined => {
+  const separator = "::field::";
+  const index = fieldId.indexOf(separator);
+  return index > 0 ? fieldId.slice(0, index) : undefined;
+};
+
+const selectWorkflowLifecycleFieldIdForTestCase = (input: {
+  testCase: GeneratedTestCase;
+  workflowTopology: WorkflowTopology;
+  screenIds: readonly string[];
+}): string | undefined => {
+  const lifecycles = input.workflowTopology.fieldLifecycles
+    .filter((lifecycle) => lifecycle.transitions.length > 0)
+    .slice()
+    .sort((left, right) => left.fieldId.localeCompare(right.fieldId));
+  if (lifecycles.length === 0) return undefined;
+  const lifecycleFieldIds = new Set(
+    lifecycles.map((lifecycle) => lifecycle.fieldId),
+  );
+  for (const fieldId of input.testCase.qualitySignals.coveredFieldIds) {
+    if (lifecycleFieldIds.has(fieldId)) {
+      return fieldId;
+    }
+  }
+  const screenIds = new Set(input.screenIds);
+  const screenScopedLifecycle = lifecycles.find((lifecycle) => {
+    const screenId = screenIdFromWorkflowFieldId(lifecycle.fieldId);
+    return screenId !== undefined && screenIds.has(screenId);
+  });
+  return screenScopedLifecycle?.fieldId ?? lifecycles[0]?.fieldId;
+};
+
+const workflowTransitionIdForStep = (input: {
+  topology: WorkflowTopology;
+  fieldId: string;
+  index: number;
+  lastIndex: number;
+  type: TestCaseType;
+}): string | undefined => {
+  const isNegativeFlow =
+    input.type === "negative" || input.type === "validation";
+  const positiveTerminalValidationPass =
+    !isNegativeFlow && input.index === input.lastIndex
+      ? workflowFieldLifecycleTransitionIdFor({
+          topology: input.topology,
+          fieldId: input.fieldId,
+          from: "in_progress",
+          to: "validated",
+        })
+      : undefined;
+  const preferred =
+    positiveTerminalValidationPass ??
+    (input.index === 0
+      ? workflowFieldLifecycleTransitionIdFor({
+          topology: input.topology,
+          fieldId: input.fieldId,
+          from: "initial",
+          to: "focused",
+        })
+      : input.index === 1
+        ? workflowFieldLifecycleTransitionIdFor({
+            topology: input.topology,
+            fieldId: input.fieldId,
+            from: "focused",
+            to: "in_progress",
+          })
+        : isNegativeFlow
+          ? workflowFieldLifecycleTransitionIdFor({
+              topology: input.topology,
+              fieldId: input.fieldId,
+              from: "in_progress",
+              to: "error",
+            })
+          : input.index === input.lastIndex
+            ? (workflowFieldLifecycleTransitionIdFor({
+                topology: input.topology,
+                fieldId: input.fieldId,
+                from: "in_progress",
+                to: "validated",
+              }) ??
+              workflowFieldLifecycleTransitionIdFor({
+                topology: input.topology,
+                fieldId: input.fieldId,
+                from: "validated",
+                to: "terminal",
+              }))
+            : workflowFieldLifecycleTransitionIdFor({
+                topology: input.topology,
+                fieldId: input.fieldId,
+                from: "in_progress",
+                to: "validated",
+              }));
+  return (
+    preferred ??
+    workflowFieldLifecycleTransitionIdFor({
+      topology: input.topology,
+      fieldId: input.fieldId,
+    })
+  );
+};
+
+const workflowTransitionIdExists = (
+  topology: WorkflowTopology,
+  transitionId: string,
+): boolean =>
+  topology.fieldLifecycles.some((lifecycle) =>
+    lifecycle.transitions.some(
+      (transition) => transition.transitionId === transitionId,
+    ),
+  );
+
 const enrichWorkflowTopologyCoverage = (input: {
   testCase: GeneratedTestCase;
   workflowTopology: WorkflowTopology;
 }): GeneratedTestCase => {
-  if (input.workflowTopology.actions.length === 0) {
+  if (
+    input.workflowTopology.actions.length === 0 &&
+    input.workflowTopology.fieldLifecycles.length === 0
+  ) {
     return input.testCase;
   }
   const screenIds = [
@@ -7957,9 +8244,20 @@ const enrichWorkflowTopologyCoverage = (input: {
   if (screenIds.length === 0) {
     return input.testCase;
   }
+  const lifecycleFieldId = selectWorkflowLifecycleFieldIdForTestCase({
+    testCase: input.testCase,
+    workflowTopology: input.workflowTopology,
+    screenIds,
+  });
+  const coveredFieldIds =
+    lifecycleFieldId === undefined
+      ? input.testCase.qualitySignals.coveredFieldIds
+      : mergeUniqueSortedIds(input.testCase.qualitySignals.coveredFieldIds, [
+          lifecycleFieldId,
+        ]);
   const matchedActionIds = workflowActionIdsForTargets({
     topology: input.workflowTopology,
-    coveredFieldIds: input.testCase.qualitySignals.coveredFieldIds,
+    coveredFieldIds,
     screenIds,
     text: [
       input.testCase.title,
@@ -7979,80 +8277,604 @@ const enrichWorkflowTopologyCoverage = (input: {
   const alreadyAnnotated = input.testCase.steps.some((step) =>
     /\bACT-\d{3}\b/u.test(step.action),
   );
-  const primaryFieldId = input.testCase.qualitySignals.coveredFieldIds[0];
+  const primaryFieldId = lifecycleFieldId;
   const lifecycleSteps: GeneratedTestCase["steps"] =
     primaryFieldId === undefined
       ? input.testCase.steps
       : input.testCase.steps.map((step, index, steps) => {
-          if (step.fieldLifecycleTransitionId !== undefined) {
+          if (
+            step.fieldLifecycleTransitionId !== undefined &&
+            workflowTransitionIdExists(
+              input.workflowTopology,
+              step.fieldLifecycleTransitionId,
+            )
+          ) {
             return step;
           }
           const lastIndex = steps.length - 1;
-          const transitionId =
-            index === 0
-              ? workflowFieldLifecycleTransitionIdFor({
-                  topology: input.workflowTopology,
-                  fieldId: primaryFieldId,
-                  from: "initial",
-                  to: "focused",
-                })
-              : index === 1
-                ? workflowFieldLifecycleTransitionIdFor({
-                    topology: input.workflowTopology,
-                    fieldId: primaryFieldId,
-                    from: "focused",
-                    to: "in_progress",
-                  })
-                : input.testCase.type === "negative" ||
-                    input.testCase.type === "validation"
-                  ? workflowFieldLifecycleTransitionIdFor({
-                      topology: input.workflowTopology,
-                      fieldId: primaryFieldId,
-                      from: "in_progress",
-                      to: "error",
-                    })
-                  : index === lastIndex
-                    ? (workflowFieldLifecycleTransitionIdFor({
-                        topology: input.workflowTopology,
-                        fieldId: primaryFieldId,
-                        from: "validated",
-                        to: "terminal",
-                      }) ??
-                      workflowFieldLifecycleTransitionIdFor({
-                        topology: input.workflowTopology,
-                        fieldId: primaryFieldId,
-                        from: "in_progress",
-                        to: "validated",
-                      }))
-                    : workflowFieldLifecycleTransitionIdFor({
-                        topology: input.workflowTopology,
-                        fieldId: primaryFieldId,
-                        from: "in_progress",
-                        to: "validated",
-                      });
-          return transitionId === undefined
-            ? step
-            : { ...step, fieldLifecycleTransitionId: transitionId };
+          const transitionId = workflowTransitionIdForStep({
+            topology: input.workflowTopology,
+            fieldId: primaryFieldId,
+            index,
+            lastIndex,
+            type: input.testCase.type,
+          });
+          if (transitionId === undefined) {
+            const cleaned = { ...step };
+            delete cleaned.fieldLifecycleTransitionId;
+            return cleaned;
+          }
+          return { ...step, fieldLifecycleTransitionId: transitionId };
         });
   const steps: GeneratedTestCase["steps"] =
     anchor === undefined || alreadyAnnotated || lifecycleSteps.length === 0
       ? lifecycleSteps
-      : input.testCase.steps.map((step, index) =>
+      : lifecycleSteps.map((step, index) =>
           index === 0
             ? {
-                ...lifecycleSteps[index]!,
+                ...step,
                 action: `${anchor} ${step.action}`,
               }
-            : (lifecycleSteps[index] ?? step),
+            : step,
         );
   return {
     ...input.testCase,
     steps,
     qualitySignals: {
       ...input.testCase.qualitySignals,
+      coveredFieldIds,
       coveredActionIds,
     },
   };
+};
+
+const normalizeGeneratedTestCaseStepIndices = (
+  testCase: GeneratedTestCase,
+): GeneratedTestCase => {
+  const steps = testCase.steps.map((step, index) => {
+    const nextIndex = index + 1;
+    if (step.index === nextIndex) return step;
+    return { ...step, index: nextIndex };
+  });
+  const changed = steps.some((step, index) => step !== testCase.steps[index]);
+  return changed ? { ...testCase, steps } : testCase;
+};
+
+const testCaseAnchorsScreen = (
+  testCase: GeneratedTestCase,
+  screenId: string,
+): boolean =>
+  testCase.figmaTraceRefs.some((traceRef) => traceRef.screenId === screenId);
+
+const countAnchoredTechniquesForScreen = (
+  testCases: ReadonlyArray<GeneratedTestCase>,
+  screenId: string,
+): Map<TestCaseTechnique29119, number> => {
+  const counts = new Map<TestCaseTechnique29119, number>();
+  for (const testCase of testCases) {
+    if (!testCaseAnchorsScreen(testCase, screenId)) continue;
+    counts.set(testCase.technique, (counts.get(testCase.technique) ?? 0) + 1);
+  }
+  return counts;
+};
+
+const techniqueQuotaCandidateRank = (input: {
+  testCase: GeneratedTestCase;
+  sourceMinimum: number;
+}): number => {
+  let rank = 0;
+  if (input.sourceMinimum > 0) rank += 1_000;
+  if (input.testCase.type === "accessibility") rank += 100;
+  if (input.testCase.technique === "use_case") rank += 25;
+  if (input.testCase.type === "negative") rank += 5;
+  return rank;
+};
+
+const enforceTechniqueQuotasForValidation = (input: {
+  list: GeneratedTestCaseList;
+  coveragePlan: CoveragePlan;
+  techniqueCoverageMinimum?: TechniqueCoverageMinimumPolicy;
+}): GeneratedTestCaseList => {
+  const quotas = resolveTechniqueQuotas(
+    input.coveragePlan,
+    input.techniqueCoverageMinimum,
+  ).filter((quota) => quota.requiredCount > 0);
+  if (quotas.length === 0) return input.list;
+
+  let changed = false;
+  const testCases: GeneratedTestCase[] = input.list.testCases.map(
+    (testCase) => testCase,
+  );
+
+  for (const quota of quotas) {
+    const screenQuotas = quotas.filter(
+      (candidate) => candidate.screenId === quota.screenId,
+    );
+    const minimumByTechnique = new Map<TestCaseTechnique29119, number>();
+    for (const screenQuota of screenQuotas) {
+      minimumByTechnique.set(
+        screenQuota.technique,
+        Math.max(
+          minimumByTechnique.get(screenQuota.technique) ?? 0,
+          screenQuota.requiredCount,
+        ),
+      );
+    }
+
+    const counts = countAnchoredTechniquesForScreen(
+      testCases,
+      quota.screenId,
+    );
+    let missing = quota.requiredCount - (counts.get(quota.technique) ?? 0);
+    if (missing <= 0) continue;
+
+    const candidates = testCases
+      .map((testCase, index) => ({ index, testCase }))
+      .filter(({ testCase }) => {
+        if (!testCaseAnchorsScreen(testCase, quota.screenId)) return false;
+        if (testCase.technique === quota.technique) return false;
+        const sourceMinimum = minimumByTechnique.get(testCase.technique) ?? 0;
+        const sourceCount = counts.get(testCase.technique) ?? 0;
+        return sourceCount > sourceMinimum;
+      })
+      .sort((left, right) => {
+        const leftMinimum =
+          minimumByTechnique.get(left.testCase.technique) ?? 0;
+        const rightMinimum =
+          minimumByTechnique.get(right.testCase.technique) ?? 0;
+        return (
+          techniqueQuotaCandidateRank({
+            testCase: left.testCase,
+            sourceMinimum: leftMinimum,
+          }) -
+            techniqueQuotaCandidateRank({
+              testCase: right.testCase,
+              sourceMinimum: rightMinimum,
+            }) ||
+          left.testCase.id.localeCompare(right.testCase.id)
+        );
+      });
+
+    for (const candidate of candidates) {
+      if (missing <= 0) break;
+      const current = testCases[candidate.index];
+      if (current === undefined) continue;
+      const sourceMinimum = minimumByTechnique.get(current.technique) ?? 0;
+      const sourceCount = counts.get(current.technique) ?? 0;
+      if (sourceCount <= sourceMinimum) continue;
+
+      counts.set(current.technique, sourceCount - 1);
+      counts.set(quota.technique, (counts.get(quota.technique) ?? 0) + 1);
+      testCases[candidate.index] = {
+        ...current,
+        technique: quota.technique,
+      };
+      changed = true;
+      missing -= 1;
+    }
+  }
+
+  return changed ? { ...input.list, testCases } : input.list;
+};
+
+const DETERMINISTIC_CASE_COUNT_FIELD_THRESHOLD = 20 as const;
+
+interface DeterministicCaseCountScreenTarget {
+  readonly screenId: string;
+  readonly requiredElementIds: readonly string[];
+  readonly targetCount: number;
+  readonly accessibilityRequired: boolean;
+}
+
+const deterministicSupplementalCaseId = (input: {
+  readonly jobId: string;
+  readonly kind: "case-count-floor" | "form-a11y-floor";
+  readonly screenId: string;
+  readonly fieldId?: string;
+  readonly index: number;
+}): string =>
+  `tc-${createHash("sha256")
+    .update(canonicalJson(input))
+    .digest("hex")
+    .slice(0, 12)}`;
+
+const deterministicExampleValueForField = (input: {
+  readonly label: string;
+  readonly type: string;
+}): string => {
+  const text = `${input.label} ${input.type}`.toLowerCase();
+  if (/\b(?:iban)\b/u.test(text)) return "iban-wert-001";
+  if (/\b(?:bic)\b/u.test(text)) return "bic-wert-001";
+  if (/\b(?:e-?mail|mail)\b/u.test(text)) return "email-wert-001";
+  if (/\b(?:telefon|phone|mobil)\b/u.test(text)) return "telefon-wert-001";
+  if (/\b(?:datum|date|geburtsdatum)\b/u.test(text)) return "15.05.2026";
+  if (/\b(?:betrag|amount|preis|price|summe|saldo|rate)\b/u.test(text)) {
+    return "123,45";
+  }
+  if (/\b(?:nummer|number|id|referenz|vertrag|konto)\b/u.test(text)) {
+    return "ABC-12345";
+  }
+  if (/\b(?:plz|postleitzahl|zip)\b/u.test(text)) return "10115";
+  if (/\b(?:select|dropdown|auswahl|option)\b/u.test(text)) return "Option A";
+  if (/\b(?:name|vorname|nachname|person)\b/u.test(text)) {
+    return "personen-auswahl-a";
+  }
+  return "Fachwert-123";
+};
+
+const figmaTraceRefForField = (
+  field: Pick<BusinessTestIntentIr["detectedFields"][number], "screenId" | "trace">,
+): GeneratedTestCaseFigmaTrace => ({
+  screenId: field.screenId,
+  ...(field.trace.nodeId !== undefined ? { nodeId: field.trace.nodeId } : {}),
+  ...(field.trace.nodeName !== undefined ? { nodeName: field.trace.nodeName } : {}),
+  ...(field.trace.nodePath !== undefined ? { nodePath: field.trace.nodePath } : {}),
+});
+
+const finalizeDeterministicSupplementalCase = (input: {
+  readonly testCase: GeneratedTestCase;
+  readonly workflowTopology: WorkflowTopology;
+}): GeneratedTestCase =>
+  normalizeGeneratedTestCaseStepIndices(
+    enrichWorkflowTopologyCoverage({
+      testCase: input.testCase,
+      workflowTopology: input.workflowTopology,
+    }),
+  );
+
+const buildDeterministicFieldCoverageCase = (input: {
+  readonly jobId: string;
+  readonly seedCase: GeneratedTestCase;
+  readonly field: BusinessTestIntentIr["detectedFields"][number];
+  readonly riskClass: TestCaseRiskCategory;
+  readonly index: number;
+  readonly workflowTopology: WorkflowTopology;
+}): GeneratedTestCase => {
+  const value = deterministicExampleValueForField({
+    label: input.field.label,
+    type: input.field.type,
+  });
+  return finalizeDeterministicSupplementalCase({
+    workflowTopology: input.workflowTopology,
+    testCase: {
+      ...input.seedCase,
+      id: deterministicSupplementalCaseId({
+        jobId: input.jobId,
+        kind: "case-count-floor",
+        screenId: input.field.screenId,
+        fieldId: input.field.id,
+        index: input.index,
+      }),
+      title: `Positivfall: ${input.field.label} akzeptiert gültigen Wert`,
+      objective: `Prüft, dass das Feld „${input.field.label}“ einen gültigen fachlichen Wert akzeptiert.`,
+      type: "functional",
+      polarity: "positive",
+      category: "positive_path",
+      priority:
+        input.riskClass === "high" ||
+        input.riskClass === "regulated_data" ||
+        input.riskClass === "financial_transaction"
+          ? "p1"
+          : "p2",
+      riskCategory: input.riskClass,
+      technique: "equivalence_partitioning",
+      preconditions: ["Die zugehörige Maske ist geöffnet und eingabebereit."],
+      testData: [`${input.field.label}: ${value}`],
+      steps: [
+        {
+          index: 1,
+          action: `Erfasse im Feld „${input.field.label}“ den Wert „${value}“.`,
+          expected: "Der Wert wird im Feld sichtbar übernommen.",
+        },
+        {
+          index: 2,
+          action: `Verlasse das Feld „${input.field.label}“ und prüfe den Feldzustand.`,
+          expected:
+            "Das Feld bleibt ohne Validierungsfehler im fachlich gültigen Zustand.",
+        },
+      ],
+      expectedResults: [
+        `Das Feld „${input.field.label}“ akzeptiert den Wert „${value}“.`,
+        "Es wird keine Fehlermeldung für die gültige Eingabe angezeigt.",
+      ],
+      figmaTraceRefs: [figmaTraceRefForField(input.field)],
+      assumptions: [],
+      openQuestions: [],
+      qualitySignals: {
+        ...input.seedCase.qualitySignals,
+        coveredFieldIds: [input.field.id],
+        coveredActionIds: [],
+        coveredValidationIds: [],
+        coveredNavigationIds: [],
+        confidence: Math.min(input.seedCase.qualitySignals.confidence, 0.86),
+      },
+      reviewState: "needs_review",
+    },
+  });
+};
+
+const buildDeterministicFormAccessibilityCase = (input: {
+  readonly jobId: string;
+  readonly seedCase: GeneratedTestCase;
+  readonly screenId: string;
+  readonly screenName: string;
+  readonly field?: BusinessTestIntentIr["detectedFields"][number];
+  readonly index: number;
+  readonly workflowTopology: WorkflowTopology;
+}): GeneratedTestCase => {
+  const traceRef =
+    input.field === undefined
+      ? { screenId: input.screenId }
+      : figmaTraceRefForField(input.field);
+  const coveredFieldIds =
+    input.field === undefined ? [] : [input.field.id];
+  return finalizeDeterministicSupplementalCase({
+    workflowTopology: input.workflowTopology,
+    testCase: {
+      ...input.seedCase,
+      id: deterministicSupplementalCaseId({
+        jobId: input.jobId,
+        kind: "form-a11y-floor",
+        screenId: input.screenId,
+        ...(input.field !== undefined ? { fieldId: input.field.id } : {}),
+        index: input.index,
+      }),
+      title: `Barrierefreiheit: Formular „${input.screenName}“ per Tastatur und Screen Reader prüfen`,
+      objective:
+        "Prüft Tastaturbedienung, sichtbare Fokusreihenfolge und Screen-Reader-Ausgabe für den Formularscreen.",
+      type: "accessibility",
+      polarity: "positive",
+      category: "accessibility",
+      priority: "p1",
+      riskCategory:
+        input.seedCase.riskCategory === "low"
+          ? "medium"
+          : input.seedCase.riskCategory,
+      technique: "use_case",
+      preconditions: [`Die Maske „${input.screenName}“ ist geöffnet.`],
+      testData: [
+        "Tastatur: Tab und Shift+Tab",
+        "Screen Reader: Feldname, Rolle, Wert und Fehlerzustand werden angesagt",
+      ],
+      steps: [
+        {
+          index: 1,
+          action:
+            "Navigiere die Formularfelder per Tastatur mit Tab und Shift+Tab.",
+          expected:
+            "Die Fokusreihenfolge ist fachlich nachvollziehbar und der sichtbare Fokusindikator ist jederzeit erkennbar.",
+        },
+        {
+          index: 2,
+          action:
+            "Prüfe mit einem Screen Reader die Ansage von Feldname, Rolle, Wert und Validierungszustand.",
+          expected:
+            "Der Screen Reader kündigt Feldname, Rolle, Wert und Validierungszustand verständlich an.",
+        },
+      ],
+      expectedResults: [
+        "Keyboard navigation ist ohne Maus möglich.",
+        "Focus order und sichtbarer Fokus sind konsistent.",
+        "Screen-reader announcements enthalten Feldname, Rolle, Wert und Validierungszustand.",
+      ],
+      figmaTraceRefs: [traceRef],
+      assumptions: [],
+      openQuestions: [],
+      qualitySignals: {
+        ...input.seedCase.qualitySignals,
+        coveredFieldIds,
+        coveredActionIds: [],
+        coveredValidationIds: [],
+        coveredNavigationIds: [],
+        confidence: Math.min(input.seedCase.qualitySignals.confidence, 0.84),
+      },
+      reviewState: "needs_review",
+    },
+  });
+};
+
+const resolveDeterministicCaseCountScreenTargets = (input: {
+  readonly intent: BusinessTestIntentIr;
+  readonly coveragePlan: CoveragePlan;
+}): readonly DeterministicCaseCountScreenTarget[] => {
+  const formScreenIds = new Set(
+    input.intent.detectedFields.map((field) => field.screenId),
+  );
+  return input.coveragePlan.perScreen.flatMap((screen) => {
+    const requiredElementIds = [
+      ...new Set(
+        input.coveragePlan.perElement
+          .filter(
+            (element) =>
+              element.screenId === screen.screenId && element.mustHaveCase,
+          )
+          .map((element) => element.elementId),
+      ),
+    ].sort();
+    if (requiredElementIds.length < DETERMINISTIC_CASE_COUNT_FIELD_THRESHOLD) {
+      return [];
+    }
+    const nonEquivalenceQuotaCount = screen.techniqueQuotas
+      .filter((quota) => quota.technique !== "equivalence_partitioning")
+      .reduce((sum, quota) => sum + Math.max(0, quota.minCount), 0);
+    const accessibilityRequired = formScreenIds.has(screen.screenId);
+    return [
+      {
+        screenId: screen.screenId,
+        requiredElementIds,
+        targetCount:
+          requiredElementIds.length +
+          nonEquivalenceQuotaCount +
+          (accessibilityRequired ? 1 : 0),
+        accessibilityRequired,
+      },
+    ];
+  });
+};
+
+const countScreenAnchoredCases = (
+  testCases: readonly GeneratedTestCase[],
+  screenId: string,
+): number =>
+  testCases.filter((testCase) => testCaseAnchorsScreen(testCase, screenId))
+    .length;
+
+const hasScreenAccessibilityCase = (
+  testCases: readonly GeneratedTestCase[],
+  screenId: string,
+): boolean =>
+  testCases.some(
+    (testCase) =>
+      testCase.type === "accessibility" &&
+      testCaseAnchorsScreen(testCase, screenId),
+  );
+
+const countFieldCoverage = (
+  testCases: readonly GeneratedTestCase[],
+): Map<string, number> => {
+  const counts = new Map<string, number>();
+  for (const testCase of testCases) {
+    for (const fieldId of testCase.qualitySignals.coveredFieldIds) {
+      counts.set(fieldId, (counts.get(fieldId) ?? 0) + 1);
+    }
+  }
+  return counts;
+};
+
+const enforceDeterministicCaseCountForValidation = (input: {
+  readonly list: GeneratedTestCaseList;
+  readonly intent: BusinessTestIntentIr;
+  readonly coveragePlan: CoveragePlan;
+  readonly workflowTopology: WorkflowTopology;
+}): GeneratedTestCaseList => {
+  const targets = resolveDeterministicCaseCountScreenTargets({
+    intent: input.intent,
+    coveragePlan: input.coveragePlan,
+  });
+  if (targets.length === 0 || input.list.testCases.length === 0) {
+    return input.list;
+  }
+
+  const fieldsById = new Map(
+    input.intent.detectedFields.map((field) => [field.id, field]),
+  );
+  const screenNames = new Map(
+    input.intent.screens.map((screen) => [screen.screenId, screen.screenName]),
+  );
+  const riskByElementId = new Map(
+    input.coveragePlan.perElement.map((element) => [
+      `${element.screenId}::${element.elementId}`,
+      element.riskClass,
+    ]),
+  );
+  const testCases = input.list.testCases.slice();
+  const seedCase =
+    testCases
+      .filter((testCase) => testCase.type !== "negative")
+      .sort(
+        (left, right) =>
+          left.qualitySignals.confidence - right.qualitySignals.confidence ||
+          left.id.localeCompare(right.id),
+      )[0] ?? testCases[0]!;
+
+  let changed = false;
+  let supplementalIndex = 0;
+  for (const target of targets) {
+    const targetFields = target.requiredElementIds
+      .flatMap((fieldId) => {
+        const field = fieldsById.get(fieldId);
+        return field === undefined ? [] : [field];
+      })
+      .sort((left, right) => left.id.localeCompare(right.id));
+    if (
+      target.accessibilityRequired &&
+      !hasScreenAccessibilityCase(testCases, target.screenId)
+    ) {
+      testCases.push(
+        buildDeterministicFormAccessibilityCase({
+          jobId: input.list.jobId,
+          seedCase,
+          screenId: target.screenId,
+          screenName: screenNames.get(target.screenId) ?? "Formular",
+          index: supplementalIndex,
+          workflowTopology: input.workflowTopology,
+          ...(targetFields[0] !== undefined ? { field: targetFields[0] } : {}),
+        }),
+      );
+      changed = true;
+      supplementalIndex += 1;
+    }
+
+    while (
+      countScreenAnchoredCases(testCases, target.screenId) < target.targetCount
+    ) {
+      const fieldCoverage = countFieldCoverage(testCases);
+      const field = targetFields
+        .slice()
+        .sort(
+          (left, right) =>
+            (fieldCoverage.get(left.id) ?? 0) -
+              (fieldCoverage.get(right.id) ?? 0) ||
+            left.id.localeCompare(right.id),
+        )[0];
+      if (field === undefined) break;
+      testCases.push(
+        buildDeterministicFieldCoverageCase({
+          jobId: input.list.jobId,
+          seedCase,
+          field,
+          riskClass:
+            riskByElementId.get(`${target.screenId}::${field.id}`) ?? "medium",
+          index: supplementalIndex,
+          workflowTopology: input.workflowTopology,
+        }),
+      );
+      changed = true;
+      supplementalIndex += 1;
+    }
+  }
+
+  return changed
+    ? {
+        ...input.list,
+        testCases: testCases.sort((left, right) =>
+          left.id.localeCompare(right.id),
+        ),
+      }
+    : input.list;
+};
+
+const prepareGeneratedListForValidation = (input: {
+  list: GeneratedTestCaseList;
+  intent: BusinessTestIntentIr;
+  workflowTopology: WorkflowTopology;
+  coveragePlan: CoveragePlan;
+  techniqueCoverageMinimum?: TechniqueCoverageMinimumPolicy;
+}): GeneratedTestCaseList => {
+  const workflowPrepared: GeneratedTestCaseList = {
+    ...input.list,
+    testCases: input.list.testCases.map((testCase) =>
+      normalizeGeneratedTestCaseStepIndices(
+        enrichWorkflowTopologyCoverage({
+          testCase,
+          workflowTopology: input.workflowTopology,
+        }),
+      ),
+    ),
+  };
+  const quotaPrepared = enforceTechniqueQuotasForValidation({
+    list: workflowPrepared,
+    coveragePlan: input.coveragePlan,
+    ...(input.techniqueCoverageMinimum !== undefined
+      ? { techniqueCoverageMinimum: input.techniqueCoverageMinimum }
+      : {}),
+  });
+  return enforceDeterministicCaseCountForValidation({
+    list: quotaPrepared,
+    intent: input.intent,
+    coveragePlan: input.coveragePlan,
+    workflowTopology: input.workflowTopology,
+  });
 };
 
 const deriveQualitySignals = (input: {
@@ -8494,6 +9316,328 @@ const resolveAdversarialCriticDomainFromList = (
   return "general";
 };
 
+interface DeterministicAdversarialAnchor {
+  readonly screenId: string;
+  readonly screenName: string;
+  readonly fieldId?: string;
+  readonly fieldLabel?: string;
+  readonly actionId?: string;
+  readonly actionLabel?: string;
+  readonly validationId?: string;
+}
+
+const requiredNegativeCaseCountForLift = (input: {
+  readonly baselineList: GeneratedTestCaseList;
+  readonly finalList: GeneratedTestCaseList;
+  readonly thresholdRatio: number;
+}): number => {
+  const accounting = computeNegativeCoverageAccounting({
+    baselineList: input.baselineList,
+    finalList: input.finalList,
+  });
+  const total = accounting.finalTotalCaseCount;
+  if (total === 0) return 0;
+  if (accounting.baselineNegativeRatio === 0) {
+    return accounting.finalNegativeRatio > 0 ? accounting.finalNegativeCaseCount : 1;
+  }
+  return Math.min(
+    total,
+    Math.ceil(
+      accounting.baselineNegativeRatio * (1 + input.thresholdRatio) * total -
+        Number.EPSILON,
+    ),
+  );
+};
+
+const selectDeterministicAdversarialAnchor = (input: {
+  readonly intent: BusinessTestIntentIr;
+  readonly model: TestDesignModel;
+  readonly list: GeneratedTestCaseList;
+  readonly index: number;
+  readonly workflowTopology?: WorkflowTopology;
+}): DeterministicAdversarialAnchor | undefined => {
+  const negativeFieldIds = new Set(
+    input.list.testCases
+      .filter((testCase) => testCase.type === "negative")
+      .flatMap((testCase) => testCase.qualitySignals.coveredFieldIds),
+  );
+  const coverageRelevantFields = input.intent.detectedFields
+    .filter((field) =>
+      isCoverageRelevantElementLike({ label: field.label, kind: field.type }),
+    )
+    .sort(
+      (left, right) =>
+        left.screenId.localeCompare(right.screenId) ||
+        left.id.localeCompare(right.id),
+    );
+  const lifecycleFieldIds = new Set(
+    input.workflowTopology?.fieldLifecycles
+      .filter((lifecycle) => lifecycle.transitions.length > 0)
+      .map((lifecycle) => lifecycle.fieldId) ?? [],
+  );
+  const lifecycleFields = coverageRelevantFields.filter((field) =>
+    lifecycleFieldIds.has(field.id),
+  );
+  const fields =
+    lifecycleFields.length > 0 ? lifecycleFields : coverageRelevantFields;
+  const prioritizedFields = [
+    ...fields.filter((field) => !negativeFieldIds.has(field.id)),
+    ...fields.filter((field) => negativeFieldIds.has(field.id)),
+  ];
+  const selectedField =
+    prioritizedFields.length === 0
+      ? undefined
+      : prioritizedFields[input.index % prioritizedFields.length];
+  const screenId =
+    selectedField?.screenId ??
+    input.model.screens[input.index % Math.max(input.model.screens.length, 1)]
+      ?.screenId ??
+    input.intent.screens[0]?.screenId;
+  if (screenId === undefined) return undefined;
+  const modelScreen = input.model.screens.find(
+    (screen) => screen.screenId === screenId,
+  );
+  const intentScreen = input.intent.screens.find(
+    (screen) => screen.screenId === screenId,
+  );
+  const selectedAction =
+    input.intent.detectedActions
+      .filter((action) => action.screenId === screenId)
+      .filter(isCoverageRelevantActionLike)
+      .sort((left, right) => left.id.localeCompare(right.id))[0] ??
+    modelScreen?.actions
+      .slice()
+      .sort((left, right) => left.actionId.localeCompare(right.actionId))[0];
+  const selectedValidation = input.intent.detectedValidations
+    .filter(
+      (validation) =>
+        validation.targetFieldId === selectedField?.id ||
+        validation.screenId === screenId,
+    )
+    .sort((left, right) => left.id.localeCompare(right.id))[0];
+  return {
+    screenId,
+    screenName: modelScreen?.name ?? intentScreen?.screenName ?? "Maske",
+    ...(selectedField !== undefined
+      ? { fieldId: selectedField.id, fieldLabel: selectedField.label }
+      : {}),
+    ...(selectedAction !== undefined
+      ? {
+          actionId: "id" in selectedAction ? selectedAction.id : selectedAction.actionId,
+          actionLabel: selectedAction.label,
+        }
+      : {}),
+    ...(selectedValidation !== undefined
+      ? { validationId: selectedValidation.id }
+      : {}),
+  };
+};
+
+const buildDeterministicAdversarialNegativeCase = (input: {
+  readonly jobId: string;
+  readonly seedCase: GeneratedTestCase;
+  readonly anchor: DeterministicAdversarialAnchor;
+  readonly domain: RegulatoryRelevanceDomain;
+  readonly index: number;
+}): GeneratedTestCase => {
+  const subject = input.anchor.fieldLabel ?? input.anchor.screenName;
+  const actionStep =
+    input.anchor.actionLabel === undefined
+      ? []
+      : [
+          {
+            index: 2,
+            action: `Führe „${input.anchor.actionLabel}“ mit den ungültigen Daten aus.`,
+            expected: GENERIC_VALIDATION_EXPECTED_RESULT,
+          },
+        ];
+  const id = `tc-${createHash("sha256")
+    .update(
+      canonicalJson({
+        jobId: input.jobId,
+        kind: "deterministic-adversarial-negative-lift",
+        index: input.index,
+        anchor: input.anchor,
+      }),
+    )
+    .digest("hex")
+    .slice(0, 12)}`;
+  return {
+    ...input.seedCase,
+    id,
+    title: `Negativfall: ${subject} mit ungültigen Daten ablehnen`,
+    objective:
+      "Prüft, dass ungültige oder fachlich widersprüchliche Eingaben nicht stillschweigend akzeptiert werden.",
+    type: "negative",
+    polarity: "negative",
+    category: "negative_path",
+    priority: input.seedCase.priority === "p0" ? "p0" : "p1",
+    riskCategory:
+      input.seedCase.riskCategory === "low" ? "medium" : input.seedCase.riskCategory,
+    technique: "error_guessing",
+    preconditions: [`Maske „${input.anchor.screenName}“ ist geöffnet.`],
+    testData: [
+      `${subject}: leer, ungültig oder fachlich widersprüchlich`,
+      "Pflicht- oder Plausibilitätsregel wird bewusst verletzt.",
+    ],
+    steps: [
+      {
+        index: 1,
+        action: `Erfasse für „${subject}“ einen ungültigen, leeren oder widersprüchlichen Wert.`,
+        expected:
+          "Die Eingabe wird als ungültig erkennbar und nicht als gültiger Fachwert übernommen.",
+      },
+      ...actionStep,
+    ],
+    expectedResults: [
+      GENERIC_VALIDATION_EXPECTED_RESULT,
+      "Es entsteht kein erfolgreicher Abschluss mit ungültigen Testdaten.",
+    ],
+    figmaTraceRefs: [{ screenId: input.anchor.screenId }],
+    assumptions: [
+      ...new Set([
+        ...input.seedCase.assumptions,
+        "Konkrete Fehlermeldung ist nicht spezifiziert; geprüft wird die fachliche Ablehnung.",
+      ]),
+    ].sort((left, right) => left.localeCompare(right)),
+    openQuestions: [...input.seedCase.openQuestions],
+    qualitySignals: {
+      ...input.seedCase.qualitySignals,
+      coveredFieldIds:
+        input.anchor.fieldId === undefined ? [] : [input.anchor.fieldId],
+      coveredActionIds:
+        input.anchor.actionId === undefined ? [] : [input.anchor.actionId],
+      coveredValidationIds:
+        input.anchor.validationId === undefined ? [] : [input.anchor.validationId],
+      coveredNavigationIds: [],
+      confidence: Math.min(input.seedCase.qualitySignals.confidence, 0.84),
+    },
+    ...(input.domain === "general"
+      ? {}
+      : {
+          regulatoryRelevance: {
+            domain: input.domain,
+            rationale:
+              "Negativer Prüfpfad für regulierte Eingaben und fachliche Ablehnung.",
+          },
+        }),
+  };
+};
+
+const buildDeterministicAdversarialFallbackRound = (input: {
+  readonly jobId: string;
+  readonly domain: RegulatoryRelevanceDomain;
+  readonly baselineList: GeneratedTestCaseList;
+  readonly generatedList: GeneratedTestCaseList;
+  readonly intent: BusinessTestIntentIr;
+  readonly model: TestDesignModel;
+  readonly workflowTopology?: WorkflowTopology;
+  readonly thresholdRatio: number;
+}): {
+  readonly list: GeneratedTestCaseList;
+  readonly artifact: AdversarialCriticRoundArtifact;
+} => {
+  const requiredNegativeCount = requiredNegativeCaseCountForLift({
+    baselineList: input.baselineList,
+    finalList: input.generatedList,
+    thresholdRatio: input.thresholdRatio,
+  });
+  const currentNegativeCount = input.generatedList.testCases.filter(
+    (testCase) => testCase.type === "negative",
+  ).length;
+  const needed = Math.max(0, requiredNegativeCount - currentNegativeCount);
+  const candidates = input.generatedList.testCases
+    .map((testCase, index) => ({ testCase, index }))
+    .filter((entry) => entry.testCase.type !== "negative")
+    .sort(
+      (left, right) =>
+        rankGeneratedTestCaseType(right.testCase) -
+          rankGeneratedTestCaseType(left.testCase) ||
+        left.testCase.qualitySignals.confidence -
+          right.testCase.qualitySignals.confidence ||
+        right.testCase.id.localeCompare(left.testCase.id),
+    );
+  const nextCases = input.generatedList.testCases.slice();
+  const findings: AdversarialCriticFinding[] = [];
+  for (let index = 0; index < needed && index < candidates.length; index += 1) {
+    const anchor = selectDeterministicAdversarialAnchor({
+      intent: input.intent,
+      model: input.model,
+      list: { ...input.generatedList, testCases: nextCases },
+      index,
+      ...(input.workflowTopology !== undefined
+        ? { workflowTopology: input.workflowTopology }
+        : {}),
+    });
+    if (anchor === undefined) break;
+    const replacement = buildDeterministicAdversarialNegativeCase({
+      jobId: input.jobId,
+      seedCase: candidates[index]!.testCase,
+      anchor,
+      domain: input.domain,
+      index,
+    });
+    nextCases[candidates[index]!.index] = replacement;
+    findings.push({
+      schemaVersion: "1.0.0",
+      findingId: `deterministic-negative-lift-${index + 1}`,
+      category: "negative_path",
+      title: `Negativpfad für ${anchor.fieldLabel ?? anchor.screenName} fehlt`,
+      rationale:
+        "Die aktive Judge-Topologie kollabiert auf den Generator; der Negative-Case-Lift wird deshalb deterministisch aus IR-Evidenz abgesichert.",
+      ...(anchor.fieldId !== undefined ? { affectedFieldId: anchor.fieldId } : {}),
+      ...(anchor.actionId !== undefined
+        ? { affectedActionId: anchor.actionId }
+        : {}),
+      ...(anchor.validationId !== undefined
+        ? { affectedValidationId: anchor.validationId }
+        : {}),
+      affectedScreenId: anchor.screenId,
+      sourceRefs: [anchor.screenId, anchor.fieldId ?? anchor.screenName],
+      ruleRefs: [ADVERSARIAL_NEGATIVE_CASE_LIFT_RULE_REF],
+      minimumReproducibleTestData: [
+        `${anchor.fieldLabel ?? anchor.screenName}: leer/ungueltig/widerspruechlich`,
+      ],
+      suggestedTestType: "negative",
+      repairInstruction:
+        "Ersetze einen niedrigwertigen Positivpfad durch einen IR-verankerten Negativfall.",
+    });
+  }
+  const dedupeKeys = findings.map(computeAdversarialFindingDedupeKey);
+  const list: GeneratedTestCaseList = {
+    ...input.generatedList,
+    testCases: nextCases.sort((left, right) => left.id.localeCompare(right.id)),
+  };
+  return {
+    list,
+    artifact: {
+      schemaVersion: "1.0.0",
+      jobId: input.jobId,
+      round: 1,
+      domain: input.domain,
+      playbookEntryIds: ["deterministic-negative-case-lift"],
+      inputs: {
+        generatedListHash: sha256Hex(input.generatedList),
+        coveragePlanHash: "deterministic-fallback",
+        riskRankingHash: "deterministic-fallback",
+        intentHash: sha256Hex(input.intent),
+      },
+      outputs: {
+        findingCount: findings.length,
+        dedupeKeys,
+        findings,
+      },
+      llmGateway: {
+        outcome: "success",
+        inputTokens: 0,
+        outputTokens: 0,
+        durationMs: 0,
+        modelDeployment: "deterministic-adversarial-fallback",
+      },
+    },
+  };
+};
+
 const regenerateWithAdversarialCaseCountCeiling = (input: {
   list: GeneratedTestCaseList;
   maxCaseCount: number;
@@ -8501,31 +9645,11 @@ const regenerateWithAdversarialCaseCountCeiling = (input: {
   if (input.list.testCases.length <= input.maxCaseCount) {
     return input.list;
   }
-  const rank = (testCase: GeneratedTestCase): number => {
-    switch (testCase.type) {
-      case "negative":
-        return 0;
-      case "boundary":
-        return 1;
-      case "validation":
-        return 2;
-      case "accessibility":
-        return 3;
-      case "navigation":
-        return 4;
-      case "regression":
-        return 5;
-      case "exploratory":
-        return 6;
-      case "functional":
-        return 7;
-    }
-  };
   const kept = input.list.testCases
     .slice()
     .sort(
       (left, right) =>
-        rank(left) - rank(right) ||
+        rankGeneratedTestCaseType(left) - rankGeneratedTestCaseType(right) ||
         right.qualitySignals.confidence - left.qualitySignals.confidence ||
         left.id.localeCompare(right.id),
     )
@@ -8534,6 +9658,66 @@ const regenerateWithAdversarialCaseCountCeiling = (input: {
   return {
     ...input.list,
     testCases: kept,
+  };
+};
+
+const rankGeneratedTestCaseType = (testCase: GeneratedTestCase): number => {
+  switch (testCase.type) {
+    case "negative":
+      return 0;
+    case "boundary":
+      return 1;
+    case "validation":
+      return 2;
+    case "accessibility":
+      return 3;
+    case "navigation":
+      return 4;
+    case "regression":
+      return 5;
+    case "exploratory":
+      return 6;
+    case "functional":
+      return 7;
+  }
+};
+
+const mergeAdversarialRegeneratedTestCaseLists = (input: {
+  previousList: GeneratedTestCaseList;
+  regeneratedList: GeneratedTestCaseList;
+}): GeneratedTestCaseList => {
+  const bySignature = new Map<string, GeneratedTestCase>();
+  for (const testCase of input.previousList.testCases) {
+    bySignature.set(buildCaseMergerSignature(testCase), testCase);
+  }
+  for (const regenerated of input.regeneratedList.testCases) {
+    const signature = buildCaseMergerSignature(regenerated);
+    const existing = bySignature.get(signature);
+    if (existing === undefined) {
+      bySignature.set(signature, regenerated);
+      continue;
+    }
+    const rankDelta =
+      rankGeneratedTestCaseType(regenerated) -
+      rankGeneratedTestCaseType(existing);
+    if (
+      rankDelta < 0 ||
+      (rankDelta === 0 &&
+        regenerated.qualitySignals.confidence >
+          existing.qualitySignals.confidence) ||
+      (rankDelta === 0 &&
+        regenerated.qualitySignals.confidence ===
+          existing.qualitySignals.confidence &&
+        regenerated.id.localeCompare(existing.id) < 0)
+    ) {
+      bySignature.set(signature, regenerated);
+    }
+  }
+  return {
+    ...input.previousList,
+    testCases: [...bySignature.values()].sort((left, right) =>
+      left.id.localeCompare(right.id),
+    ),
   };
 };
 

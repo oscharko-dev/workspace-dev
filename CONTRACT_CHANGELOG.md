@@ -31,6 +31,38 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [1.44.11] - 2026-05-12
+
+Test-intelligence production-runner stabilization for **Issue #2279**.
+This release keeps the generated-test-case contract stable while moving
+run-failure semantics and structural repair decisions out of model output
+and into deterministic runner policy.
+
+### Changed (Issue #2279 — policy-stage and deterministic-run hardening)
+
+- `src/test-intelligence-run-cli.ts`: live runs now stream progress
+  lines for runner phases plus a periodic heartbeat; the CLI reports
+  `weich`, `mittel`, and `hard` policy stages so only `hard` is
+  presented as a failed run.
+- `src/test-intelligence/production-runner.ts`: workflow lifecycle
+  transition ids emitted by drafts are validated against the deterministic
+  `workflowTopology` whitelist and replaced or removed before validation;
+  large form screens receive a deterministic case-count floor derived
+  from the coverage plan, technique quotas, and form accessibility
+  requirement.
+- Judge, repair, and gateway paths now use local wall-clock guards and
+  deterministic fallback paths where structural data is already known.
+- `FAITHFULNESS_JUDGE_PROMPT_TEMPLATE_VERSION` advances to
+  `faithfulness-judge.v4`; runtime judge responses now require
+  per-step verdicts while persisted verdicts remain backward-compatible
+  with older artifacts where `stepVerdicts` is absent.
+
+### Migration
+
+No persisted artifact migration is required. Consumers should treat
+`policy status: auffällig` as a non-failing review signal and reserve
+hard failure handling for blocked validation/policy results.
+
 ## [1.44.10] - 2026-05-11
 
 Review-feedback follow-up for **Issue #2238** (post-merge clean-up of

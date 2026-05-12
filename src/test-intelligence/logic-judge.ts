@@ -26,6 +26,7 @@ import {
 import { sanitizeErrorMessage } from "../error-sanitization.js";
 import { GENERATOR_FORM_SCREEN_A11Y_REPAIR_INSTRUCTION } from "./agent-role-profile.js";
 import { canonicalJson, sha256Hex } from "./content-hash.js";
+import { generateWithLocalWallClockGuard } from "./llm-generation-guard.js";
 import {
   INSTRUCTION_LENGTH_LIMITS,
   countTruncatedInstructions,
@@ -442,23 +443,32 @@ export const runLogicJudge = async (
 
   let gatewayResult: LlmGenerationResult;
   try {
-    gatewayResult = await input.client.generate({
-      jobId: input.jobId,
-      systemPrompt: SYSTEM_PROMPT,
-      userPrompt: promptArtifact.userPrompt,
-      responseSchema,
-      responseSchemaName: RESPONSE_SCHEMA_NAME,
-      ...(input.maxInputTokens !== undefined
-        ? { maxInputTokens: input.maxInputTokens }
-        : {}),
-      ...(input.maxOutputTokens !== undefined
-        ? { maxOutputTokens: input.maxOutputTokens }
-        : {}),
+    gatewayResult = await generateWithLocalWallClockGuard({
+      client: input.client,
+      operationLabel: "logic judge gateway request",
+      request: {
+        jobId: input.jobId,
+        systemPrompt: SYSTEM_PROMPT,
+        userPrompt: promptArtifact.userPrompt,
+        responseSchema,
+        responseSchemaName: RESPONSE_SCHEMA_NAME,
+        ...(input.maxInputTokens !== undefined
+          ? { maxInputTokens: input.maxInputTokens }
+          : {}),
+        ...(input.maxOutputTokens !== undefined
+          ? { maxOutputTokens: input.maxOutputTokens }
+          : {}),
+        ...(input.maxWallClockMs !== undefined
+          ? { maxWallClockMs: input.maxWallClockMs }
+          : {}),
+        ...(input.maxRetries !== undefined
+          ? { maxRetries: input.maxRetries }
+          : {}),
+      } satisfies LlmGenerationRequest,
       ...(input.maxWallClockMs !== undefined
-        ? { maxWallClockMs: input.maxWallClockMs }
+        ? { defaultWallClockMs: input.maxWallClockMs }
         : {}),
-      ...(input.maxRetries !== undefined ? { maxRetries: input.maxRetries } : {}),
-    } satisfies LlmGenerationRequest);
+    });
   } catch (error) {
     return {
       verdict: buildLogicJudgeRefusal({

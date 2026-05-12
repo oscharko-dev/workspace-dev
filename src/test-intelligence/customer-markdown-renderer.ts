@@ -647,7 +647,7 @@ const prepareCustomerCases = (
     .slice()
     .sort((left, right) => compareCustomerCases(left, right));
   return sorted.map((item, index) => {
-    const displayLabel = formatTestCaseLabel(item.explicitNumber ?? index + 1);
+    const displayLabel = formatTestCaseLabel(index + 1);
     const customerTraceLabel = buildCustomerTraceLabel(item.tc);
     const coverageTheme = inferCoverageTheme(item.tc);
     const matchedAcceptanceCriteria = matchAcceptanceCriteria(

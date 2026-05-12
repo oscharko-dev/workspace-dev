@@ -2,8 +2,8 @@
  * Deterministic post-processor that repairs generated test cases which would
  * otherwise emit a `validation:unsupported_unresolved_validation_detail`
  * error — i.e. concrete numeric thresholds, exact validation messages, or
- * confirm/submit acceptance assertions in `testData`, `expectedResults`, or
- * `steps[].expected` while the source explicitly marks the underlying
+ * confirm/submit acceptance assertions in `title`, `objective`, `testData`,
+ * `expectedResults`, or `steps[]` text while the source explicitly marks the underlying
  * validation/calculation rule as unresolved (Issue #2032).
  *
  * The repair is conservative and minimal:
@@ -17,12 +17,14 @@
  *     or `concrete_message_text` is removed. Visible UI labels and
  *     non-normative observations (`label_only`, `none`) are preserved so
  *     the case still has meaningful content.
+ *   - `title`, `objective`, and step `action`/`expected` strings classified
+ *     the same way are rewritten to conservative generic wording so the
+ *     ordered test sequence remains exportable without inventing concrete
+ *     validation behavior.
  *   - Step `expected` strings classified the same way are rewritten to
  *     {@link GENERIC_VALIDATION_EXPECTED_RESULT} so the ordered step
  *     sequence remains intact and the customer renderer still has a
  *     non-empty expectation per step.
- *   - Step `action` strings are not rewritten: actions describe user
- *     input, and stripping them would break the test sequence.
  *   - Whenever a case is touched, the repair guarantees that the relevant
  *     unresolved evidence is reflected in `openQuestions`, deduplicated
  *     and capped at the soft limit used by the validator.
@@ -59,11 +61,24 @@ const OPEN_QUESTIONS_REPAIR_LIMIT = 25 as const;
 const OPEN_QUESTION_MAX_LENGTH = 600 as const;
 
 /** Source label used when synthesizing missing openQuestions during repair. */
-const REPAIR_OPEN_QUESTION_SOURCE_LABEL = "unresolved_validation_constraint" as const;
+const REPAIR_OPEN_QUESTION_SOURCE_LABEL =
+  "unresolved_validation_constraint" as const;
+
+const GENERIC_UNRESOLVED_VALIDATION_TITLE =
+  "Generischer Negativpfad für offene Fachregel" as const;
+
+const GENERIC_UNRESOLVED_VALIDATION_OBJECTIVE =
+  "Prüft den negativen Pfad anhand der dokumentierten offenen Fachregel, ohne konkrete Meldungen, Grenzwerte oder Rechenwerte zu behaupten." as const;
+
+const GENERIC_UNRESOLVED_STEP_ACTION =
+  "Führe den Prüfschritt mit fachlich geklärten Beispielwerten aus." as const;
 
 export type UnresolvedDetailRepairKind =
+  | "rewrote_title"
+  | "rewrote_objective"
   | "removed_test_data"
   | "removed_expected_result"
+  | "rewrote_step_action"
   | "rewrote_step_expected"
   | "added_open_question";
 
@@ -169,6 +184,34 @@ const repairExpectedResults = (
   return { expectedResults: next, touched };
 };
 
+const repairScalarText = (input: {
+  testCase: GeneratedTestCase;
+  path: "title" | "objective";
+  text: string;
+  replacement: string;
+  kind: Extract<
+    UnresolvedDetailRepairKind,
+    "rewrote_title" | "rewrote_objective"
+  >;
+  changes: UnresolvedDetailRepairChange[];
+}): { text: string; touched: boolean } => {
+  const classification = classifyUnresolvedValidationDetail(input.text);
+  if (!isConcreteUnsupportedClassification(classification)) {
+    return { text: input.text, touched: false };
+  }
+  input.changes.push({
+    testCaseId: input.testCase.id,
+    path: input.path,
+    kind: input.kind,
+    reason:
+      classification.reason ??
+      "concrete validation detail unsupported by unresolved source rule",
+    before: truncateForAudit(input.text),
+    after: input.replacement,
+  });
+  return { text: input.replacement, touched: true };
+};
+
 const repairSteps = (
   testCase: GeneratedTestCase,
   changes: UnresolvedDetailRepairChange[],
@@ -178,9 +221,26 @@ const repairSteps = (
   for (let index = 0; index < testCase.steps.length; index += 1) {
     const step = testCase.steps[index];
     if (step === undefined) continue;
+    const actionText = step.action;
     const expectedText = step.expected ?? "";
+    const actionClassification = classifyUnresolvedValidationDetail(actionText);
+    let nextStep: GeneratedTestCaseStep = step;
+    if (isConcreteUnsupportedClassification(actionClassification)) {
+      changes.push({
+        testCaseId: testCase.id,
+        path: `steps[${index}].action`,
+        kind: "rewrote_step_action",
+        reason:
+          actionClassification.reason ??
+          "concrete validation detail unsupported by unresolved source rule",
+        before: truncateForAudit(actionText),
+        after: GENERIC_UNRESOLVED_STEP_ACTION,
+      });
+      nextStep = { ...nextStep, action: GENERIC_UNRESOLVED_STEP_ACTION };
+      touched = true;
+    }
     if (expectedText.length === 0) {
-      next.push(step);
+      next.push(nextStep);
       continue;
     }
     const classification = classifyUnresolvedValidationDetail(expectedText);
@@ -195,11 +255,11 @@ const repairSteps = (
         before: truncateForAudit(expectedText),
         after: GENERIC_VALIDATION_EXPECTED_RESULT,
       });
-      next.push({ ...step, expected: GENERIC_VALIDATION_EXPECTED_RESULT });
+      next.push({ ...nextStep, expected: GENERIC_VALIDATION_EXPECTED_RESULT });
       touched = true;
       continue;
     }
-    next.push(step);
+    next.push(nextStep);
   }
   return { steps: next, touched };
 };
@@ -254,11 +314,29 @@ const repairCase = (
   if (matching.length === 0) return testCase;
 
   const beforeChangeCount = changes.length;
+  const titleResult = repairScalarText({
+    testCase,
+    path: "title",
+    text: testCase.title,
+    replacement: GENERIC_UNRESOLVED_VALIDATION_TITLE,
+    kind: "rewrote_title",
+    changes,
+  });
+  const objectiveResult = repairScalarText({
+    testCase,
+    path: "objective",
+    text: testCase.objective,
+    replacement: GENERIC_UNRESOLVED_VALIDATION_OBJECTIVE,
+    kind: "rewrote_objective",
+    changes,
+  });
   const testDataResult = repairTestData(testCase, changes);
   const expectedResultsResult = repairExpectedResults(testCase, changes);
   const stepsResult = repairSteps(testCase, changes);
 
   const removedAnything =
+    titleResult.touched ||
+    objectiveResult.touched ||
     testDataResult.touched ||
     expectedResultsResult.touched ||
     stepsResult.touched;
@@ -269,6 +347,8 @@ const repairCase = (
 
   const repaired: GeneratedTestCase = {
     ...testCase,
+    title: titleResult.text,
+    objective: objectiveResult.text,
     testData: testDataResult.testData,
     expectedResults: expectedResultsResult.expectedResults,
     steps: stepsResult.steps,

@@ -168,6 +168,32 @@ test("renderCustomerMarkdown emits a German-format combined document with one he
   );
 });
 
+test("renderCustomerMarkdown ignores id-derived numbering and renumbers customer labels sequentially", () => {
+  const list: GeneratedTestCaseList = {
+    schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+    jobId: "job-1",
+    testCases: [
+      buildCase({ id: "tc-17", title: "Antrag absenden" }),
+      buildCase({ id: "tc-24", title: "Felder validieren" }),
+    ],
+  };
+  const result = renderCustomerMarkdown({
+    list,
+    fileName: "Test View 03",
+    sourceLabel: "https://www.figma.com/design/M7FGS79qLfr3O4OXEYbxy0",
+    generatedAt: "2026-05-02T10:00:00Z",
+  });
+  assert.match(result.combinedMarkdown, /## TC01 - Antrag absenden/u);
+  assert.match(result.combinedMarkdown, /## TC02 - Felder validieren/u);
+  assert.deepEqual(
+    result.perCaseFiles.map((file) => file.filename),
+    [
+      "tc01-antrag-absenden.md",
+      "tc02-felder-validieren.md",
+    ],
+  );
+});
+
 test("renderCustomerMarkdown renders steps with Beschreibung + Erwartetes Ergebnis", () => {
   const list: GeneratedTestCaseList = {
     schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,

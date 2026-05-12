@@ -8,6 +8,7 @@ import {
   A11Y_JUDGE_PROMPT_TEMPLATE_VERSION,
   A11Y_VERDICT_SCHEMA_VERSION,
   GENERATED_TEST_CASE_SCHEMA_VERSION,
+  type LlmGenerationRequest,
   REDACTION_POLICY_VERSION,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
@@ -18,6 +19,7 @@ import {
   type VisualSidecarCaptureInput,
 } from "../contracts/index.js";
 import { createMockLlmGatewayClientBundle } from "./llm-gateway-bundle.js";
+import type { LlmGatewayClientBundle } from "./llm-gateway-bundle.js";
 import {
   buildA11yJudgeCriteria,
   createMemoryA11yJudgeCache,
@@ -282,4 +284,86 @@ test("runA11yJudge skips cleanly when no a11yJudge slot is configured and preser
   assert.equal(result.verdict.findings.length, 0);
   assert.equal(result.verdict.repairInstructions.length, 0);
   assert.equal(result.verdict.refusal?.code, "a11y_judge_unconfigured");
+});
+
+test("runA11yJudge fails closed on a hanging gateway call", async () => {
+  const figma = await loadFigma("baseline-simple-form");
+  const intent = deriveBusinessTestIntentIr({ figma });
+  const screenId = intent.detectedFields[0]?.screenId;
+  assert.ok(screenId, "fixture must expose a form screen");
+  const generatedTestCases = buildAccessibilityList(screenId);
+
+  const baseBundle = createMockLlmGatewayClientBundle({
+    testGeneration: {
+      role: "test_generation",
+      deployment: "gpt-oss-120b",
+      modelRevision: "gpt-oss-120b@test",
+      gatewayRelease: "mock",
+    },
+    visualPrimary: {
+      role: "visual_primary",
+      deployment: "llama-4-maverick-vision",
+      modelRevision: "llama-4-maverick-vision@test",
+      gatewayRelease: "mock",
+      declaredCapabilities: VISUAL_CAPS,
+    },
+    visualFallback: {
+      role: "visual_fallback",
+      deployment: "phi-4-multimodal-instruct",
+      modelRevision: "phi-4-multimodal-instruct@test",
+      gatewayRelease: "mock",
+      declaredCapabilities: VISUAL_CAPS,
+    },
+    a11yJudge: {
+      role: "a11y_judge",
+      deployment: "unused-a11y",
+      modelRevision: "unused-a11y@test",
+      gatewayRelease: "mock",
+      declaredCapabilities: VISUAL_CAPS,
+    },
+  });
+  const bundle: LlmGatewayClientBundle = {
+    ...baseBundle,
+    a11yJudge: {
+      role: "a11y_judge",
+      deployment: "phi-4-multimodal-instruct",
+      modelRevision: "phi-4-multimodal-instruct@test",
+      gatewayRelease: "mock",
+      ictRegisterRef: undefined,
+      operatorEndpointReference: "https://example.invalid/[redacted]",
+      modelWeightsSha256: undefined,
+      declaredCapabilities: VISUAL_CAPS,
+      compatibilityMode: "openai_chat",
+      constrainedDecoding: undefined,
+      getCircuitBreaker: () => {
+        throw new Error("not used in test");
+      },
+      getIdempotencyMetrics: () => undefined,
+      generate: async (_request: LlmGenerationRequest) =>
+        await new Promise(() => {}),
+    },
+  };
+
+  const startedAt = Date.now();
+  const result = await runA11yJudge({
+    jobId: "job-1940-a11y-timeout",
+    generatedAt: "2026-05-12T07:00:00Z",
+    intent,
+    captures: SAMPLE_CAPTURES,
+    generatedTestCases,
+    bundle,
+    maxWallClockMs: 25,
+  });
+
+  assert.ok(
+    Date.now() - startedAt < 1_000,
+    "judge watchdog should resolve quickly instead of hanging indefinitely",
+  );
+  assert.equal(result.cacheHit, false);
+  assert.equal(result.gatewayResult?.outcome, "error");
+  if (result.gatewayResult?.outcome === "error") {
+    assert.equal(result.gatewayResult.errorClass, "timeout");
+  }
+  assert.equal(result.verdict.verdict, "accept");
+  assert.equal(result.verdict.refusal?.code, "timeout");
 });

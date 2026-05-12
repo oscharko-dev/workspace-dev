@@ -1091,6 +1091,33 @@ test("non-JSON content body surfaces schema_invalid", async () => {
   }
 });
 
+test("non-JSON structured content is retried before surfacing schema_invalid", async () => {
+  let calls = 0;
+  const client = createLlmGatewayClient(baseConfig, {
+    fetchImpl: async () => {
+      calls += 1;
+      if (calls === 1) {
+        return okJsonResponse({
+          choices: [
+            { finish_reason: "stop", message: { content: "not-a-json-object" } },
+          ],
+        });
+      }
+      return okJsonResponse(buildChoiceBody({ ack: "ok" }));
+    },
+    apiKeyProvider: () => "k",
+    sleep: async () => undefined,
+  });
+
+  const result = await client.generate(sampleRequest());
+
+  assert.equal(result.outcome, "success");
+  assert.equal(calls, 2);
+  if (result.outcome === "success") {
+    assert.deepEqual(result.content, { ack: "ok" });
+  }
+});
+
 test("valid JSON that violates response schema surfaces schema_invalid", async () => {
   const client = createLlmGatewayClient(baseConfig, {
     fetchImpl: async () => okJsonResponse(buildChoiceBody({ nope: "wrong" })),

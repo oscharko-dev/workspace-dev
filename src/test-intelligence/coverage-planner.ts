@@ -23,6 +23,7 @@ import {
   type WorkflowTopology,
 } from "../contracts/index.js";
 import { canonicalJson, sha256Hex } from "./content-hash.js";
+import { generateWithLocalWallClockGuard } from "./llm-generation-guard.js";
 import {
   isCoverageRelevantElementLike,
   normalizeCoverageText,
@@ -862,7 +863,14 @@ export const buildCoveragePlanWithAugmentation = async (
     ...(input.maxRetries !== undefined ? { maxRetries: input.maxRetries } : {}),
     ...(input.abortSignal !== undefined ? { abortSignal: input.abortSignal } : {}),
   };
-  const gatewayResult = await input.plannerClient.generate(request);
+  const gatewayResult = await generateWithLocalWallClockGuard({
+    client: input.plannerClient,
+    request,
+    operationLabel: "coverage planner gateway request",
+    ...(input.maxWallClockMs !== undefined
+      ? { defaultWallClockMs: input.maxWallClockMs }
+      : {}),
+  });
   if (gatewayResult.outcome !== "success") {
     return { plan, usedAugmentation: false, gatewayResult };
   }

@@ -20,8 +20,8 @@ import {
   type VisualSidecarCaptureInput,
   type VisualSidecarFallbackReason,
 } from "../contracts/index.js";
-import { sanitizeErrorMessage } from "../error-sanitization.js";
 import { canonicalJson, sha256Hex } from "./content-hash.js";
+import { generateWithLocalWallClockGuard } from "./llm-generation-guard.js";
 import type { LlmGatewayClientBundle } from "./llm-gateway-bundle.js";
 import { resolveTenantScopeSegments } from "./replay-cache.js";
 
@@ -34,6 +34,11 @@ const SYSTEM_PROMPT = [
   "You receive generated test cases plus one or more rendered screenshots as image inputs.",
   "Judge whether each referenced action is visually plausible on the screenshots.",
   "Flag invented controls as hallucinations and label discrepancies as mismatches.",
+  "The screenshots are baseline captures before a tester performs the generated steps.",
+  "Do not treat future user-entered data as a mismatch just because the baseline field is empty.",
+  "Do not treat selecting an already-visible option as a mismatch; mark the step `match` or `evidence_partial`.",
+  "Only use `mismatch` when the screenshot positively contradicts the control label or expected visible UI state.",
+  "If the label is plausible but the action result cannot be verified from the baseline capture, use `evidence_partial`.",
   "For every step in every test case, also emit a per-step verdict in `stepVerdicts`:",
   "use `match` when the screenshot positively verifies the step,",
   "`evidence_partial` when the step's label is consistent with the screenshot but the description",
@@ -104,6 +109,7 @@ export interface RunFaithfulnessJudgeInput {
   maxOutputTokens?: number;
   maxWallClockMs?: number;
   maxRetries?: number;
+  abortSignal?: AbortSignal;
   cache?: FaithfulnessJudgeReplayCache;
 }
 
@@ -125,7 +131,7 @@ export interface RunFaithfulnessJudgeResult {
 export const buildFaithfulnessJudgeResponseSchema = (): Record<string, unknown> => ({
   type: "object",
   additionalProperties: false,
-  required: ["verdict", "hallucinations", "mismatches"],
+  required: ["verdict", "stepVerdicts", "hallucinations", "mismatches"],
   properties: {
     verdict: { enum: [...ALLOWED_FAITHFULNESS_VERDICTS] },
     stepVerdicts: {
@@ -416,8 +422,10 @@ const runJudgeAttempt = async (input: {
   userPrompt: string;
   input: RunFaithfulnessJudgeInput;
 }): Promise<LlmGenerationResult> => {
-  try {
-    return await input.client.generate({
+  return await generateWithLocalWallClockGuard({
+    client: input.client,
+    operationLabel: "faithfulness judge gateway request",
+    request: {
       jobId: input.input.jobId,
       systemPrompt: SYSTEM_PROMPT,
       userPrompt: input.userPrompt,
@@ -445,21 +453,11 @@ const runJudgeAttempt = async (input: {
       ...(input.input.maxRetries !== undefined
         ? { maxRetries: input.input.maxRetries }
         : {}),
-    } satisfies LlmGenerationRequest);
-  } catch (error) {
-    return {
-      outcome: "error",
-      errorClass: "transport",
-      message: sanitizeShortMessage(
-        sanitizeErrorMessage({
-          error,
-          fallback: "faithfulness judge gateway request failed",
-        }),
-      ),
-      retryable: false,
-      attempt: 0,
-    };
-  }
+      ...(input.input.abortSignal !== undefined
+        ? { abortSignal: input.input.abortSignal }
+        : {}),
+    } satisfies LlmGenerationRequest,
+  });
 };
 
 const buildFaithfulnessJudgeUserPrompt = (
@@ -468,6 +466,9 @@ const buildFaithfulnessJudgeUserPrompt = (
   [
     "Evaluate the generated test cases against the attached screenshots.",
     "Flag invented controls as hallucinations and visible-label mismatches as mismatches.",
+    "Screenshots show the baseline UI before test execution; future typed values, option selections, validation results, and calculations are not required to already appear.",
+    "For those future interactions, emit `evidence_partial` unless the visible UI positively contradicts the step.",
+    "Return one `stepVerdicts` item for every generated test step.",
     canonicalJson(input.generatedTestCases),
   ].join("\n");
 

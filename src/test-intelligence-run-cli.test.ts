@@ -33,6 +33,7 @@ import {
 import {
   canonicalJson,
   computeProvenanceMerkleSeal,
+  type RunFigmaToQcTestCasesInput,
   type RunFigmaToQcTestCasesResult,
 } from "./test-intelligence/index.js";
 
@@ -1353,44 +1354,62 @@ test("runTestIntelligenceCommand: deterministic_llm with injected runner returns
     customerProfilePath: undefined,
   };
 
-  const runner = async (): Promise<RunFigmaToQcTestCasesResult> => ({
-    jobId: "ti-cli-1",
-    generatedAt: "2026-05-02T12:00:00.000Z",
-    fileKey: "abc",
-    generatedTestCases: {
-      caseListVersion: "1.0.0" as never,
-      generatedAt: "2026-05-02T12:00:00.000Z",
+  const runner = async (
+    input: RunFigmaToQcTestCasesInput,
+  ): Promise<RunFigmaToQcTestCasesResult> => {
+    input.events?.({
+      phase: "intent_derivation_started",
+      timestamp: 1000,
+    });
+    input.events?.({
+      phase: "llm_gateway_request",
+      timestamp: 1500,
+      details: { role: "test_generation", attempt: 1 },
+    });
+    input.events?.({
+      phase: "validation_complete",
+      timestamp: 2500,
+      details: { blocked: false, cases: 0, errorCount: 0 },
+    });
+    return {
       jobId: "ti-cli-1",
-      sourceTrace: { fileKey: "abc", screens: [] },
-      testCases: [],
-    } as unknown as RunFigmaToQcTestCasesResult["generatedTestCases"],
-    intent: {} as unknown as RunFigmaToQcTestCasesResult["intent"],
-    validation: {} as unknown as RunFigmaToQcTestCasesResult["validation"],
-    policy: {} as unknown as RunFigmaToQcTestCasesResult["policy"],
-    coverage: {} as unknown as RunFigmaToQcTestCasesResult["coverage"],
-    blocked: false,
-    finopsBudget: {} as unknown as RunFigmaToQcTestCasesResult["finopsBudget"],
-    artifactDir:
-      "/tmp/det-output/_runner-output/jobs/ti-cli-1/test-intelligence",
-    artifactPaths: {
-      intent: "/tmp/intent.json",
-      compiledPrompt: "/tmp/compiled-prompt.json",
-      untrustedContentNormalizationReport: "/tmp/ucnr.json",
-      evidenceSeal: "/tmp/evidence-seal.json",
-      agentRoleRun: "/tmp/agent-role-run.json",
-      genealogy: "/tmp/genealogy.json",
-      generatedTestCases: "/tmp/generated.json",
-      validationReport: "/tmp/validation.json",
-      policyReport: "/tmp/policy.json",
-      coverageReport: "/tmp/coverage.json",
-      finopsReport: "/tmp/finops.json",
-    },
-    customerMarkdownPaths: {
-      combined: "/tmp/customer-markdown/testfaelle.md",
-      perCase: ["/tmp/customer-markdown/case-1.md"],
-      pdf: "/tmp/customer-markdown/testfaelle.pdf",
-    },
-  });
+      generatedAt: "2026-05-02T12:00:00.000Z",
+      fileKey: "abc",
+      generatedTestCases: {
+        caseListVersion: "1.0.0" as never,
+        generatedAt: "2026-05-02T12:00:00.000Z",
+        jobId: "ti-cli-1",
+        sourceTrace: { fileKey: "abc", screens: [] },
+        testCases: [],
+      } as unknown as RunFigmaToQcTestCasesResult["generatedTestCases"],
+      intent: {} as unknown as RunFigmaToQcTestCasesResult["intent"],
+      validation: {} as unknown as RunFigmaToQcTestCasesResult["validation"],
+      policy: {} as unknown as RunFigmaToQcTestCasesResult["policy"],
+      coverage: {} as unknown as RunFigmaToQcTestCasesResult["coverage"],
+      blocked: false,
+      finopsBudget: {} as unknown as RunFigmaToQcTestCasesResult["finopsBudget"],
+      artifactDir:
+        "/tmp/det-output/_runner-output/jobs/ti-cli-1/test-intelligence",
+      artifactPaths: {
+        intent: "/tmp/intent.json",
+        compiledPrompt: "/tmp/compiled-prompt.json",
+        untrustedContentNormalizationReport: "/tmp/ucnr.json",
+        evidenceSeal: "/tmp/evidence-seal.json",
+        agentRoleRun: "/tmp/agent-role-run.json",
+        genealogy: "/tmp/genealogy.json",
+        generatedTestCases: "/tmp/generated.json",
+        validationReport: "/tmp/validation.json",
+        policyReport: "/tmp/policy.json",
+        coverageReport: "/tmp/coverage.json",
+        finopsReport: "/tmp/finops.json",
+      },
+      customerMarkdownPaths: {
+        combined: "/tmp/customer-markdown/testfaelle.md",
+        perCase: ["/tmp/customer-markdown/case-1.md"],
+        pdf: "/tmp/customer-markdown/testfaelle.pdf",
+      },
+    };
+  };
 
   const exitCode = await runTestIntelligenceCommand(options, sink, {
     env: GATE_ON,
@@ -1435,6 +1454,11 @@ test("runTestIntelligenceCommand: deterministic_llm with injected runner returns
   assert.match(out, /\/tmp\/customer-markdown\/testfaelle\.md/u);
   assert.match(out, /finops tokens in\/out/u);
   assert.match(out, /evidence manifest digest/u);
+  const err = stderr.join("");
+  assert.match(err, /\[test-intelligence\] starting live run/u);
+  assert.match(err, /intent_derivation_started/u);
+  assert.match(err, /llm_gateway_request/u);
+  assert.match(err, /validation_complete/u);
 });
 
 test("runTestIntelligenceCommand: deterministic_llm blocked + allowPolicyBlocked=false → exit 3", async () => {
@@ -1598,7 +1622,7 @@ test("runTestIntelligenceCommand: deterministic_llm blocked + --allow-policy-blo
   assert.equal(exitCode, 0);
   assert.match(stderr.join(""), /blocked by policy/u);
   const out = stdout.join("");
-  assert.match(out, /policy status\s*:\s*blocked/u);
+  assert.match(out, /policy status\s*:\s*fehlerhaft \(stufe 3 hard/u);
 });
 
 // ---------------------------------------------------------------------------

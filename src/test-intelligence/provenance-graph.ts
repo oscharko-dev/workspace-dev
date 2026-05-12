@@ -48,6 +48,7 @@ export interface BuildRunProvenanceGraphInput {
     readonly artifactFilename: string;
     readonly domain: string;
     readonly findings: readonly AdversarialCriticFinding[];
+    readonly artifactDigest?: ArtifactDigest;
     readonly regeneratedListHash?: string;
     readonly generatedCaseCount?: number;
   }[];
@@ -598,10 +599,9 @@ export const buildRunProvenanceGraph = async (
 
   if (input.adversarialCriticRounds !== undefined) {
     for (const round of input.adversarialCriticRounds) {
-      const criticDigest = await readArtifactDigest(
-        input.runDir,
-        round.artifactFilename,
-      );
+      const criticDigest =
+        round.artifactDigest ??
+        (await readArtifactDigest(input.runDir, round.artifactFilename));
       const criticArtifactEntity = buildArtifactNode({
         jobId: input.jobId,
         digest: criticDigest,
