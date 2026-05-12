@@ -3612,14 +3612,10 @@ const resolveCliPolicyStage = (
   result: RunFigmaToQcTestCasesResult,
 ): CliPolicyStage => {
   if (result.blocked) return "hard";
-  const needsReviewCount = result.policy?.needsReviewCount ?? 0;
-  const jobLevelViolationCount = Array.isArray(
-    result.policy?.jobLevelViolations,
-  )
-    ? result.policy.jobLevelViolations.length
-    : 0;
-  const runQualityStatus = result.runQuality?.artifact?.status;
-  const validationWarningCount = result.validation?.warningCount ?? 0;
+  const needsReviewCount = result.policy.needsReviewCount;
+  const jobLevelViolationCount = result.policy.jobLevelViolations.length;
+  const runQualityStatus = result.runQuality.artifact.status;
+  const validationWarningCount = result.validation.warningCount;
   if (
     needsReviewCount > 0 ||
     jobLevelViolationCount > 0 ||

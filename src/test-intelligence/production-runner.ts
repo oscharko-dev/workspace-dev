@@ -5688,10 +5688,7 @@ export const runFigmaToQcTestCases = async (
       artifactDir,
       TEST_CASE_COVERAGE_REPORT_ARTIFACT_FILENAME,
     );
-    const finopsOutcomeOverride = deriveFinopsOutcomeFromValidation(
-      validation,
-      judgeAccepted,
-    );
+    const finopsOutcomeOverride = deriveFinopsOutcomeFromValidation(validation);
     const explicitWallClockOverrideMs =
       finopsBudget.roles.test_generation?.maxTotalWallClockMs;
     const resolvedWallClockBudget = resolveTestGenerationWallClockBudget({
@@ -7699,7 +7696,6 @@ const buildHarnessAttemptResult = (
 
 const deriveFinopsOutcomeFromValidation = (
   validation: ReturnType<typeof runValidationPipeline>,
-  _judgeAccepted: boolean,
 ): FinOpsJobOutcome | undefined => {
   if (validation.visual !== undefined && validation.visual.blocked) {
     return "visual_sidecar_failed";
@@ -8335,13 +8331,12 @@ const enrichWorkflowTopologyCoverage = (input: {
 const normalizeGeneratedTestCaseStepIndices = (
   testCase: GeneratedTestCase,
 ): GeneratedTestCase => {
-  let changed = false;
   const steps = testCase.steps.map((step, index) => {
     const nextIndex = index + 1;
     if (step.index === nextIndex) return step;
-    changed = true;
     return { ...step, index: nextIndex };
   });
+  const changed = steps.some((step, index) => step !== testCase.steps[index]);
   return changed ? { ...testCase, steps } : testCase;
 };
 
