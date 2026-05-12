@@ -15,7 +15,7 @@ const extractStep = (workflow, stepName, nextStepName) => {
   return workflow.slice(start, end);
 };
 
-test("changesets release workflow: trusted publishing uses a token-free npmrc", async () => {
+test("changesets release workflow: trusted publishing uses token-free npmrc and explicit OIDC token", async () => {
   const workflow = await readReleaseWorkflow();
   const authStep = extractStep(
     workflow,
@@ -36,4 +36,9 @@ test("changesets release workflow: trusted publishing uses a token-free npmrc", 
     authStep,
     /echo "NPM_CONFIG_USERCONFIG=\$\{TRUSTED_NPMRC\}" >> "\$GITHUB_ENV"/,
   );
+  assert.match(authStep, /ACTIONS_ID_TOKEN_REQUEST_URL/);
+  assert.match(authStep, /ACTIONS_ID_TOKEN_REQUEST_TOKEN/);
+  assert.match(authStep, /audience=npm%3Aregistry\.npmjs\.org/);
+  assert.match(authStep, /echo "::add-mask::\$\{NPM_ID_TOKEN\}"/);
+  assert.match(authStep, /echo "NPM_ID_TOKEN=\$\{NPM_ID_TOKEN\}" >> "\$GITHUB_ENV"/);
 });
