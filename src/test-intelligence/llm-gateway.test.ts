@@ -660,6 +660,39 @@ test("structured-output success: accepts provider-parsed payloads when message.c
   }
 });
 
+test("structured-output missing message.content is retried as a gateway failure", async () => {
+  let attempts = 0;
+  const client = createLlmGatewayClient(baseConfig, {
+    fetchImpl: async () => {
+      attempts += 1;
+      if (attempts === 1) {
+        return okJsonResponse({
+          choices: [
+            {
+              finish_reason: "stop",
+              message: { role: "assistant", content: "" },
+            },
+          ],
+          usage: { prompt_tokens: 10, completion_tokens: 0 },
+        });
+      }
+      return okJsonResponse(buildChoiceBody({ ack: "ok" }));
+    },
+    apiKeyProvider: () => "k",
+    sleep: async () => undefined,
+    retryBackoffMs: [0, 0, 0],
+  });
+
+  const result = await client.generate(sampleRequest());
+
+  assert.equal(attempts, 2);
+  assert.equal(result.outcome, "success");
+  if (result.outcome === "success") {
+    assert.equal(result.attempt, 2);
+    assert.deepEqual(result.content, { ack: "ok" });
+  }
+});
+
 test("structured-output success: accepts reasoning_content only when it satisfies the schema", async () => {
   const client = createLlmGatewayClient(baseConfig, {
     fetchImpl: async () =>
@@ -1347,6 +1380,34 @@ test("seed, reasoning_effort, and max_output_tokens flags only forward when decl
     assert.match(unsupported.message, /maxOutputTokensSupport/);
   }
   assert.equal(observedBodies.length, 1);
+});
+
+test("mistral deployments forward maxOutputTokens as max_tokens", async () => {
+  let observedBody: string | undefined;
+  const client = createLlmGatewayClient(
+    {
+      ...baseConfig,
+      deployment: "mistral-large-3",
+      modelRevision: "mistral-large-3@2026-05-09",
+    },
+    {
+      fetchImpl: async (_u, init) => {
+        observedBody = init?.body as string | undefined;
+        return okJsonResponse(buildChoiceBody({ ack: "ok" }));
+      },
+      apiKeyProvider: () => "k",
+    },
+  );
+
+  const result = await client.generate(sampleRequest({ maxOutputTokens: 256 }));
+
+  assert.equal(result.outcome, "success");
+  const body = JSON.parse(observedBody ?? "{}") as {
+    max_completion_tokens?: number;
+    max_tokens?: number;
+  };
+  assert.equal(body.max_tokens, 256);
+  assert.equal(body.max_completion_tokens, undefined);
 });
 
 // ---------------------------------------------------------------------------

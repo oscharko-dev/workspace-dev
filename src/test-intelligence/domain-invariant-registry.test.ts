@@ -324,6 +324,41 @@ test("evaluateInvariants: brutto/netto exclusivity is rejected on a single strin
   assert.ok(offendingEval.exercises.includes("INV-NETTO-BRUTTO-01"));
 });
 
+test("evaluateInvariants: netto/brutto option-label accessibility text is not a financial-result violation", () => {
+  const intent = buildIntentNoFinancing();
+  const context = buildContext(intent);
+  const optionLabelCase = buildCase({
+    id: "tc-option-label",
+    type: "accessibility",
+    expectedResults: [
+      "Screen-Reader reads both options Netto and Brutto correctly.",
+    ],
+    steps: [
+      {
+        index: 1,
+        action: "Navigate to the price-basis options",
+        expected: "Screen-Reader announces both options Netto and Brutto.",
+      },
+    ],
+  });
+  const evaluation = evaluateInvariants({
+    registry: buildActiveDatasetInvariantRegistry(),
+    testCases: [optionLabelCase],
+    context,
+  });
+  assert.equal(
+    evaluation.violations.some(
+      (violation) => violation.invariantId === "INV-NETTO-BRUTTO-01",
+    ),
+    false,
+  );
+  assert.ok(
+    evaluation.cases
+      .find((entry) => entry.testCaseId === optionLabelCase.id)
+      ?.exercises.includes("INV-NETTO-BRUTTO-01"),
+  );
+});
+
 test("evaluateInvariants: optional-cost expectation without selection is a violation", () => {
   const intent = buildIntentNoFinancing();
   const context = buildContext(intent);

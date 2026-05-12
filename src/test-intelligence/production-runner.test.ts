@@ -37,6 +37,7 @@ import { PRODUCTION_RUNNER_EVIDENCE_SEAL_ARTIFACT_FILENAME } from "./production-
 import { AGENT_PARTICIPATION_ARTIFACT_FILENAME } from "./agent-participation.js";
 import {
   PROMPT_MAX_ACTIONS_PER_SCREEN,
+  PROMPT_CONTEXT_BUDGET_SAFETY_RATIO,
   PROMPT_MAX_FIELDS_PER_SCREEN,
   PROMPT_MAX_NAVIGATION_PER_SCREEN,
   PROMPT_MAX_VALIDATIONS_PER_SCREEN,
@@ -1745,6 +1746,81 @@ test("Issue #2125: weak 2/1 self-consistency splits trigger a cross-family 4th g
   }
 });
 
+test("runFigmaToQcTestCases falls back to secondary generator after retryable primary transport exhaustion", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-"));
+  try {
+    const bundle = createMockLlmGatewayClientBundle({
+      testGeneration: {
+        role: "test_generation",
+        deployment: "gpt-oss-120b-mock",
+        modelRevision: "gpt-oss-120b@mock",
+        gatewayRelease: "mock",
+        declaredCapabilities: TEST_GENERATION_CAPS,
+        responder: (_request, attempt) => ({
+          outcome: "error",
+          errorClass: "transport",
+          message: "gateway returned 500",
+          retryable: true,
+          attempt,
+        }),
+      },
+      testGenerationSecondary: {
+        role: "test_generation",
+        deployment: "mistral-large-3-mock",
+        modelRevision: "mistral-large-3@mock",
+        gatewayRelease: "mock",
+        declaredCapabilities: TEST_GENERATION_CAPS,
+        responder: okResponder([SAMPLE_DRAFT], "mistral-large-3-mock"),
+      },
+      visualPrimary: {
+        role: "visual_primary",
+        deployment: "llama-4-maverick-vision-mock",
+        modelRevision: "llama-4-maverick-vision@mock",
+        gatewayRelease: "mock",
+        declaredCapabilities: {
+          ...TEST_GENERATION_CAPS,
+          imageInputSupport: true,
+        },
+      },
+      visualFallback: {
+        role: "visual_fallback",
+        deployment: "phi-4-multimodal-instruct-mock",
+        modelRevision: "phi-4-multimodal-instruct@mock",
+        gatewayRelease: "mock",
+        declaredCapabilities: {
+          ...TEST_GENERATION_CAPS,
+          imageInputSupport: true,
+        },
+      },
+    });
+
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-generator-transport-fallback",
+      generatedAt: "2026-05-12T10:20:00.000Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: {
+        client: bundle.testGeneration,
+        bundle,
+      },
+      logicJudge: { enabled: false },
+    });
+
+    assert.equal(bundle.testGeneration.recordedRequests().length, 1);
+    assert.equal(bundle.testGenerationSecondary?.recordedRequests().length, 1);
+    assert.equal(result.generatedTestCases.testCases.length, 1);
+    const finopsReport = JSON.parse(
+      await readFile(result.artifactPaths.finopsReport, "utf8"),
+    ) as FinOpsBudgetReport;
+    assert.equal(
+      finopsReport.bySource.generator.deployment,
+      "mistral-large-3-mock",
+    );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("Issue #1936: diversityPasses=2 dispatches two seeded generator passes, merges outputs, and persists pass artifacts", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-"));
   try {
@@ -1942,6 +2018,60 @@ test("runFigmaToQcTestCases forwards maxInputTokens from the resolved FinOps bud
     );
     assert.equal(generationRequests.length, 1);
     assert.equal(generationRequests[0]?.maxInputTokens, 10_000);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("runFigmaToQcTestCases compiles prompts below the gateway input budget with a safety margin", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-"));
+  const observedEvents: Array<{ phase: string; details?: Record<string, unknown> }> = [];
+  try {
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: okResponder([SAMPLE_DRAFT]),
+    });
+    const finopsBudget = cloneEuBankingDefaultFinOpsBudget();
+    finopsBudget.roles.test_generation!.maxInputTokensPerRequest = 10_000;
+
+    await runFigmaToQcTestCases({
+      jobId: "job-prompt-compile-budget-margin",
+      generatedAt: "2026-05-02T10:00:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client },
+      finopsBudget,
+      generation: { diversityPasses: 1 },
+      logicJudge: { enabled: false },
+      events: (event) =>
+        observedEvents.push({
+          phase: event.phase,
+          ...(event.details !== undefined
+            ? { details: { ...event.details } }
+            : {}),
+        }),
+    });
+
+    const generationRequest = client
+      .recordedRequests()
+      .find(
+        (request) =>
+          request.responseSchemaName ===
+          "workspace-dev-production-runner-draft-list-v1",
+      );
+    assert.equal(generationRequest?.maxInputTokens, 10_000);
+
+    const compiledEvent = observedEvents.find(
+      (event) => event.phase === "prompt_compiled",
+    );
+    assert.equal(compiledEvent?.details?.maxInputTokens, 10_000);
+    assert.equal(
+      compiledEvent?.details?.promptCompileMaxInputTokens,
+      Math.floor(10_000 * PROMPT_CONTEXT_BUDGET_SAFETY_RATIO),
+    );
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }
@@ -6562,6 +6692,128 @@ test("runFigmaToQcTestCases replaces unknown draft lifecycle transition ids befo
   }
 });
 
+test("runFigmaToQcTestCases accepts malformed wire lifecycle ids and rewrites them deterministically", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-"));
+  try {
+    const malformedWireCase = {
+      ...SAMPLE_DRAFT,
+      steps: SAMPLE_DRAFT.steps.map((step, index) =>
+        index === 0 ? { ...step, fieldLifecycleTransitionId: null } : step,
+      ),
+    };
+    const client = createLlmGatewayClient(
+      {
+        role: "test_generation",
+        compatibilityMode: "openai_chat",
+        baseUrl: "https://gateway.example.test/openai/v1",
+        deployment: "gpt-oss-120b-mock",
+        modelRevision: "mock-1",
+        gatewayRelease: "mock",
+        authMode: "api_key",
+        declaredCapabilities: TEST_GENERATION_CAPS,
+        timeoutMs: 5_000,
+        maxRetries: 0,
+        circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
+        wireStructuredOutputMode: "none",
+      },
+      {
+        apiKeyProvider: () => "k",
+        fetchImpl: async () =>
+          new Response(
+            JSON.stringify({
+              choices: [
+                {
+                  finish_reason: "stop",
+                  message: {
+                    role: "assistant",
+                    content: JSON.stringify({
+                      testCases: [malformedWireCase],
+                    }),
+                  },
+                },
+              ],
+              usage: { prompt_tokens: 100, completion_tokens: 200 },
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+      },
+    );
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-malformed-wire-lifecycle-id",
+      generatedAt: "2026-05-02T10:00:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client },
+      logicJudge: { enabled: false },
+    });
+    const stamped = result.generatedTestCases.testCases[0];
+    assert.ok(stamped);
+    assert.match(stamped.steps[0]?.fieldLifecycleTransitionId ?? "", /^FLT-/u);
+    assert.equal(
+      result.validation.issues.some(
+        (issue) =>
+          issue.path.endsWith(".steps[0].fieldLifecycleTransitionId") &&
+          issue.severity === "error",
+      ),
+      false,
+    );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("runFigmaToQcTestCases rewrites terminal negative lifecycle anchors to validation_fail", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-"));
+  try {
+    const malformedNegative = {
+      ...SAMPLE_NEGATIVE_DRAFT,
+      steps: [
+        {
+          index: 1,
+          action: "Trage -1 in das Feld Investitionssumme ein",
+          expected: "Eine fachliche Fehlermeldung verhindert das Fortfahren",
+          fieldLifecycleTransitionId: SAMPLE_FIELD_LIFECYCLE_TRANSITION_IDS[0],
+        },
+      ],
+    } as ProductionRunnerLlmDraftCase;
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: okResponder([malformedNegative]),
+    });
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-bad-negative-lifecycle-id",
+      generatedAt: "2026-05-02T10:00:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client },
+    });
+    const stamped = result.generatedTestCases.testCases.find(
+      (testCase) =>
+        testCase.type === "negative" &&
+        testCase.testData.some((value) => value.includes("-1")) &&
+        testCase.steps.some((step) => step.action.includes("-1")),
+    );
+    assert.ok(stamped);
+    assert.equal(
+      stamped.steps.at(-1)?.fieldLifecycleTransitionId,
+      SAMPLE_FIELD_LIFECYCLE_TRANSITION_IDS[3],
+    );
+    assert.equal(
+      result.validation.issues.some(
+        (issue) =>
+          issue.code === "uncovered_field_lifecycle_transition" &&
+          issue.message.includes('"validation_fail"'),
+      ),
+      false,
+    );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Issue #1894: --custom-context-markdown wiring
 // ---------------------------------------------------------------------------
@@ -7037,6 +7289,294 @@ test("runFigmaToQcTestCases derives qualitySignals from figmaTraceRefs when the 
     );
     assert.ok(
       generated?.qualitySignals.coveredActionIds.includes("1:1::action::2:2"),
+    );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("runFigmaToQcTestCases canonicalizes draft qualitySignals and drops unknown coverage ids", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-trace-"));
+  try {
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: okResponder([
+        {
+          ...SAMPLE_DRAFT,
+          qualitySignals: {
+            coveredFieldIds: ["2:1", "model-invented-field-id"],
+            coveredActionIds: ["2:2", "ACT-999"],
+            coveredValidationIds: ["model-invented-validation-id"],
+            coveredNavigationIds: ["model-invented-navigation-id"],
+            confidence: 0.91,
+          },
+        },
+      ]),
+    });
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-trace-quality-canonical",
+      generatedAt: "2026-05-05T10:00:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client },
+      logicJudge: { enabled: false },
+    });
+
+    const generated = result.generatedTestCases.testCases[0];
+    assert.deepEqual(generated?.qualitySignals.coveredFieldIds, [
+      "1:1::field::2:1",
+    ]);
+    assert.ok(
+      generated?.qualitySignals.coveredActionIds.includes("1:1::action::2:2"),
+    );
+    assert.equal(
+      generated?.qualitySignals.coveredActionIds.includes("ACT-999"),
+      false,
+    );
+    assert.equal(
+      result.validation.issues.some(
+        (issue) => issue.code === "quality_signals_coverage_unknown_id",
+      ),
+      false,
+    );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("runFigmaToQcTestCases uses deterministic coverage targets for large forms instead of accepting repeated EP output", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-targets-"));
+  const labels = [
+    "Antragsteller",
+    "Investitionsobjekt",
+    "Objektkategorie",
+    "Fuhrparkentscheidung",
+    "Erweiterungsinvestition",
+    "Kaufpreiserfassung",
+    "Kaufpreis netto",
+    "Mehrwertsteuersatz",
+    "Nebenkosten brutto",
+    "Betriebsmittelbedarf",
+    "Betriebsmittelbetrag",
+    "Anschaffungsdatum",
+    "Zahlungsdatum",
+    "Nutzungsdauer",
+    "Wunschrate",
+    "Finanzierungsdauer",
+    "Flexibilitaetswunsch",
+    "Sondertilgung",
+    "Foerdermittel",
+    "Nachhaltigkeitskriterium",
+    "Versicherungswunsch",
+  ];
+  const largeFormFile = {
+    ...SAMPLE_FILE,
+    document: node({
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        node({
+          id: "0:1",
+          name: "Page 1",
+          type: "CANVAS",
+          children: [
+            node({
+              id: "1:1",
+              name: "Large banking form",
+              type: "FRAME",
+              absoluteBoundingBox: { x: 0, y: 0, width: 800, height: 1200 },
+              children: labels.map((label, index) =>
+                node({
+                  id: `2:${index + 1}`,
+                  name: label,
+                  type: "TEXT",
+                  characters: label,
+                }),
+              ),
+            }),
+          ],
+        }),
+      ],
+    }),
+  };
+  try {
+    const firstFieldId = "1:1::field::2:1";
+    const duplicateDrafts: ProductionRunnerLlmDraftCase[] = [
+      ...labels.map((_label, index) => ({
+        ...SAMPLE_DRAFT,
+        title: `TC_EP_${String(index + 1).padStart(2, "0")}: Antragsteller positiv`,
+        objective: "Wiederholter Modellvorschlag fuer dasselbe Feld.",
+        type: "functional",
+        polarity: "positive",
+        category: "positive_path",
+        technique: "equivalence_partitioning",
+        testData: [`Antragsteller: Wert ${index + 1}`],
+        figmaTraceRefs: [
+          { screenId: "1:1", nodeId: "2:1", nodeName: "Antragsteller" },
+        ],
+        qualitySignals: {
+          coveredFieldIds: [firstFieldId],
+          coveredActionIds: [],
+          coveredValidationIds: [],
+          coveredNavigationIds: [],
+          confidence: 0.9,
+        },
+      })),
+      {
+        ...SAMPLE_DRAFT,
+        title: "TC20 - Use-Case: Bedarf komplett anlegen",
+        objective:
+          "Modell-Zusatzfall, der auf grossen Formularen nicht die deterministische Screen-Baseline ersetzen darf.",
+        type: "functional",
+        polarity: "positive",
+        category: "positive_path",
+        technique: "use_case",
+        figmaTraceRefs: [
+          { screenId: "1:1", nodeId: "2:2", nodeName: "Investitionsobjekt" },
+        ],
+        qualitySignals: {
+          coveredFieldIds: ["1:1::field::2:1", "1:1::field::2:2"],
+          coveredActionIds: [],
+          coveredValidationIds: [],
+          coveredNavigationIds: [],
+          confidence: 0.9,
+        },
+      },
+      {
+        ...SAMPLE_ACCESSIBILITY_DRAFT,
+        title: "TC21 - Barrierefreiheit: Tastaturnavigation",
+        objective:
+          "Modell-Zusatzfall, der auf grossen Formularen nicht die deterministische A11y-Baseline ersetzen darf.",
+        figmaTraceRefs: [
+          { screenId: "1:1", nodeId: "2:3", nodeName: "Objektkategorie" },
+        ],
+        qualitySignals: {
+          coveredFieldIds: ["1:1::field::2:3"],
+          coveredActionIds: [],
+          coveredValidationIds: [],
+          coveredNavigationIds: [],
+          confidence: 0.9,
+        },
+      },
+      {
+        ...SAMPLE_NEGATIVE_DRAFT,
+        title: "TC35 - Negativfall Feld Sondertilgung",
+        objective:
+          "Modell-Negativfall, der auf grossen Formularen nicht die deterministische Negativ-Basisabdeckung ersetzen darf.",
+        figmaTraceRefs: [
+          { screenId: "1:1", nodeId: "2:18", nodeName: "Sondertilgung" },
+        ],
+        qualitySignals: {
+          coveredFieldIds: ["1:1::field::2:18"],
+          coveredActionIds: [],
+          coveredValidationIds: [],
+          coveredNavigationIds: [],
+          confidence: 0.9,
+        },
+      },
+      {
+        ...SAMPLE_DRAFT,
+        title: "TC23 - Feld 'Abbrechen' pruefen",
+        objective:
+          "Modell-Zusatzfall ohne konkretes Target, der die finale Anzahl nicht beeinflussen darf.",
+        type: "functional",
+        polarity: "positive",
+        category: "positive_path",
+        technique: "equivalence_partitioning",
+        figmaTraceRefs: [{ screenId: "1:1", nodeId: "2:4" }],
+        qualitySignals: {
+          coveredFieldIds: [],
+          coveredActionIds: [],
+          coveredValidationIds: [],
+          coveredNavigationIds: [],
+          confidence: 0.9,
+        },
+      },
+    ];
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: okResponder(duplicateDrafts),
+    });
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-large-form-target-contract",
+      generatedAt: "2026-05-12T10:00:00Z",
+      source: { kind: "figma_paste_normalized", file: largeFormFile },
+      outputRoot: tempRoot,
+      llm: { client },
+      logicJudge: { enabled: false },
+    });
+
+    const generatorRequest = client.recordedRequests()[0];
+    assert.ok(generatorRequest);
+    assert.equal(
+      generatorRequest.userPrompt.includes("Erweiterungsinvestition"),
+      false,
+    );
+    assert.equal(generatorRequest.userPrompt.includes("Antragsteller"), true);
+
+    const requiredFieldIds = result.intent.detectedFields
+      .filter((field) => labels.includes(field.label))
+      .map((field) => field.id)
+      .sort();
+    assert.equal(requiredFieldIds.length, labels.length);
+    const targetCases = result.generatedTestCases.testCases.filter(
+      (testCase) =>
+        testCase.technique === "equivalence_partitioning" &&
+        testCase.type === "functional" &&
+        testCase.qualitySignals.coveredFieldIds.some((fieldId) =>
+          requiredFieldIds.includes(fieldId),
+        ),
+    );
+    assert.equal(targetCases.length, requiredFieldIds.length);
+    assert.deepEqual(
+      targetCases
+        .flatMap((testCase) => testCase.qualitySignals.coveredFieldIds)
+        .filter((fieldId) => requiredFieldIds.includes(fieldId))
+        .sort(),
+      requiredFieldIds,
+    );
+    const negativeTargetCases = result.generatedTestCases.testCases.filter(
+      (testCase) =>
+        testCase.technique === "equivalence_partitioning" &&
+        testCase.type === "negative" &&
+        testCase.polarity === "negative" &&
+        testCase.qualitySignals.coveredFieldIds.some((fieldId) =>
+          requiredFieldIds.includes(fieldId),
+        ),
+    );
+    assert.equal(negativeTargetCases.length, requiredFieldIds.length);
+    assert.deepEqual(
+      negativeTargetCases
+        .flatMap((testCase) => testCase.qualitySignals.coveredFieldIds)
+        .filter((fieldId) => requiredFieldIds.includes(fieldId))
+        .sort(),
+      requiredFieldIds,
+    );
+    assert.equal(
+      result.generatedTestCases.testCases.length,
+      requiredFieldIds.length * 2 + 2,
+    );
+    assert.equal(
+      targetCases.some((testCase) => testCase.title.includes("TC_EP_")),
+      false,
+    );
+    assert.equal(
+      result.generatedTestCases.testCases.some((testCase) =>
+        /^TC(?:20|21|23|35)\b/u.test(testCase.title),
+      ),
+      false,
+    );
+    assert.equal(
+      result.validation.issues.some(
+        (issue) => issue.code === "intra_equivalence_class_redundancy",
+      ),
+      false,
     );
   } finally {
     await rm(tempRoot, { recursive: true, force: true });

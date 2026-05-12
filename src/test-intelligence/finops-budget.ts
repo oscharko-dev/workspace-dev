@@ -27,6 +27,8 @@ import {
 } from "../contracts/index.js";
 
 export const ADVERSARIAL_CRITIC_BUDGET_FRACTION = 0.25 as const;
+export const PRODUCTION_GENERATOR_WALL_CLOCK_MS: number =
+  24 * 60 * 60 * 1000;
 
 export interface AdversarialCriticBudgetLimits {
   readonly maxInputTokens?: number;
@@ -109,7 +111,7 @@ export const EU_BANKING_DEFAULT_FINOPS_BUDGET: FinOpsBudgetEnvelope =
     // first, cost is currently not a gating concern. The eu-banking-default
     // profile mirrors the production-default permissive envelope; future
     // cost-aware profiles can override per customer.
-    maxJobWallClockMs: 30 * 60 * 1000,
+    maxJobWallClockMs: PRODUCTION_GENERATOR_WALL_CLOCK_MS,
     maxReplayCacheMissRate: 1.0,
     roles: Object.freeze({
       test_generation: Object.freeze({
@@ -117,8 +119,7 @@ export const EU_BANKING_DEFAULT_FINOPS_BUDGET: FinOpsBudgetEnvelope =
         maxOutputTokensPerRequest: 32_000,
         maxTotalInputTokens: 2_000_000,
         maxTotalOutputTokens: 200_000,
-        maxWallClockMsPerRequest: 600_000,
-        maxTotalWallClockMs: 1_800_000,
+        maxWallClockMsPerRequest: PRODUCTION_GENERATOR_WALL_CLOCK_MS,
         maxRetriesPerRequest: 6,
         maxAttempts: 12,
       }),
@@ -370,14 +371,13 @@ export const PRODUCTION_FINOPS_BUDGET_ENVELOPE: FinOpsBudgetEnvelope =
   Object.freeze({
     budgetId: "production-default",
     budgetVersion: "1.1.0",
-    // 30 minutes wall-clock per job — operator stance (CTO directive
-    // 2026-05-10): stability + quality first, cost is currently not a
-    // gating concern. Accommodates very wide flows, multi-section masks,
-    // multi-judge cross-family panels, adversarial-critic rounds, and
-    // multiple repair iterations without breaching the wall-clock budget.
-    // Tier-1 production-readiness target; tighter cost-aware profiles
-    // can override per customer once Wave 8 lands.
-    maxJobWallClockMs: 30 * 60 * 1000,
+    // 24h wall-clock per job — operator stance (CTO directive
+    // 2026-05-12): stability + quality first, cost is currently not a
+    // gating concern. Very wide flows and sovereign-cloud fallback
+    // requests must stay observable instead of aborting while still
+    // retaining a practical hard ceiling for leaked jobs. Tighter
+    // cost-aware profiles can override per customer once Wave 8 lands.
+    maxJobWallClockMs: PRODUCTION_GENERATOR_WALL_CLOCK_MS,
     // Disable the replay-cache miss-rate gate by default. The cache is
     // best-effort; flagging a "clean run" because cache hit rate dropped
     // is a cost-aware concern, not a quality/stability one.
@@ -413,10 +413,11 @@ export const PRODUCTION_FINOPS_BUDGET_ENVELOPE: FinOpsBudgetEnvelope =
         // up to ~9 repair iterations. Operator stance: never give up on
         // quality due to attempt counter.
         maxAttempts: 12,
-        // 10 minutes per request — accommodates large prompts on
-        // sovereign-cloud endpoints + slow first-byte; previous 120 s
-        // was right-sized for small masks only.
-        maxWallClockMsPerRequest: 600_000,
+        // 24h per request — large fachliche masks and fallback models may
+        // exceed small-mask latency by orders of magnitude. The CLI emits
+        // progress heartbeats while waiting, so long-running generation is
+        // observable instead of a terminal black box.
+        maxWallClockMsPerRequest: PRODUCTION_GENERATOR_WALL_CLOCK_MS,
         // No live-smoke calls allowed by default; the live-E2E lane sets
         // its own envelope.
         maxLiveSmokeCalls: 0,

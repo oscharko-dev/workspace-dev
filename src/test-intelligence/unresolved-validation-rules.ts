@@ -69,6 +69,8 @@ const VALIDATION_TOPIC_MARKERS: readonly RegExp[] = [
   /\bmindest\w*\b/i,
   /\bhöchst\w*\b/i,
   /\bberechnung(?:s\w*)?\b/i,
+  /\bergebnis(?:feld|anzeige|wert|betrag)?\b/i,
+  /\bresult(?: display| field| value)?\b/i,
   /\bvorbelegung\b/i,
   /\bfeldbezeichnung(?:en)?\b/i,
   /\bnetto\b/i,
