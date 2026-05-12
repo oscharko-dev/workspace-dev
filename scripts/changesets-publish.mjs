@@ -142,9 +142,8 @@ const main = async () => {
 };
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main().catch((error) => {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    console.error(`[changesets-publish] Failed: ${message}`);
+  main().catch(() => {
+    console.error("[changesets-publish] Failed.");
     process.exit(1);
   });
 }
