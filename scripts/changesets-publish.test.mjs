@@ -1,7 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert";
 
-import { resolvePublishEnv } from "./changesets-publish.mjs";
+import {
+  resolvePublishAuthMode,
+  resolvePublishCommand,
+  resolvePublishEnv
+} from "./changesets-publish.mjs";
 
 const withEnv = (env, fn) => {
   const previous = { ...process.env };
@@ -32,6 +36,18 @@ test("resolvePublishEnv: rejects unsupported publish auth modes outside GitHub A
       withEnv({ WORKSPACE_DEV_PUBLISH_AUTH_MODE: "bad-mode" }, () =>
         resolvePublishEnv()
       ),
+    /Unsupported WORKSPACE_DEV_PUBLISH_AUTH_MODE/
+  );
+});
+
+test("resolvePublishAuthMode: centralizes publish auth mode validation", () => {
+  assert.strictEqual(resolvePublishAuthMode({}), "trusted-publisher-oidc");
+  assert.strictEqual(
+    resolvePublishAuthMode({ WORKSPACE_DEV_PUBLISH_AUTH_MODE: "npm-token" }),
+    "npm-token"
+  );
+  assert.throws(
+    () => resolvePublishAuthMode({ WORKSPACE_DEV_PUBLISH_AUTH_MODE: "bad-mode" }),
     /Unsupported WORKSPACE_DEV_PUBLISH_AUTH_MODE/
   );
 });
@@ -124,4 +140,52 @@ test("resolvePublishEnv: enables provenance in GitHub npm-token mode with OIDC",
   assert.strictEqual(publishEnv.NODE_AUTH_TOKEN, "npm-token-value");
   assert.strictEqual(publishEnv.NPM_TOKEN, "npm-token-value");
   assert.strictEqual(publishEnv.NPM_CONFIG_PROVENANCE, "true");
+});
+
+test("resolvePublishCommand: uses npm CLI directly for GitHub trusted publishing", () => {
+  const publishEnv = withEnv(
+    {
+      ACTIONS_ID_TOKEN_REQUEST_TOKEN: "oidc-token",
+      ACTIONS_ID_TOKEN_REQUEST_URL: "https://actions.example/oidc",
+      GITHUB_ACTIONS: "true",
+      WORKSPACE_DEV_PUBLISH_AUTH_MODE: "trusted-publisher-oidc"
+    },
+    () => resolvePublishEnv()
+  );
+
+  assert.deepStrictEqual(resolvePublishCommand("latest", publishEnv), {
+    command: "npm",
+    args: [
+      "publish",
+      "--access",
+      "public",
+      "--provenance",
+      "--ignore-scripts",
+      "--tag",
+      "latest"
+    ]
+  });
+});
+
+test("resolvePublishCommand: keeps Changesets publish outside GitHub trusted publishing", () => {
+  assert.deepStrictEqual(resolvePublishCommand("next", {}), {
+    command: "pnpm",
+    args: [
+      "changeset",
+      "publish",
+      "--tag",
+      "next"
+    ]
+  });
+});
+
+test("resolvePublishCommand: rejects unsupported publish auth modes", () => {
+  assert.throws(
+    () =>
+      resolvePublishCommand("latest", {
+        GITHUB_ACTIONS: "true",
+        WORKSPACE_DEV_PUBLISH_AUTH_MODE: "bad-mode"
+      }),
+    /Unsupported WORKSPACE_DEV_PUBLISH_AUTH_MODE/
+  );
 });
