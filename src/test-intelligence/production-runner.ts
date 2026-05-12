@@ -2574,11 +2574,16 @@ const evaluateNegativeCaseLiftGate = (input: {
     };
   }
   const observed = traceArtifact.negativeCoverage.relativeRatioIncrease;
-  if (traceArtifact.negativeCoverage.meetsThreshold) {
-    const saturatedNegativeCoverage =
-      observed < config.thresholdRatio &&
-      traceArtifact.negativeCoverage.finalNegativeRatio >=
-        traceArtifact.negativeCoverage.baselineNegativeRatio;
+  const saturatedNegativeCoverage =
+    traceArtifact.negativeCoverage.baselineNegativeRatio > 0 &&
+    traceArtifact.negativeCoverage.finalNegativeRatio >=
+      traceArtifact.negativeCoverage.baselineNegativeRatio &&
+    (1 - traceArtifact.negativeCoverage.baselineNegativeRatio) /
+      traceArtifact.negativeCoverage.baselineNegativeRatio <
+      config.thresholdRatio;
+  const meetsEffectiveThreshold =
+    observed >= config.thresholdRatio || saturatedNegativeCoverage;
+  if (meetsEffectiveThreshold) {
     return {
       gateId: "G-NEG-CASE",
       status: "passed",

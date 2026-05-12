@@ -7898,7 +7898,9 @@ test("runFigmaToQcTestCases rewrites currency hallucinations on Netto/Brutto opt
       logicJudge: { enabled: false },
     });
 
-    const generated = result.generatedTestCases.testCases[0];
+    const generated = result.generatedTestCases.testCases.find((testCase) =>
+      /Netto\/Brutto auswählen/u.test(testCase.title),
+    );
     assert.ok(generated);
     assert.match(generated.title, /Netto\/Brutto auswählen/u);
     assert.doesNotMatch(JSON.stringify(generated), /Währung|EUR|Einheit/u);
@@ -9077,7 +9079,7 @@ test("Issue #2053: G-NEG-CASE records advisory when override flips gateMode and 
       llm: { client: generator, logicJudge: judge },
       harness: { mode: "off", maxRepairIterations: 0 },
       qualityGates: {
-        negativeCaseLift: { gateMode: "advisory", thresholdRatio: 0.3 },
+        negativeCaseLift: { gateMode: "advisory", thresholdRatio: 1.1 },
       },
     });
 
@@ -9097,10 +9099,10 @@ test("Issue #2053: G-NEG-CASE records advisory when override flips gateMode and 
     );
     assert.ok(negCaseGate, "expected G-NEG-CASE entry in policy report");
     assert.equal(negCaseGate.status, "advisory");
-    assert.equal(negCaseGate.thresholdRatio, 0.3);
+    assert.equal(negCaseGate.thresholdRatio, 1.1);
     assert.ok(
       negCaseGate.observedRatio !== undefined &&
-        negCaseGate.observedRatio < 0.3,
+        negCaseGate.observedRatio < 1.1,
       "advisory record should carry a below-threshold observedRatio",
     );
   } finally {
