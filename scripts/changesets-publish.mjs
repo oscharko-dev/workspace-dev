@@ -98,6 +98,37 @@ export const resolvePublishEnv = () => {
   return publishEnv;
 };
 
+export const resolvePublishCommand = (npmTag, publishEnv = process.env) => {
+  const publishAuthMode = String(
+    publishEnv.WORKSPACE_DEV_PUBLISH_AUTH_MODE ?? "trusted-publisher-oidc"
+  ).trim();
+
+  if (publishEnv.GITHUB_ACTIONS === "true" && publishAuthMode === "trusted-publisher-oidc") {
+    return {
+      command: "npm",
+      args: [
+        "publish",
+        "--access",
+        "public",
+        "--provenance",
+        "--ignore-scripts",
+        "--tag",
+        npmTag
+      ]
+    };
+  }
+
+  return {
+    command: "pnpm",
+    args: [
+      "changeset",
+      "publish",
+      "--tag",
+      npmTag
+    ]
+  };
+};
+
 const assertPathExists = async (relativePath) => {
   const absolutePath = path.resolve(packageRoot, relativePath);
   try {
@@ -131,15 +162,15 @@ const main = async () => {
   }
 
   const npmTag = packageVersion.includes("-") ? "next" : "latest";
+  const publishEnv = resolvePublishEnv();
+  const publishCommand = resolvePublishCommand(npmTag, publishEnv);
 
   console.log(`[changesets-publish] Publishing ${packageJson.name}@${packageVersion} with npm tag '${npmTag}'.`);
   await ensurePublishArtifacts();
-  await run("pnpm", [
-    "changeset",
-    "publish",
-    "--tag",
-    npmTag
-  ], resolvePublishEnv());
+  if (publishCommand.command === "npm") {
+    console.log("[changesets-publish] Using npm CLI directly for GitHub trusted publishing.");
+  }
+  await run(publishCommand.command, publishCommand.args, publishEnv);
 };
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
