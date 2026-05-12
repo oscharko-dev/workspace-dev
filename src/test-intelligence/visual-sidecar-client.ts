@@ -73,6 +73,7 @@ import { canonicalJson } from "./content-hash.js";
 import type { LlmCircuitBreaker } from "./llm-circuit-breaker.js";
 import type { LlmGatewayClient } from "./llm-gateway.js";
 import type { LlmGatewayClientBundle } from "./llm-gateway-bundle.js";
+import { generateWithLocalWallClockGuard } from "./llm-generation-guard.js";
 import { isMockLlmGatewayClient } from "./llm-mock-gateway.js";
 import { validateVisualSidecar } from "./visual-sidecar-validation.js";
 
@@ -583,23 +584,32 @@ export const describeVisualScreens = async (
         ? input.requestLimits?.visualPrimary
         : input.requestLimits?.visualFallback;
     const start = clock();
-    const result = await client.generate({
-      jobId: input.jobId,
-      systemPrompt: VISUAL_SIDECAR_SYSTEM_PROMPT,
-      userPrompt,
-      responseSchema,
-      responseSchemaName: VISUAL_SIDECAR_RESPONSE_SCHEMA_NAME,
-      imageInputs: input.captures.map((capture) => ({
-        mimeType: capture.mimeType,
-        base64Data: capture.base64Data,
-        ...(capture.widthPx !== undefined ? { widthPx: capture.widthPx } : {}),
-        ...(capture.heightPx !== undefined
-          ? { heightPx: capture.heightPx }
+    const result = await generateWithLocalWallClockGuard({
+      client,
+      operationLabel: `visual sidecar ${stage} gateway request`,
+      request: {
+        jobId: input.jobId,
+        systemPrompt: VISUAL_SIDECAR_SYSTEM_PROMPT,
+        userPrompt,
+        responseSchema,
+        responseSchemaName: VISUAL_SIDECAR_RESPONSE_SCHEMA_NAME,
+        imageInputs: input.captures.map((capture) => ({
+          mimeType: capture.mimeType,
+          base64Data: capture.base64Data,
+          ...(capture.widthPx !== undefined
+            ? { widthPx: capture.widthPx }
+            : {}),
+          ...(capture.heightPx !== undefined
+            ? { heightPx: capture.heightPx }
+            : {}),
+        })),
+        ...(requestLimits ?? {}),
+        ...(input.abortSignal !== undefined
+          ? { abortSignal: input.abortSignal }
           : {}),
-      })),
-      ...(requestLimits ?? {}),
-      ...(input.abortSignal !== undefined
-        ? { abortSignal: input.abortSignal }
+      },
+      ...(requestLimits?.maxWallClockMs !== undefined
+        ? { defaultWallClockMs: requestLimits.maxWallClockMs }
         : {}),
     });
     const durationMs = Math.max(0, clock() - start);

@@ -488,6 +488,52 @@ test("invalid sidecar JSON: schema_invalid on primary is safely recovered by fal
   );
 });
 
+test("hanging primary gateway call times out locally and falls back", async () => {
+  const captures = [captureFor("s-1")];
+  let fallbackCalls = 0;
+  const primaryResponder: MockResponder = async () => await new Promise(() => {});
+  const fallbackResponder: MockResponder = (request, attempt) => {
+    fallbackCalls += 1;
+    return buildSuccess(
+      request,
+      attempt,
+      buildEnvelope(captures, FALLBACK_DEPLOYMENT),
+      {
+        deployment: FALLBACK_DEPLOYMENT,
+        modelRevision: `${FALLBACK_DEPLOYMENT}@test`,
+        gatewayRelease: "mock",
+      },
+    );
+  };
+  const bundle = buildBundle({
+    primary: { responder: primaryResponder },
+    fallback: { responder: fallbackResponder },
+  });
+
+  const startedAt = Date.now();
+  const { result } = await describeVisualScreens({
+    bundle,
+    captures,
+    jobId: "job-hanging-primary",
+    generatedAt: "2026-05-12T07:00:00.000Z",
+    intent: buildIntent(["s-1"]),
+    primaryDeployment: PRIMARY_DEPLOYMENT,
+    requestLimits: { visualPrimary: { maxWallClockMs: 25 } },
+    clock: monotonicClock(),
+  });
+
+  assert.ok(
+    Date.now() - startedAt < 1_000,
+    "visual sidecar watchdog should resolve quickly instead of hanging indefinitely",
+  );
+  assert.equal(result.outcome, "success");
+  assert.equal(fallbackCalls, 1);
+  if (result.outcome !== "success") return;
+  assert.equal(result.fallbackReason, "primary_unavailable");
+  assert.equal(result.attempts[0]?.errorClass, "timeout");
+  assert.equal(result.selectedDeployment, "mock");
+});
+
 test("repair path coerces schema-near sidecar JSON into a valid result", async () => {
   const captures = [captureFor("s-1")];
   const primaryResponder: MockResponder = (request, attempt) =>

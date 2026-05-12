@@ -16,6 +16,7 @@ import {
   type TestCaseRiskCategory,
 } from "../contracts/index.js";
 import { canonicalJson } from "./content-hash.js";
+import { generateWithLocalWallClockGuard } from "./llm-generation-guard.js";
 import type { LlmGatewayClient } from "./llm-gateway.js";
 
 export interface BuildRiskRankingInput {
@@ -300,7 +301,14 @@ export const buildRiskRankingWithAugmentation = async (
       ? { abortSignal: input.abortSignal }
       : {}),
   };
-  const gatewayResult = await input.rankerClient.generate(request);
+  const gatewayResult = await generateWithLocalWallClockGuard({
+    client: input.rankerClient,
+    request,
+    operationLabel: "risk ranker gateway request",
+    ...(input.maxWallClockMs !== undefined
+      ? { defaultWallClockMs: input.maxWallClockMs }
+      : {}),
+  });
   if (gatewayResult.outcome !== "success") {
     return { ranking, usedAugmentation: false, gatewayResult };
   }

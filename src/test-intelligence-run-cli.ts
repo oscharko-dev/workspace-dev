@@ -91,6 +91,8 @@ import {
   type FigmaRestNode,
   type ProductionRunnerHarnessConfig,
   type ProductionRunnerHarnessMode,
+  type ProductionRunnerEvent,
+  type ProductionRunnerEventDetailValue,
   type ProductionRunnerSource,
   type RunFigmaToQcTestCasesInput,
   type RunFigmaToQcTestCasesResult,
@@ -210,6 +212,62 @@ interface TopologyPreflightReport {
   visualSidecarEnabled: boolean;
   roles: ReadonlyArray<TopologyRoleReportEntry>;
 }
+
+const CLI_PROGRESS_HEARTBEAT_MS = 30_000 as const;
+const CLI_PROGRESS_VALUE_MAX_LENGTH = 180 as const;
+
+const formatProgressElapsed = (elapsedMs: number): string =>
+  `${Math.max(0, elapsedMs / 1000).toFixed(1)}s`;
+
+const formatProgressValue = (
+  value: ProductionRunnerEventDetailValue,
+): string | undefined => {
+  if (value === undefined) return undefined;
+  if (value === null) return "null";
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return String(value);
+  }
+  const serialized = JSON.stringify(value);
+  return serialized.length <= CLI_PROGRESS_VALUE_MAX_LENGTH
+    ? serialized
+    : `${serialized.slice(0, CLI_PROGRESS_VALUE_MAX_LENGTH - 3)}...`;
+};
+
+const formatProgressDetails = (
+  details: ProductionRunnerEvent["details"] | undefined,
+): string => {
+  if (details === undefined) return "";
+  const entries = Object.entries(details)
+    .flatMap(([key, value]) => {
+      const formatted = formatProgressValue(value);
+      return formatted === undefined ? [] : [`${key}=${formatted}`];
+    })
+    .sort((left, right) => left.localeCompare(right));
+  return entries.length === 0 ? "" : ` ${entries.join(" ")}`;
+};
+
+const formatCliProgressEvent = (
+  event: ProductionRunnerEvent,
+  firstEventTimestamp: number,
+): string =>
+  `[test-intelligence] +${formatProgressElapsed(
+    event.timestamp - firstEventTimestamp,
+  )} ${event.phase}${formatProgressDetails(event.details)}\n`;
+
+const formatCliProgressHeartbeat = (input: {
+  startedAtMs: number;
+  lastPhase: string;
+  lastPhaseAtMs: number;
+}): string =>
+  `[test-intelligence] +${formatProgressElapsed(
+    Date.now() - input.startedAtMs,
+  )} still running phase=${input.lastPhase} phase_age=${formatProgressElapsed(
+    Date.now() - input.lastPhaseAtMs,
+  )}\n`;
 
 type DoctorRoleStatus = "ok" | "warning" | "error";
 
@@ -3548,6 +3606,45 @@ const safeReadEvidenceDigest = async (
   }
 };
 
+type CliPolicyStage = "clean" | "weich" | "mittel" | "hard";
+
+const resolveCliPolicyStage = (
+  result: RunFigmaToQcTestCasesResult,
+): CliPolicyStage => {
+  if (result.blocked) return "hard";
+  const needsReviewCount = result.policy?.needsReviewCount ?? 0;
+  const jobLevelViolationCount = Array.isArray(
+    result.policy?.jobLevelViolations,
+  )
+    ? result.policy.jobLevelViolations.length
+    : 0;
+  const runQualityStatus = result.runQuality?.artifact?.status;
+  const validationWarningCount = result.validation?.warningCount ?? 0;
+  if (
+    needsReviewCount > 0 ||
+    jobLevelViolationCount > 0 ||
+    runQualityStatus === "degraded_success" ||
+    runQualityStatus === "repaired_success"
+  ) {
+    return "mittel";
+  }
+  if (validationWarningCount > 0) return "weich";
+  return "clean";
+};
+
+const formatPolicyStatusLine = (stage: CliPolicyStage): string => {
+  switch (stage) {
+    case "hard":
+      return "  policy status       : fehlerhaft (stufe 3 hard; manual review required)";
+    case "mittel":
+      return "  policy status       : auffällig (stufe 2 mittel; run is not failed)";
+    case "weich":
+      return "  policy status       : auffällig (stufe 1 weich; run is not failed)";
+    case "clean":
+      return "  policy status       : clean";
+  }
+};
+
 const writeJsonArtifactAtomically = async (
   destinationPath: string,
   payload: unknown,
@@ -3627,11 +3724,13 @@ const runComplianceCoverageEvaluation = async (
     throw err;
   }
 
-  const errorFlag = coverage.hasUncoveredErrorRule ? " [uncovered error]" : "";
+  const attentionFlag = coverage.hasUncoveredErrorRule
+    ? " [auffällig: compliance coverage gap]"
+    : "";
   return (
     `  compliance coverage : ${activeFrameworks.length} frameworks · ` +
     `${(coverage.overallCoverageRatio * 100).toFixed(1)}% covered ` +
-    `(${coveragePath})${errorFlag}`
+    `(${coveragePath})${attentionFlag}`
   );
 };
 
@@ -4139,6 +4238,18 @@ export const runTestIntelligenceCommand = async (
     options.enableVisualSidecar && !options.noVisualSidecar
       ? undefined
       : ("disabled" as const);
+  const cliProgressStartedAtMs = Date.now();
+  let cliProgressFirstEventTimestamp: number | undefined;
+  let cliProgressLastPhase = "startup";
+  let cliProgressLastPhaseAtMs = cliProgressStartedAtMs;
+  const cliProgressSink = (event: ProductionRunnerEvent): void => {
+    cliProgressFirstEventTimestamp ??= event.timestamp;
+    cliProgressLastPhase = event.phase;
+    cliProgressLastPhaseAtMs = Date.now();
+    sink.stderr(
+      formatCliProgressEvent(event, cliProgressFirstEventTimestamp),
+    );
+  };
 
   const runInput: RunFigmaToQcTestCasesInput = {
     jobId,
@@ -4160,6 +4271,7 @@ export const runTestIntelligenceCommand = async (
         : {}),
       maxWallClockMs: 240_000,
     },
+    events: cliProgressSink,
     ...(finopsBudget !== undefined ? { finopsBudget } : {}),
     ...(options.maxFigmaPayloadBytes !== undefined
       ? { maxFigmaPayloadBytes: options.maxFigmaPayloadBytes }
@@ -4215,12 +4327,36 @@ export const runTestIntelligenceCommand = async (
   };
 
   let result: RunFigmaToQcTestCasesResult;
+  sink.stderr(
+    [
+      "[test-intelligence] starting live run",
+      `  job id        : ${jobId}`,
+      `  output dir    : ${runOutputDir}`,
+      `  source kind   : ${resolved.source.kind}`,
+      `  visual sidecar: ${options.enableVisualSidecar && !options.noVisualSidecar ? "enabled" : "disabled"}`,
+      "  roles:",
+      ...topologyPreflightReport.roles.map(formatTopologyRoleLine),
+      "",
+    ].join("\n"),
+  );
+  const cliProgressHeartbeat = setInterval(() => {
+    sink.stderr(
+      formatCliProgressHeartbeat({
+        startedAtMs: cliProgressStartedAtMs,
+        lastPhase: cliProgressLastPhase,
+        lastPhaseAtMs: cliProgressLastPhaseAtMs,
+      }),
+    );
+  }, CLI_PROGRESS_HEARTBEAT_MS);
+  (cliProgressHeartbeat as unknown as { unref?: () => void }).unref?.();
   try {
     result = await runner(runInput);
   } catch (err) {
+    clearInterval(cliProgressHeartbeat);
     sink.stderr(`error: ${formatRunnerError(err)}\n`);
     return exitCodeForRunnerError(err);
   }
+  clearInterval(cliProgressHeartbeat);
 
   // Compliance coverage report (Issue #2042). Runs after the producer
   // emits its `GeneratedTestCaseList` so the deterministic annotator
@@ -4291,16 +4427,19 @@ export const runTestIntelligenceCommand = async (
     `  customer md files   : ${customerMarkdownFileCount}`,
     `  combined markdown   : ${result.customerMarkdownPaths.combined}`,
   ];
-  if (result.blocked) {
-    const blockedMessage = `warning: test cases blocked by policy gate (job ${result.jobId}); see ${result.artifactPaths.policyReport}\n`;
+  const policyStage = resolveCliPolicyStage(result);
+  if (policyStage === "hard") {
+    const blockedMessage = `warning: hard policy gate failed (blocked by policy; job ${result.jobId}); see ${result.artifactPaths.policyReport}\n`;
     sink.stderr(blockedMessage);
     if (!allowPolicyBlocked) {
       return 3;
     }
-    summaryLines.push(
-      "  policy status       : blocked (manual review required)",
+  } else if (policyStage === "mittel" || policyStage === "weich") {
+    sink.stderr(
+      `notice: policy auffällig (${policyStage}); run is not failed (job ${result.jobId}); see ${result.artifactPaths.policyReport}\n`,
     );
   }
+  summaryLines.push(formatPolicyStatusLine(policyStage));
   if (finopsTotalsLine) summaryLines.push(finopsTotalsLine);
   if (evidenceDigestLine) summaryLines.push(evidenceDigestLine);
   summaryLines.push(complianceCoverageSummary);

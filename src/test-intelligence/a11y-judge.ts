@@ -22,7 +22,6 @@ import {
   type TenantScope,
   type VisualSidecarCaptureInput,
 } from "../contracts/index.js";
-import { sanitizeErrorMessage } from "../error-sanitization.js";
 import {
   A11Y_WCAG_22_AA_PILLARS,
   computeA11yCoverage,
@@ -35,6 +34,7 @@ import {
   truncateInstructionWithAudit,
   truncateWithEllipsis,
 } from "./judge-limits.js";
+import { generateWithLocalWallClockGuard } from "./llm-generation-guard.js";
 import { resolveTenantScopeSegments } from "./replay-cache.js";
 import type { LlmGatewayClientBundle } from "./llm-gateway-bundle.js";
 
@@ -120,6 +120,7 @@ export interface RunA11yJudgeInput {
   readonly maxOutputTokens?: number;
   readonly maxWallClockMs?: number;
   readonly maxRetries?: number;
+  readonly abortSignal?: AbortSignal;
   readonly cache?: A11yJudgeReplayCache;
 }
 
@@ -421,8 +422,10 @@ const runJudgeAttempt = async (input: {
   readonly userPrompt: string;
   readonly input: RunA11yJudgeInput;
 }): Promise<LlmGenerationResult> => {
-  try {
-    return await input.client.generate({
+  return await generateWithLocalWallClockGuard({
+    client: input.client,
+    operationLabel: "a11y judge gateway request",
+    request: {
       jobId: input.input.jobId,
       systemPrompt: SYSTEM_PROMPT,
       userPrompt: input.userPrompt,
@@ -450,21 +453,11 @@ const runJudgeAttempt = async (input: {
       ...(input.input.maxRetries !== undefined
         ? { maxRetries: input.input.maxRetries }
         : {}),
-    } satisfies LlmGenerationRequest);
-  } catch (error) {
-    return {
-      outcome: "error",
-      errorClass: "transport",
-      message: sanitizeShortMessage(
-        sanitizeErrorMessage({
-          error,
-          fallback: "a11y judge gateway request failed",
-        }),
-      ),
-      retryable: false,
-      attempt: 0,
-    };
-  }
+      ...(input.input.abortSignal !== undefined
+        ? { abortSignal: input.input.abortSignal }
+        : {}),
+    } satisfies LlmGenerationRequest,
+  });
 };
 
 const buildA11yJudgeUserPrompt = (input: {

@@ -6,11 +6,14 @@ import {
   FAITHFULNESS_JUDGE_PROMPT_TEMPLATE_VERSION,
   FAITHFULNESS_VERDICT_SCHEMA_VERSION,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
+  type LlmGenerationRequest,
   type LlmGatewayCapabilities,
   type VisualSidecarCaptureInput,
 } from "../contracts/index.js";
 import { createMockLlmGatewayClientBundle } from "./llm-gateway-bundle.js";
+import type { LlmGatewayClientBundle } from "./llm-gateway-bundle.js";
 import {
+  buildFaithfulnessJudgeResponseSchema,
   createMemoryFaithfulnessJudgeCache,
   runFaithfulnessJudge,
 } from "./faithfulness-judge.js";
@@ -59,6 +62,14 @@ const TWO_CASE_SET = {
     },
   ],
 };
+
+test("Issue #2170 regression: runtime faithfulness schema requires per-step verdicts", () => {
+  const schema = buildFaithfulnessJudgeResponseSchema();
+  assert.deepEqual(
+    (schema as { required?: unknown }).required,
+    ["verdict", "stepVerdicts", "hallucinations", "mismatches"],
+  );
+});
 
 test("runFaithfulnessJudge happy path emits an accept verdict on the primary model", async () => {
   const bundle = createMockLlmGatewayClientBundle({
@@ -704,6 +715,89 @@ test("runFaithfulnessJudge emits a schema-invalid refusal when both responses fa
   assert.equal(result.verdict.hallucinations[0]?.testCaseId, "$job");
   assert.deepEqual(result.verdict.mismatches, []);
   assert.equal(result.attempts.length, 2);
+});
+
+test("runFaithfulnessJudge fails closed on a hanging primary gateway call", async () => {
+  const baseBundle = createMockLlmGatewayClientBundle({
+    testGeneration: {
+      role: "test_generation",
+      deployment: "gpt-oss-120b",
+      modelRevision: "gpt-oss-120b@test",
+      gatewayRelease: "mock",
+    },
+    visualPrimary: {
+      role: "visual_primary",
+      deployment: "unused-primary",
+      modelRevision: "unused-primary@test",
+      gatewayRelease: "mock",
+      declaredCapabilities: VISUAL_CAPS,
+    },
+    visualFallback: {
+      role: "visual_fallback",
+      deployment: "llama-4-maverick-vision",
+      modelRevision: "llama-4-maverick-vision@test",
+      gatewayRelease: "mock",
+      declaredCapabilities: VISUAL_CAPS,
+      responder: (_request, attempt) => ({
+        outcome: "success",
+        content: {
+          verdict: "accept",
+          hallucinations: [],
+          mismatches: [],
+        },
+        finishReason: "stop",
+        usage: { inputTokens: 7, outputTokens: 4 },
+        modelDeployment: "llama-4-maverick-vision",
+        modelRevision: "llama-4-maverick-vision@test",
+        gatewayRelease: "mock",
+        attempt,
+      }),
+    },
+  });
+  const bundle: LlmGatewayClientBundle = {
+    ...baseBundle,
+    visualPrimary: {
+      role: "visual_primary",
+      deployment: "mistral-document-ai-2512",
+      modelRevision: "mistral-document-ai-2512@test",
+      gatewayRelease: "mock",
+      ictRegisterRef: undefined,
+      operatorEndpointReference: "https://example.invalid/[redacted]",
+      modelWeightsSha256: undefined,
+      declaredCapabilities: VISUAL_CAPS,
+      compatibilityMode: "openai_chat",
+      constrainedDecoding: undefined,
+      getCircuitBreaker: () => {
+        throw new Error("not used in test");
+      },
+      getIdempotencyMetrics: () => undefined,
+      generate: async (_request: LlmGenerationRequest) =>
+        await new Promise(() => {}),
+    },
+  };
+
+  const startedAt = Date.now();
+  const result = await runFaithfulnessJudge({
+    jobId: "faithfulness-timeout",
+    generatedAt: "2026-05-12T07:00:00Z",
+    captures: SAMPLE_CAPTURES,
+    generatedTestCases: SAMPLE_CASE_SET,
+    bundle,
+    maxWallClockMs: 25,
+  });
+
+  assert.ok(
+    Date.now() - startedAt < 1_000,
+    "judge watchdog should resolve quickly instead of hanging indefinitely",
+  );
+  assert.equal(result.cacheHit, false);
+  assert.equal(result.attempts.length, 2);
+  assert.equal(result.attempts[0]?.result.outcome, "error");
+  if (result.attempts[0]?.result.outcome === "error") {
+    assert.equal(result.attempts[0].result.errorClass, "timeout");
+  }
+  assert.equal(result.verdict.verdict, "accept");
+  assert.equal(result.verdict.fallbackReason, "primary_unavailable");
 });
 
 const resultCallCount = (client: object): number =>

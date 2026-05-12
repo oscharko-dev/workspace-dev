@@ -394,6 +394,42 @@ const buildVisualSuccess = (
   attempt,
 });
 
+const buildFaithfulnessAcceptContent = (
+  request: LlmGenerationRequest,
+): {
+  verdict: "accept";
+  stepVerdicts: Array<{
+    testCaseId: string;
+    stepIndex: number;
+    verdict: "match";
+    message: string;
+  }>;
+  hallucinations: [];
+  mismatches: [];
+} => {
+  const testCaseIds = [
+    ...new Set(
+      [...request.userPrompt.matchAll(/"id":"(tc-[^"]+)"/gu)]
+        .map((match) => match[1])
+        .filter((value): value is string => value !== undefined),
+    ),
+  ].sort((left, right) => left.localeCompare(right));
+  const ids = testCaseIds.length === 0 ? ["tc-placeholder"] : testCaseIds;
+  return {
+    verdict: "accept",
+    stepVerdicts: ids.flatMap((testCaseId) =>
+      [1, 2, 3, 4, 5].map((stepIndex) => ({
+        testCaseId,
+        stepIndex,
+        verdict: "match" as const,
+        message: "Step is visually plausible in the baseline screenshot.",
+      })),
+    ),
+    hallucinations: [],
+    mismatches: [],
+  };
+};
+
 const visualEvidenceHash = (input: {
   screenId: string;
   deployment: string;
@@ -764,11 +800,7 @@ test("Issue #1992: runFigmaToQcTestCases records degraded_success when the visua
           ) {
             return {
               outcome: "success" as const,
-              content: {
-                verdict: "accept",
-                hallucinations: [],
-                mismatches: [],
-              },
+              content: buildFaithfulnessAcceptContent(request),
               finishReason: "stop" as const,
               usage: { inputTokens: 12, outputTokens: 8 },
               modelDeployment: "llama-4-maverick-vision",
@@ -2702,15 +2734,17 @@ test("runFigmaToQcTestCases runs both judges, persists their artifacts, and keep
     assert.equal(judgeConsensusOnDisk.verdict, "accept");
     assert.equal(logicJudgeOnDisk.verdict, "accept");
     assert.equal(faithfulnessJudgeOnDisk.verdict, "accept");
-    // Epic #2167 Q1 follow-up (2026-05-11): the W5-1 (screen, trigger)
-    // aggregation eliminates the field-lifecycle-validator over-fire
-    // that previously turned this happy path into `blocked_failure` via
-    // 30-50 spurious `uncovered_field_lifecycle_transition` errors. With
-    // the over-fire fixed and judges accepting, the run is now genuinely
-    // `clean_success` — matching the test name ("keeps the job
-    // unblocked on the happy path").
-    assert.equal(result.runQuality.artifact.status, "clean_success");
-    assert.equal(runQualityOnDisk.status, "clean_success");
+    // Policy stage rollout: judge-accepted output can still be auffällig
+    // when the policy gate records needs_review evidence. That is no
+    // longer a hard blocker, but run-quality must surface it as degraded.
+    assert.equal(result.blocked, false);
+    assert.equal(result.runQuality.artifact.status, "degraded_success");
+    assert.equal(runQualityOnDisk.status, "degraded_success");
+    assert.ok(
+      result.runQuality.artifact.degradedReasons.includes(
+        "policy_attention_required",
+      ),
+    );
     assert.equal(runQualityOnDisk.repairState, "none");
     assert.equal(
       path.basename(result.artifactPaths.runQuality),
@@ -2736,7 +2770,7 @@ test("runFigmaToQcTestCases runs both judges, persists their artifacts, and keep
   }
 });
 
-test("runFigmaToQcTestCases blocks policy-green output when the logic judge stays schema-invalid", async () => {
+test("runFigmaToQcTestCases marks policy-green output auffällig when the logic judge stays schema-invalid", async () => {
   const tempRoot = await mkdtemp(
     path.join(os.tmpdir(), "ti-runner-judge-schema-"),
   );
@@ -2787,7 +2821,7 @@ test("runFigmaToQcTestCases blocks policy-green output when the logic judge stay
     });
 
     assert.equal(result.policy.blocked, false);
-    assert.equal(result.blocked, true);
+    assert.equal(result.blocked, false);
     assert.equal(result.judgeConsensus.verdict.verdict, "repair");
     assert.equal(
       result.judgeConsensus.verdict.panel[0]?.findings[0]?.category,
@@ -2795,7 +2829,8 @@ test("runFigmaToQcTestCases blocks policy-green output when the logic judge stay
     );
     assert.notEqual(result.repairLoop, undefined);
     assert.equal(result.repairLoop?.outcome, "convergence_stalled");
-    assert.equal(result.runQuality.artifact.status, "blocked_failure");
+    assert.equal(result.runQuality.artifact.status, "degraded_success");
+    assert.equal(result.runQuality.artifact.blocked, false);
     assert.equal(result.runQuality.artifact.repairState, "repair_required");
     assert.ok(
       result.runQuality.artifact.degradedReasons.includes(
@@ -2808,7 +2843,7 @@ test("runFigmaToQcTestCases blocks policy-green output when the logic judge stay
   }
 });
 
-test("Issue #2102: multi-judge regulated disagreement records a review-events audit note and routes to needs_review", async () => {
+test("Issue #2102: multi-judge regulated disagreement records a review-events audit note and routes to needs_review without hard-blocking", async () => {
   const tempRoot = await mkdtemp(
     path.join(os.tmpdir(), "ti-runner-2102-review-note-"),
   );
@@ -2943,7 +2978,9 @@ test("Issue #2102: multi-judge regulated disagreement records a review-events au
       replayCacheTenantScope: tenantScope,
     });
 
-    assert.equal(result.blocked, true);
+    assert.equal(result.blocked, false);
+    assert.equal(result.runQuality.artifact.status, "degraded_success");
+    assert.equal(result.runQuality.artifact.blocked, false);
     assert.equal(result.judgeConsensus.verdict.agreementShape, "split");
     assert.equal(
       result.judgeConsensus.verdict.repairHistory.finalOutcome,
@@ -3694,7 +3731,7 @@ test("Issue #1992: repaired runs surface repaired_success with historical judge 
     const runQualityOnDisk = JSON.parse(
       await readFile(result.artifactPaths.runQuality, "utf8"),
     ) as RunQualityArtifact;
-    assert.equal(result.blocked, true);
+    assert.equal(result.blocked, false);
     assert.equal(result.judgeConsensus.verdict.verdict, "accept");
     assert.equal(result.judgeConsensus.verdict.repairState, "repaired");
     assert.deepEqual(result.judgeConsensus.verdict.activeFindings, []);
@@ -3702,8 +3739,8 @@ test("Issue #1992: repaired runs surface repaired_success with historical judge 
       result.judgeConsensus.verdict.repairHistory.historicalFindings[0]?.code,
       "schema_violation",
     );
-    assert.equal(result.runQuality.artifact.status, "blocked_failure");
-    assert.equal(runQualityOnDisk.status, "blocked_failure");
+    assert.equal(result.runQuality.artifact.status, "repaired_success");
+    assert.equal(runQualityOnDisk.status, "repaired_success");
     assert.equal(runQualityOnDisk.repairHistory.repairIterationCount, 1);
 
     // Issue #2014: agent-participation must record every active repair-loop
@@ -6480,6 +6517,51 @@ test("runFigmaToQcTestCases normalizes invalid draft step indexes before stampin
   }
 });
 
+test("runFigmaToQcTestCases replaces unknown draft lifecycle transition ids before validation", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-"));
+  try {
+    const malformed = {
+      ...SAMPLE_DRAFT,
+      steps: [
+        {
+          ...SAMPLE_DRAFT.steps[0],
+          fieldLifecycleTransitionId: "FLT-model-invented-transition",
+        },
+        ...SAMPLE_DRAFT.steps.slice(1),
+      ],
+    } as unknown as ProductionRunnerLlmDraftCase;
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: okResponder([malformed]),
+    });
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-bad-lifecycle-id",
+      generatedAt: "2026-05-02T10:00:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client },
+    });
+    const stamped = result.generatedTestCases.testCases[0];
+    assert.ok(stamped);
+    assert.notEqual(
+      stamped.steps[0]?.fieldLifecycleTransitionId,
+      "FLT-model-invented-transition",
+    );
+    assert.match(stamped.steps[0]?.fieldLifecycleTransitionId ?? "", /^FLT-/u);
+    assert.equal(
+      result.validation.issues.some(
+        (issue) => issue.code === "unknown_field_lifecycle_transition",
+      ),
+      false,
+    );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Issue #1894: --custom-context-markdown wiring
 // ---------------------------------------------------------------------------
@@ -7809,6 +7891,318 @@ test("Issue #2053: G-NEG-CASE passes when adversarial critic adds a valid negati
     assert.equal(
       negCaseGate.ruleRef,
       "ti:rule:adversarial-critic-negative-case-lift",
+    );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("Issue #2053: adversarial regeneration preserves prior negative coverage while adding new negative cases", async () => {
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "ti-runner-2053-preserve-negatives-"),
+  );
+  try {
+    let generatorCallCount = 0;
+    const baselineNegative = {
+      ...SAMPLE_DRAFT,
+      title: "Reject empty payout amount",
+      type: "negative" as const,
+      technique: "boundary_value_analysis" as const,
+      steps: [
+        {
+          index: 1,
+          action: "Leave the payout amount empty.",
+          expected: "A blocking required-field validation is shown.",
+        },
+      ],
+      expectedResults: ["The empty submission is rejected."],
+      qualitySignals: {
+        confidence: 0.8,
+        coveredFieldIds: ["field:payout_amount"],
+        coveredActionIds: ["action:submit"],
+        coveredValidationIds: [],
+        coveredNavigationIds: [],
+      },
+    };
+    const newNegative = {
+      ...SAMPLE_DRAFT,
+      title: "Reject owner mismatch on payout account",
+      type: "negative" as const,
+      technique: "error_guessing" as const,
+      steps: [
+        {
+          index: 1,
+          action: "Enter a payout IBAN owned by another person.",
+          expected: "Owner-match validation blocks the submission.",
+        },
+      ],
+      expectedResults: ["The mismatch is rejected."],
+      qualitySignals: {
+        confidence: 0.9,
+        coveredFieldIds: ["field:payout_iban"],
+        coveredActionIds: ["action:submit"],
+        coveredValidationIds: ["validation:owner_match"],
+        coveredNavigationIds: [],
+      },
+    };
+    const positiveA = {
+      ...SAMPLE_DRAFT,
+      title: "Happy path A",
+      qualitySignals: {
+        confidence: 0.7,
+        coveredFieldIds: ["field:happy_a"],
+        coveredActionIds: ["action:submit"],
+        coveredValidationIds: [],
+        coveredNavigationIds: [],
+      },
+    };
+    const positiveB = {
+      ...SAMPLE_DRAFT,
+      title: "Happy path B",
+      qualitySignals: {
+        confidence: 0.7,
+        coveredFieldIds: ["field:happy_b"],
+        coveredActionIds: ["action:submit"],
+        coveredValidationIds: [],
+        coveredNavigationIds: [],
+      },
+    };
+    const positiveC = {
+      ...SAMPLE_DRAFT,
+      title: "Happy path C",
+      qualitySignals: {
+        confidence: 0.7,
+        coveredFieldIds: ["field:happy_c"],
+        coveredActionIds: ["action:submit"],
+        coveredValidationIds: [],
+        coveredNavigationIds: [],
+      },
+    };
+    const generator = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "mistral-large-3-mock",
+      modelRevision: "mistral-large-3@mock",
+      gatewayRelease: "mock",
+      responder: (_request, attempt) => {
+        generatorCallCount += 1;
+        const cases =
+          generatorCallCount === 1
+            ? [baselineNegative, positiveA, positiveB, positiveC]
+            : [newNegative, positiveA, positiveB, positiveC];
+        return {
+          outcome: "success" as const,
+          content: { testCases: cases },
+          finishReason: "stop" as const,
+          usage: { inputTokens: 100, outputTokens: 200 },
+          modelDeployment: "mistral-large-3-mock",
+          modelRevision: "mock-1",
+          gatewayRelease: "mock",
+          attempt,
+        };
+      },
+    });
+    const judge = createMockLlmGatewayClient({
+      role: "logic_judge",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "gpt-oss-120b@mock",
+      gatewayRelease: "mock",
+      responder: (request, attempt) => {
+        if (
+          request.responseSchemaName === "workspace-dev-adversarial-critic-v1"
+        ) {
+          return {
+            outcome: "success" as const,
+            content: {
+              findings: [
+                {
+                  category: "negative_path",
+                  title: "Owner mismatch on payout account is untested",
+                  rationale:
+                    "The suite never challenges the documented owner-match rule.",
+                  affectedFieldId: "field:payout_iban",
+                  sourceRefs: ["rule:payout-owner-match"],
+                  ruleRefs: ["policy:payout-owner-match"],
+                  minimumReproducibleTestData: [
+                    "iban=DE44500105175407324931",
+                    "owner_name=Other Person",
+                  ],
+                  suggestedTestType: "negative",
+                  repairInstruction:
+                    "Replace a low-value happy path with an owner-mismatch negative case.",
+                },
+              ],
+            },
+            finishReason: "stop" as const,
+            usage: { inputTokens: 20, outputTokens: 10 },
+            modelDeployment: "gpt-oss-120b-mock",
+            modelRevision: "mock-1",
+            gatewayRelease: "mock",
+            attempt,
+          };
+        }
+        return okResponder([SAMPLE_DRAFT], "gpt-oss-120b-mock")(
+          request,
+          attempt,
+        );
+      },
+    });
+
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-2053-preserve-negatives",
+      generatedAt: "2026-05-12T05:00:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client: generator, logicJudge: judge },
+      generation: { diversityPasses: 1 },
+      harness: { mode: "off", maxRepairIterations: 0 },
+    });
+
+    const policy = JSON.parse(
+      await readFile(result.artifactPaths.policyReport, "utf8"),
+    ) as {
+      gateResults?: Array<{
+        gateId: string;
+        status: string;
+        observedRatio?: number;
+      }>;
+    };
+    const negCaseGate = policy.gateResults?.find(
+      (entry) => entry.gateId === "G-NEG-CASE",
+    );
+    assert.ok(negCaseGate, "expected G-NEG-CASE entry in policy report");
+    assert.equal(negCaseGate.status, "passed");
+
+    const trace = JSON.parse(
+      await readFile(result.artifactPaths.adversarialCriticTrace!, "utf8"),
+    ) as {
+      negativeCoverage: {
+        baselineNegativeCaseCount: number;
+        finalNegativeCaseCount: number;
+      };
+    };
+    assert.equal(trace.negativeCoverage.baselineNegativeCaseCount, 1);
+    assert.equal(trace.negativeCoverage.finalNegativeCaseCount, 2);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("Issue #2053: collapsed judge topology uses deterministic negative-lift fallback", async () => {
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "ti-runner-2053-deterministic-fallback-"),
+  );
+  try {
+    const baselineNegative = {
+      ...SAMPLE_DRAFT,
+      title: "Reject empty payout amount",
+      type: "negative" as const,
+      technique: "error_guessing" as const,
+      qualitySignals: {
+        confidence: 0.8,
+        coveredFieldIds: ["field:payout_amount"],
+        coveredActionIds: ["action:submit"],
+        coveredValidationIds: [],
+        coveredNavigationIds: [],
+      },
+    };
+    const positives = ["A", "B", "C"].map((suffix) => ({
+      ...SAMPLE_DRAFT,
+      title: `Happy path ${suffix}`,
+      qualitySignals: {
+        confidence: 0.7,
+        coveredFieldIds: [`field:happy_${suffix.toLowerCase()}`],
+        coveredActionIds: ["action:submit"],
+        coveredValidationIds: [],
+        coveredNavigationIds: [],
+      },
+    }));
+    let collapsedJudgeCalls = 0;
+    const bundle = createMockLlmGatewayClientBundle({
+      testGeneration: {
+        role: "test_generation",
+        deployment: "gpt-oss-120b",
+        modelRevision: "gpt-oss-120b@test",
+        gatewayRelease: "mock",
+        declaredCapabilities: TEST_GENERATION_CAPS,
+        responder: okResponder([baselineNegative, ...positives], "gpt-oss-120b"),
+      },
+      visualPrimary: {
+        role: "visual_primary",
+        deployment: "llama-4-maverick-vision",
+        modelRevision: "llama-4-maverick-vision@test",
+        gatewayRelease: "mock",
+        declaredCapabilities: VISUAL_CAPS,
+        responder: (request, attempt) => buildVisualSuccess(request, attempt, "1:1"),
+      },
+      visualFallback: {
+        role: "visual_fallback",
+        deployment: "phi-4-multimodal-instruct",
+        modelRevision: "phi-4-multimodal-instruct@test",
+        gatewayRelease: "mock",
+        declaredCapabilities: VISUAL_CAPS,
+        responder: (request, attempt) => buildVisualSuccess(request, attempt, "1:1"),
+      },
+      logicJudge: {
+        role: "logic_judge",
+        deployment: "gpt-oss-120b",
+        modelRevision: "gpt-oss-120b@test",
+        gatewayRelease: "mock",
+        declaredCapabilities: TEST_GENERATION_CAPS,
+        responder: () => {
+          collapsedJudgeCalls += 1;
+          throw new Error("collapsed judge topology must not call the LLM judge");
+        },
+      },
+    });
+
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-2053-deterministic-fallback",
+      generatedAt: "2026-05-12T06:10:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client: bundle.testGeneration, bundle },
+      generation: { diversityPasses: 1 },
+      harness: { mode: "off", maxRepairIterations: 0 },
+    });
+
+    assert.equal(collapsedJudgeCalls, 0);
+    assert.equal(result.generatedTestCases.testCases.length, 4);
+    assert.equal(
+      result.generatedTestCases.testCases.filter(
+        (testCase) => testCase.type === "negative",
+      ).length,
+      2,
+    );
+
+    const trace = JSON.parse(
+      await readFile(result.artifactPaths.adversarialCriticTrace!, "utf8"),
+    ) as {
+      stopReason: string;
+      negativeCoverage: { finalNegativeCaseCount: number };
+    };
+    assert.equal(trace.stopReason, "deterministic_fallback_applied");
+    assert.equal(trace.negativeCoverage.finalNegativeCaseCount, 2);
+
+    const policy = JSON.parse(
+      await readFile(result.artifactPaths.policyReport, "utf8"),
+    ) as { gateResults?: Array<{ gateId: string; status: string }> };
+    assert.equal(
+      policy.gateResults?.find((entry) => entry.gateId === "G-NEG-CASE")
+        ?.status,
+      "passed",
+    );
+
+    const participation = JSON.parse(
+      await readFile(result.artifactPaths.agentParticipation, "utf8"),
+    ) as { roles: Array<{ role: string; status: string }> };
+    assert.equal(
+      participation.roles.find((entry) => entry.role === "logic_judge")?.status,
+      "skipped",
+    );
+    assert.equal(
+      participation.roles.find((entry) => entry.role === "adversarial_critic")
+        ?.status,
+      "succeeded",
     );
   } finally {
     await rm(tempRoot, { recursive: true, force: true });

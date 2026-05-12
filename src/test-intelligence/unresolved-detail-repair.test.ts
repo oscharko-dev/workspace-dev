@@ -250,6 +250,57 @@ test("repairUnresolvedValidationDetails strips concrete expectedResults and rewr
   assert.match(stepChange.after ?? "", /validation concept/);
 });
 
+test("repairUnresolvedValidationDetails rewrites concrete title, objective, and step action claims", () => {
+  const original = baseCase({
+    id: "tc-scalar-action",
+    title: 'Fehlermeldung "Pflichtfeld muss befüllt sein" für Betragsfeld',
+    objective:
+      "Prüft, dass die Validierung die konkrete Meldung 'Betrag ist ungültig' zeigt.",
+    testData: [],
+    steps: [
+      {
+        index: 1,
+        action:
+          "Gib Kaufpreis Netto 50.000 EUR ein und löse die Validierung aus.",
+        expected: "Die Oberfläche bleibt prüfbar.",
+      },
+    ],
+    expectedResults: ["Hinweistext bleibt sichtbar."],
+  });
+  const result = repairUnresolvedValidationDetails({
+    jobId: JOB_ID,
+    list: buildList([original]),
+    intent: buildIntent(),
+  });
+
+  const repaired = result.list.testCases[0];
+  assert.ok(repaired);
+  assert.equal(repaired.title, "Generischer Negativpfad für offene Fachregel");
+  assert.match(repaired.objective, /ohne konkrete Meldungen/);
+  assert.equal(
+    repaired.steps[0]?.action,
+    "Führe den Prüfschritt mit fachlich geklärten Beispielwerten aus.",
+  );
+  assert.ok(
+    result.changes.some(
+      (change) => change.kind === "rewrote_title" && change.path === "title",
+    ),
+  );
+  assert.ok(
+    result.changes.some(
+      (change) =>
+        change.kind === "rewrote_objective" && change.path === "objective",
+    ),
+  );
+  assert.ok(
+    result.changes.some(
+      (change) =>
+        change.kind === "rewrote_step_action" &&
+        change.path === "steps[0].action",
+    ),
+  );
+});
+
 test("repairUnresolvedValidationDetails leaves cases that do not touch unresolved constraints unchanged", () => {
   const intent = buildIntent();
   // Strip the unresolved openQuestions so no constraint applies.
