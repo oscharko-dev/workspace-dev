@@ -31,6 +31,30 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [1.44.13] - 2026-05-12
+
+Reintroduction of the T7 replay-cache determinism fix through the normal
+PR flow after the temporary rollback in **Issue #2318**.
+
+### Changed (Issue #2318 — replay-cache determinism reintroduced on fresh branch)
+
+- `src/test-intelligence/production-runner.ts` again persists only the
+  generator raw output in the replay cache, so replay hits remain
+  idempotent and do not re-run deterministic post-processing against
+  already-normalized case lists.
+- `src/test-intelligence/replay-cache-persistent.ts` and the related
+  runner/test fixtures restore the cache-integrity and corruption-handling
+  hardening needed for deterministic T7 reruns.
+- `TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION` advances to `1.7.3` and the
+  prompt-template lock/snapshots are refreshed to match the current
+  `prompt-compiler.ts` hash.
+
+### Migration
+
+No persisted artifact migration is required. Replay-cache entries written
+before this reintroduction keep the old behavior; new runs use the
+re-hardened cache semantics and prompt-template version.
+
 ## [1.44.12] - 2026-05-12
 
 Test-intelligence prompt-size and generation stability follow-up for
