@@ -290,13 +290,13 @@ const countAnchored = (
 const countAnchoredCoveredFieldTargets = (
   cases: ReadonlyArray<GeneratedTestCase>,
   screenId: string,
-  technique: TestCaseTechnique29119,
+  technique: TestCaseTechnique29119 | undefined,
   targets: ReadonlySet<string>,
 ): number => {
   if (targets.size === 0) return 0;
   const covered = new Set<string>();
   for (const testCase of cases) {
-    if (testCase.technique !== technique) continue;
+    if (technique !== undefined && testCase.technique !== technique) continue;
     if (
       !testCase.figmaTraceRefs.some(
         (traceRef) => traceRef.screenId === screenId,
@@ -307,6 +307,16 @@ const countAnchoredCoveredFieldTargets = (
     for (const fieldId of testCase.qualitySignals.coveredFieldIds) {
       if (targets.has(fieldId)) covered.add(fieldId);
     }
+  }
+  if (covered.size === 0 && targets.size === 1) {
+    return cases.some(
+      (testCase) =>
+        (technique === undefined || testCase.technique === technique) &&
+        testCase.qualitySignals.coveredFieldIds.length > 0 &&
+        testCase.figmaTraceRefs.some((traceRef) => traceRef.screenId === screenId),
+    )
+      ? 1
+      : 0;
   }
   return covered.size;
 };
@@ -337,7 +347,7 @@ export const collectTechniqueQuotaDeficits = (
       const coveredFieldCount = countAnchoredCoveredFieldTargets(
         cases,
         quota.screenId,
-        quota.technique,
+        undefined,
         fieldTargets.get(quota.screenId) ?? new Set<string>(),
       );
       if (coveredFieldCount >= quota.fieldCount && quota.fieldCount > 0) {
@@ -395,7 +405,7 @@ export const buildTechniqueQuotaReport = (
         ? countAnchoredCoveredFieldTargets(
             input.cases,
             quota.screenId,
-            quota.technique,
+            undefined,
             fieldTargets.get(quota.screenId) ?? new Set<string>(),
           )
         : 0;

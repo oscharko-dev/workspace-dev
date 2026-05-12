@@ -31,6 +31,7 @@ import {
   EU_BANKING_DEFAULT_FINOPS_BUDGET,
   PRODUCTION_FINOPS_BUDGET_ENVELOPE,
   PRODUCTION_GENERATOR_WALL_CLOCK_MS,
+  VISUAL_SIDECAR_WALL_CLOCK_MS,
   resolveFinOpsRequestLimits,
   resolveTestGenerationWallClockBudget,
   resolveWallClockBudget,
@@ -647,7 +648,7 @@ test("PRODUCTION_FINOPS_BUDGET_ENVELOPE pins the calibrated production limits", 
   assert.equal(vp.maxImageBytesPerRequest, 16 * 1024 * 1024);
   assert.equal(vp.maxRetriesPerRequest, 4);
   assert.equal(vp.maxAttempts, 6);
-  assert.equal(vp.maxWallClockMsPerRequest, 300_000);
+  assert.equal(vp.maxWallClockMsPerRequest, VISUAL_SIDECAR_WALL_CLOCK_MS);
   const vf = PRODUCTION_FINOPS_BUDGET_ENVELOPE.roles.visual_fallback;
   assert.ok(vf !== undefined);
   assert.equal(vf.maxInputTokensPerRequest, 100_000);
@@ -655,7 +656,7 @@ test("PRODUCTION_FINOPS_BUDGET_ENVELOPE pins the calibrated production limits", 
   assert.equal(vf.maxImageBytesPerRequest, 16 * 1024 * 1024);
   assert.equal(vf.maxRetriesPerRequest, 4);
   assert.equal(vf.maxAttempts, 6);
-  assert.equal(vf.maxWallClockMsPerRequest, 300_000);
+  assert.equal(vf.maxWallClockMsPerRequest, VISUAL_SIDECAR_WALL_CLOCK_MS);
   assert.equal(vf.maxFallbackAttempts, 6);
 });
 

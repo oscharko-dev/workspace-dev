@@ -221,6 +221,20 @@ const collectCaseTextEntries = (
   ]),
 ];
 
+const collectExpectedOutcomeTextEntries = (
+  testCase: GeneratedTestCase,
+): Array<{ path: string; text: string }> => [
+  ...testCase.expectedResults.map((text, index) => ({
+    path: `expectedResults[${index}]`,
+    text,
+  })),
+  ...testCase.steps.flatMap((step, index) =>
+    typeof step.expected === "string"
+      ? [{ path: `steps[${index}].expected`, text: step.expected }]
+      : [],
+  ),
+];
+
 const buildScreenLookup = (
   model: TestDesignModel,
 ): Map<string, TestDesignModel["screens"][number]> =>
@@ -344,7 +358,7 @@ const computeVatExcludedFinancingNeedAmount = (
 const findExactMoneyExpectation = (
   testCase: GeneratedTestCase,
 ): { path: string; text: string; amount: number } | undefined => {
-  for (const entry of collectCaseTextEntries(testCase)) {
+  for (const entry of collectExpectedOutcomeTextEntries(testCase)) {
     const amount = parseMoneyAmount(entry.text);
     if (amount !== undefined) {
       return { ...entry, amount };
@@ -399,7 +413,7 @@ export const detectCalculationConstraintViolation = (input: {
   );
   if (matchingConstraint === undefined) return undefined;
 
-  const textEntries = collectCaseTextEntries(input.testCase);
+  const textEntries = collectExpectedOutcomeTextEntries(input.testCase);
   const vatFormulaEntry = textEntries.find((entry) =>
     VAT_FORMULA_RE.test(entry.text),
   );

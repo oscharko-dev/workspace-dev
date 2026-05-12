@@ -669,6 +669,11 @@ export const computeNegativeCoverageAccounting = (input: {
           (finalNegativeRatio - baselineNegativeRatio) /
             baselineNegativeRatio,
         );
+  const saturatedNegativeCoverage =
+    baselineNegativeRatio > 0 &&
+    finalNegativeRatio >= baselineNegativeRatio &&
+    round6((1 - baselineNegativeRatio) / baselineNegativeRatio) <
+      ADVERSARIAL_NEGATIVE_RATIO_IMPROVEMENT_THRESHOLD;
   return {
     baselineNegativeCaseCount,
     baselineTotalCaseCount,
@@ -678,6 +683,7 @@ export const computeNegativeCoverageAccounting = (input: {
     finalNegativeRatio,
     relativeRatioIncrease,
     meetsThreshold:
-      relativeRatioIncrease >= ADVERSARIAL_NEGATIVE_RATIO_IMPROVEMENT_THRESHOLD,
+      relativeRatioIncrease >= ADVERSARIAL_NEGATIVE_RATIO_IMPROVEMENT_THRESHOLD ||
+      saturatedNegativeCoverage,
   };
 };
