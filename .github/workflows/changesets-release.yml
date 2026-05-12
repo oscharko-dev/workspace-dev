@@ -25,9 +25,9 @@ jobs:
 
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
-          node-version: 22
+          node-version: 22.14.0
           registry-url: https://registry.npmjs.org/
-          cache: pnpm
+          package-manager-cache: false
 
       - name: Set reproducible build metadata
         shell: bash
@@ -86,9 +86,9 @@ jobs:
 
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
-          node-version: 22
+          node-version: 22.14.0
           registry-url: https://registry.npmjs.org/
-          cache: pnpm
+          package-manager-cache: false
 
       - name: Upgrade npm for trusted publishing
         shell: bash
@@ -136,22 +136,34 @@ jobs:
         id: npm_auth_mode
         shell: bash
         env:
+          REQUESTED_PUBLISH_AUTH_MODE: ${{ vars.WORKSPACE_DEV_PUBLISH_AUTH_MODE }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
 
-          if [[ -n "${NPM_TOKEN}" ]]; then
-            echo "Using repository NPM_TOKEN for npm publish because a publish token secret is configured."
-            echo "auth_mode=npm-token" >> "$GITHUB_OUTPUT"
-          else
-            echo "No NPM_TOKEN secret available; using npm trusted publishing via GitHub OIDC."
-            echo "auth_mode=trusted-publisher-oidc" >> "$GITHUB_OUTPUT"
-          fi
+          AUTH_MODE="${REQUESTED_PUBLISH_AUTH_MODE:-trusted-publisher-oidc}"
+          case "${AUTH_MODE}" in
+            trusted-publisher-oidc)
+              echo "Using npm trusted publishing via GitHub OIDC."
+              ;;
+            npm-token)
+              if [[ -z "${NPM_TOKEN}" ]]; then
+                echo "WORKSPACE_DEV_PUBLISH_AUTH_MODE=npm-token was requested, but repository secret NPM_TOKEN is not configured." >&2
+                exit 1
+              fi
+              echo "Using repository NPM_TOKEN for npm publish because token mode was explicitly requested."
+              ;;
+            *)
+              echo "Unsupported WORKSPACE_DEV_PUBLISH_AUTH_MODE '${AUTH_MODE}'. Expected trusted-publisher-oidc or npm-token." >&2
+              exit 1
+              ;;
+          esac
+          echo "auth_mode=${AUTH_MODE}" >> "$GITHUB_OUTPUT"
 
       - name: Apply pending changesets and publish package
         shell: bash
         env:
-          NPM_TOKEN_SECRET: ${{ secrets.NPM_TOKEN }}
+          NPM_TOKEN_SECRET: ${{ steps.npm_auth_mode.outputs.auth_mode == 'npm-token' && secrets.NPM_TOKEN || '' }}
           WORKSPACE_DEV_PUBLISH_AUTH_MODE: ${{ steps.npm_auth_mode.outputs.auth_mode }}
         run: |
           set -euo pipefail
