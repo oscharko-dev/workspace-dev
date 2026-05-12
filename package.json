@@ -256,7 +256,7 @@
   "engineStrict": true,
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/oscharko-dev/workspace-dev.git"
+    "url": "https://github.com/oscharko-dev/workspace-dev"
   },
   "homepage": "https://github.com/oscharko-dev/workspace-dev#readme",
   "bugs": {

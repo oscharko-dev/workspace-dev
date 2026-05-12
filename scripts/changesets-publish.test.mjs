@@ -58,6 +58,7 @@ test("resolvePublishEnv: removes token fallback for trusted publishing in GitHub
       GITHUB_ACTIONS: "true",
       NODE_AUTH_TOKEN: "legacy-token",
       NPM_TOKEN: "legacy-token",
+      NPM_TOKEN_SECRET: "legacy-token",
       WORKSPACE_DEV_PUBLISH_AUTH_MODE: "trusted-publisher-oidc"
     },
     () => resolvePublishEnv()
@@ -65,6 +66,7 @@ test("resolvePublishEnv: removes token fallback for trusted publishing in GitHub
 
   assert.strictEqual(publishEnv.NODE_AUTH_TOKEN, undefined);
   assert.strictEqual(publishEnv.NPM_TOKEN, undefined);
+  assert.strictEqual(publishEnv.NPM_TOKEN_SECRET, undefined);
   assert.strictEqual(publishEnv.NPM_CONFIG_PROVENANCE, "true");
 });
 
