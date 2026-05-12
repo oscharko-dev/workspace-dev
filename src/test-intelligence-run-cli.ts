@@ -664,7 +664,7 @@ export const parseTestIntelligenceRunArgs = (
   }
   let allowPolicyBlocked = parseBooleanFlagWithDefault(
     env.WORKSPACE_TEST_SPACE_ALLOW_POLICY_BLOCKED,
-    true,
+    false,
   );
   let customContextMarkdownPath: string | undefined;
   let customerEvalMarkdownPath: string | undefined;
@@ -4117,7 +4117,7 @@ export const runTestIntelligenceCommand = async (
     );
   }
 
-  const allowPolicyBlocked = options.allowPolicyBlocked ?? true;
+  const allowPolicyBlocked = options.allowPolicyBlocked ?? false;
 
   // Cross-flag validation: the multi-agent harness wraps the LLM call. In
   // dry_run no LLM call is dispatched, so requesting a harness mode is a
@@ -4251,7 +4251,7 @@ export const runTestIntelligenceCommand = async (
     jobId,
     generatedAt,
     source: resolved.source,
-    outputRoot: runOutputDir,
+    outputRoot: outputDir,
     artifactDir: runOutputDir,
     llm: {
       client: llmClient,
@@ -4330,6 +4330,7 @@ export const runTestIntelligenceCommand = async (
       `  output dir    : ${runOutputDir}`,
       `  source kind   : ${resolved.source.kind}`,
       `  visual sidecar: ${options.enableVisualSidecar && !options.noVisualSidecar ? "enabled" : "disabled"}`,
+      `  hard policy   : ${allowPolicyBlocked ? "non-fatal (--allow-policy-blocked/env override)" : "fails run (exit 3)"}`,
       "  roles:",
       ...topologyPreflightReport.roles.map(formatTopologyRoleLine),
       "",

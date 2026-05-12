@@ -248,7 +248,7 @@ export const ALLOWED_GENERATED_TEST_CASE_CATEGORIES = [
  * instruct the generator to honor VAT-exclusion constraints and fall back
  * to open questions when exact arithmetic remains underspecified.
  */
-export const TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION = "1.7.2" as const;
+export const TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION = "1.7.3" as const;
 
 /** Visual sidecar schema version consumed by the prompt compiler (Issue #1386). */
 export const VISUAL_SIDECAR_SCHEMA_VERSION = "1.1.0" as const;
@@ -8934,6 +8934,7 @@ export interface ReplayCacheKey {
   seed?: number;
   sourceMixPlanHash?: string;
   contextBudgetHash?: string;
+  deterministicPostProcessingVersion?: string;
   constrainedDecodingAdapterId?: LlmConstrainedDecodingAdapterId;
   constrainedDecodingAdapterVersion?: string;
   constrainedDecodingFallbackReason?: string;
