@@ -130,7 +130,6 @@ const buildRequirementId = (input: {
     screenId: input.screenId ?? null,
     targetIds: [...input.targetIds],
     sourceRefs: [...input.sourceRefs],
-    visualRefs: [...input.visualRefs],
   }).slice(0, 16)}`;
 
 const buildRequirement = (input: {
