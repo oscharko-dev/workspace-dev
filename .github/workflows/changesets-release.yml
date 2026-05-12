@@ -137,11 +137,13 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Prepare release evidence directory
+        id: release_evidence
         shell: bash
         run: |
           EVIDENCE_DIR="${RUNNER_TEMP}/release-evidence"
           mkdir -p "${EVIDENCE_DIR}/sbom"
           echo "RELEASE_EVIDENCE_DIR=${EVIDENCE_DIR}" >> "$GITHUB_ENV"
+          echo "dir=${EVIDENCE_DIR}" >> "$GITHUB_OUTPUT"
 
       - name: Generate CycloneDX SBOM
         run: node scripts/generate-cyclonedx.mjs "${RELEASE_EVIDENCE_DIR}/sbom/workspace-dev.cdx.json"
@@ -153,7 +155,7 @@ jobs:
         id: npm_auth_mode
         shell: bash
         env:
-          REQUESTED_PUBLISH_AUTH_MODE: ${{ vars.WORKSPACE_DEV_PUBLISH_AUTH_MODE }}
+          REQUESTED_PUBLISH_AUTH_MODE: ${{ vars['WORKSPACE_DEV_PUBLISH_AUTH_MODE'] || '' }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
@@ -333,7 +335,7 @@ jobs:
         with:
           name: workspace-dev-release-evidence-${{ github.run_id }}
           path: |
-            ${{ env.RELEASE_EVIDENCE_DIR }}/sbom
+            ${{ steps.release_evidence.outputs.dir }}/sbom
           if-no-files-found: ignore
 
       - name: Release summary
