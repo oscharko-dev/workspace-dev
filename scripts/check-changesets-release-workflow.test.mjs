@@ -75,3 +75,18 @@ test("changesets release workflow: trusted publishing token is scoped to publish
   assert.match(publishStep, /export NPM_ID_TOKEN/);
   assert.match(publishStep, /rm -f "\$\{NPM_ID_TOKEN_FILE\}"/);
 });
+
+test("changesets release workflow: GitHub release waits for npm propagation", async () => {
+  const workflow = await readReleaseWorkflow();
+  const releaseStep = extractStep(
+    workflow,
+    "Create GitHub release and attach evidence assets",
+    "Upload release evidence artifacts",
+  );
+
+  assert.match(releaseStep, /NPM_VERSION_VISIBLE="false"/);
+  assert.match(releaseStep, /for ATTEMPT in \{1\.\.12\}; do/);
+  assert.match(releaseStep, /npm registry has not exposed/);
+  assert.match(releaseStep, /sleep 10/);
+  assert.match(releaseStep, /waiting for registry propagation/);
+});

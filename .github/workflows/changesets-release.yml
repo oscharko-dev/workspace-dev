@@ -275,8 +275,22 @@ jobs:
           RELEASE_TAG="v${PACKAGE_VERSION}"
 
           NPM_VIEW_ERR_FILE="${RUNNER_TEMP}/npm-view-published.err"
-          if ! npm view "${PACKAGE_NAME}@${PACKAGE_VERSION}" version --registry=https://registry.npmjs.org/ >/dev/null 2>"${NPM_VIEW_ERR_FILE}"; then
-            echo "Expected ${PACKAGE_NAME}@${PACKAGE_VERSION} to be available on npm before creating GitHub release."
+          NPM_VERSION_VISIBLE="false"
+          for ATTEMPT in {1..12}; do
+            if npm view "${PACKAGE_NAME}@${PACKAGE_VERSION}" version --registry=https://registry.npmjs.org/ >/dev/null 2>"${NPM_VIEW_ERR_FILE}"; then
+              NPM_VERSION_VISIBLE="true"
+              break
+            fi
+            if ! grep -Eq "E404|No match found|could not be found|is not in this registry" "${NPM_VIEW_ERR_FILE}"; then
+              echo "Failed to query npm for ${PACKAGE_NAME}@${PACKAGE_VERSION}."
+              cat "${NPM_VIEW_ERR_FILE}" >&2
+              exit 1
+            fi
+            echo "npm registry has not exposed ${PACKAGE_NAME}@${PACKAGE_VERSION} yet (attempt ${ATTEMPT}/12)."
+            sleep 10
+          done
+          if [[ "${NPM_VERSION_VISIBLE}" != "true" ]]; then
+            echo "Expected ${PACKAGE_NAME}@${PACKAGE_VERSION} to be available on npm before creating GitHub release after waiting for registry propagation."
             cat "${NPM_VIEW_ERR_FILE}" >&2
             exit 1
           fi
