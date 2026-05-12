@@ -3,7 +3,7 @@
 import { spawn } from "node:child_process";
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(__dirname, "..");
@@ -33,37 +33,104 @@ const run = (command, args, env = process.env) =>
     });
   });
 
-const resolvePublishEnv = () => {
-  const publishEnv = { ...process.env };
+const SUPPORTED_PUBLISH_AUTH_MODES = new Set([
+  "trusted-publisher-oidc",
+  "npm-token"
+]);
+
+export const resolvePublishAuthMode = (publishEnv = process.env) => {
   const publishAuthMode = String(
     publishEnv.WORKSPACE_DEV_PUBLISH_AUTH_MODE ?? "trusted-publisher-oidc"
   ).trim();
 
-  if (publishEnv.GITHUB_ACTIONS === "true" && publishAuthMode !== "trusted-publisher-oidc") {
+  if (!SUPPORTED_PUBLISH_AUTH_MODES.has(publishAuthMode)) {
     throw new Error(
-      "Trusted publishing is mandatory in GitHub Actions. Set WORKSPACE_DEV_PUBLISH_AUTH_MODE=trusted-publisher-oidc."
+      `Unsupported WORKSPACE_DEV_PUBLISH_AUTH_MODE '${publishAuthMode}'. Expected trusted-publisher-oidc or npm-token.`
     );
   }
 
-  if (publishEnv.GITHUB_ACTIONS === "true") {
-    if (!publishEnv.ACTIONS_ID_TOKEN_REQUEST_URL || !publishEnv.ACTIONS_ID_TOKEN_REQUEST_TOKEN) {
-      throw new Error("Trusted publishing prerequisites missing: id-token permission is not available.");
-    }
+  return publishAuthMode;
+};
 
-    // Enforce OIDC trusted publishing and prevent token fallback in CI.
-    delete publishEnv.NODE_AUTH_TOKEN;
-    delete publishEnv.NPM_TOKEN;
-    delete publishEnv.npm_config__authToken;
-    delete publishEnv.NPM_CONFIG__AUTH_TOKEN;
+export const resolvePublishEnv = () => {
+  const publishEnv = { ...process.env };
+  const publishAuthMode = resolvePublishAuthMode(publishEnv);
+
+  if (publishAuthMode === "npm-token") {
+    const token = String(
+      publishEnv.NODE_AUTH_TOKEN ?? publishEnv.NPM_TOKEN ?? ""
+    ).trim();
+    if (!token) {
+      throw new Error(
+        "NPM token publishing requested but NODE_AUTH_TOKEN/NPM_TOKEN is missing."
+      );
+    }
+    publishEnv.NODE_AUTH_TOKEN = token;
+    publishEnv.NPM_TOKEN = token;
+  }
+
+  if (publishEnv.GITHUB_ACTIONS === "true") {
+    const hasGitHubOidc =
+      Boolean(publishEnv.ACTIONS_ID_TOKEN_REQUEST_URL) &&
+      Boolean(publishEnv.ACTIONS_ID_TOKEN_REQUEST_TOKEN);
+    let publishProvenance = false;
+
+    if (publishAuthMode === "trusted-publisher-oidc") {
+      if (!hasGitHubOidc) {
+        throw new Error("Trusted publishing prerequisites missing: id-token permission is not available.");
+      }
+      // Enforce OIDC trusted publishing and prevent token fallback in CI.
+      delete publishEnv.NODE_AUTH_TOKEN;
+      delete publishEnv.NPM_TOKEN;
+      delete publishEnv.NPM_TOKEN_SECRET;
+      delete publishEnv.npm_config__authToken;
+      delete publishEnv.NPM_CONFIG__AUTH_TOKEN;
+      publishProvenance = true;
+    } else if (publishAuthMode === "npm-token") {
+      publishProvenance = hasGitHubOidc;
+    }
 
     // The release workflow already runs exhaustive quality gates in dedicated jobs.
     // Re-running package lifecycle scripts during publish introduces flaky ELIFECYCLE
     // failures in CI while adding no additional release confidence.
     publishEnv.npm_config_ignore_scripts = "true";
     publishEnv.NPM_CONFIG_IGNORE_SCRIPTS = "true";
+    publishEnv.npm_config_access = "public";
+    publishEnv.NPM_CONFIG_ACCESS = "public";
+    publishEnv.npm_config_provenance = publishProvenance ? "true" : "false";
+    publishEnv.NPM_CONFIG_PROVENANCE = publishProvenance ? "true" : "false";
   }
 
   return publishEnv;
+};
+
+export const resolvePublishCommand = (npmTag, publishEnv = process.env) => {
+  const publishAuthMode = resolvePublishAuthMode(publishEnv);
+
+  if (publishEnv.GITHUB_ACTIONS === "true" && publishAuthMode === "trusted-publisher-oidc") {
+    return {
+      command: "npm",
+      args: [
+        "publish",
+        "--access",
+        "public",
+        "--provenance",
+        "--ignore-scripts",
+        "--tag",
+        npmTag
+      ]
+    };
+  }
+
+  return {
+    command: "pnpm",
+    args: [
+      "changeset",
+      "publish",
+      "--tag",
+      npmTag
+    ]
+  };
 };
 
 const assertPathExists = async (relativePath) => {
@@ -99,21 +166,20 @@ const main = async () => {
   }
 
   const npmTag = packageVersion.includes("-") ? "next" : "latest";
+  const publishEnv = resolvePublishEnv();
+  const publishCommand = resolvePublishCommand(npmTag, publishEnv);
 
   console.log(`[changesets-publish] Publishing ${packageJson.name}@${packageVersion} with npm tag '${npmTag}'.`);
   await ensurePublishArtifacts();
-  await run("pnpm", [
-    "changeset",
-    "publish",
-    "--access",
-    "public",
-    "--provenance",
-    "--tag",
-    npmTag
-  ], resolvePublishEnv());
+  if (publishCommand.command === "npm") {
+    console.log("[changesets-publish] Using npm CLI directly for GitHub trusted publishing.");
+  }
+  await run(publishCommand.command, publishCommand.args, publishEnv);
 };
 
-main().catch((error) => {
-  console.error("[changesets-publish] Failed:", error);
-  process.exit(1);
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch(() => {
+    console.error("[changesets-publish] Failed.");
+    process.exit(1);
+  });
+}
