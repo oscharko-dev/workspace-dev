@@ -514,7 +514,7 @@ test("runFigmaToQcTestCases happy path persists artifacts and renders customer M
       llm: { client },
     });
     assert.equal(result.jobId, "job-123");
-    assert.equal(result.generatedTestCases.testCases.length, 1);
+    assert.equal(result.generatedTestCases.testCases.length, 3);
     const stamped = result.generatedTestCases.testCases[0];
     assert.ok(stamped);
     assert.equal(stamped.sourceJobId, "job-123");
@@ -1135,7 +1135,7 @@ test("Issue #1936: diversityPasses=1 preserves the legacy single-pass request sh
           request.seed === undefined,
       );
     assert.equal(generatorRequests.length, 1);
-    assert.equal(withSinglePass.generatedTestCases.testCases.length, 1);
+    assert.equal(withSinglePass.generatedTestCases.testCases.length, 3);
     assert.equal(withSinglePass.artifactPaths.selfConsistencyReport, undefined);
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
@@ -1272,7 +1272,7 @@ test("Issue #2070: default eu-banking profile dispatches three seeded generator 
       ).sort(),
       [11, 29, 47],
     );
-    assert.equal(result.generatedTestCases.testCases.length, 2);
+    assert.equal(result.generatedTestCases.testCases.length, 4);
 
     const stableGenerated = result.generatedTestCases.testCases.find(
       (testCase) => testCase.title === "Finanzierungsbedarf wird berechnet",
@@ -1739,8 +1739,11 @@ test("Issue #2125: weak 2/1 self-consistency splits trigger a cross-family 4th g
       }>;
     };
     assert.equal(report.sampleCount, 4);
-    assert.equal(report.targets[0]?.arbitrationTriggered, true);
-    assert.equal(report.targets[0]?.disagreement, false);
+    const arbitratedTarget = report.targets.find(
+      (target) => target.selectedTestCaseId === arbitratedCase?.id,
+    );
+    assert.equal(arbitratedTarget?.arbitrationTriggered, true);
+    assert.equal(arbitratedTarget?.disagreement, false);
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }
@@ -1808,7 +1811,7 @@ test("runFigmaToQcTestCases falls back to secondary generator after retryable pr
 
     assert.equal(bundle.testGeneration.recordedRequests().length, 1);
     assert.equal(bundle.testGenerationSecondary?.recordedRequests().length, 1);
-    assert.equal(result.generatedTestCases.testCases.length, 1);
+    assert.equal(result.generatedTestCases.testCases.length, 3);
     const finopsReport = JSON.parse(
       await readFile(result.artifactPaths.finopsReport, "utf8"),
     ) as FinOpsBudgetReport;
@@ -1912,12 +1915,16 @@ test("Issue #1936: diversityPasses=2 dispatches two seeded generator passes, mer
       ).sort(),
       [11, 29],
     );
-    assert.equal(result.generatedTestCases.testCases.length, 2);
+    assert.equal(result.generatedTestCases.testCases.length, 3);
     assert.deepEqual(
       result.generatedTestCases.testCases
         .map((testCase) => testCase.title)
         .sort(),
-      ["Gemeinsamer Testfall", "Ungueltige Investitionssumme wird abgelehnt"],
+      [
+        "Barrierefreiheit: Formular „Bedarfsermittlung“ per Tastatur und Screen Reader prüfen",
+        "Gemeinsamer Testfall",
+        "Ungueltige Investitionssumme wird abgelehnt",
+      ],
     );
     assert.notEqual(
       result.generatedTestCases.testCases[0]?.audit.cacheKey,
@@ -3456,7 +3463,7 @@ test("Issue #2102: needs_review replay reuses the existing human-review queue it
 
     const replayed = await runWithGeneratedAt("2026-05-09T11:00:00Z");
 
-    assert.equal(replayed.blocked, true);
+    assert.equal(replayed.blocked, false);
     const humanReviewQueuePath = path.join(
       tempRoot,
       "test-intelligence",
@@ -6901,11 +6908,11 @@ test("Issue #1991: customer markdown includes the acceptance summary and hides i
     assert.match(markdown, /## Akzeptanzkriterien/u);
     assert.match(
       markdown,
-      /\| AC01 \| Eine gültige Investitionssumme wird akzeptiert\. \| TC01 \|/u,
+      /\| AC01 \| Eine gültige Investitionssumme wird akzeptiert\. \| TC02, TC03 \|/u,
     );
     assert.match(
       markdown,
-      /## TC01 - Eingabe einer gültigen Investitionssumme/u,
+      /## TC02 - Eingabe einer gültigen Investitionssumme/u,
     );
     assert.doesNotMatch(markdown, /Test-ID/u);
     assert.doesNotMatch(markdown, /job-md-summary/u);
@@ -7347,6 +7354,52 @@ test("runFigmaToQcTestCases canonicalizes draft qualitySignals and drops unknown
   }
 });
 
+test("runFigmaToQcTestCases adds a deterministic accessibility floor for form screens", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-a11y-floor-"));
+  try {
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: okResponder([
+        {
+          ...SAMPLE_DRAFT,
+          title: "TC01 - Positivfall: Formular speichern",
+          type: "functional",
+          figmaTraceRefs: [{ screenId: "1:1", nodeId: "2:1" }],
+        },
+      ]),
+    });
+
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-a11y-floor",
+      generatedAt: "2026-05-12T10:00:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client },
+      logicJudge: { enabled: false },
+    });
+
+    const a11yCase = result.generatedTestCases.testCases.find(
+      (testCase) => testCase.type === "accessibility",
+    );
+    assert.ok(a11yCase, "expected deterministic accessibility case");
+    assert.equal(
+      a11yCase.figmaTraceRefs.some((traceRef) => traceRef.screenId === "1:1"),
+      true,
+    );
+    assert.equal(
+      result.policy.jobLevelViolations.some(
+        (violation) => violation.outcome === "missing_accessibility_case",
+      ),
+      false,
+    );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("runFigmaToQcTestCases uses deterministic coverage targets for large forms instead of accepting repeated EP output", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-targets-"));
   const labels = [
@@ -7578,6 +7631,43 @@ test("runFigmaToQcTestCases uses deterministic coverage targets for large forms 
       ),
       false,
     );
+
+    const repeated = await runFigmaToQcTestCases({
+      jobId: "job-large-form-target-contract-repeat",
+      generatedAt: "2026-05-12T10:01:00Z",
+      source: { kind: "figma_paste_normalized", file: largeFormFile },
+      outputRoot: tempRoot,
+      llm: { client },
+      logicJudge: { enabled: false },
+    });
+    assert.deepEqual(
+      repeated.generatedTestCases.testCases.map((testCase) => testCase.id),
+      result.generatedTestCases.testCases.map((testCase) => testCase.id),
+    );
+    assert.deepEqual(
+      repeated.generatedTestCases.testCases.map((testCase) => ({
+        id: testCase.id,
+        title: testCase.title,
+        type: testCase.type,
+        technique: testCase.technique,
+        coveredFieldIds: testCase.qualitySignals.coveredFieldIds,
+      })),
+      result.generatedTestCases.testCases.map((testCase) => ({
+        id: testCase.id,
+        title: testCase.title,
+        type: testCase.type,
+        technique: testCase.technique,
+        coveredFieldIds: testCase.qualitySignals.coveredFieldIds,
+      })),
+    );
+    assert.equal(
+      repeated.policy.approvedCount,
+      result.policy.approvedCount,
+    );
+    assert.equal(
+      repeated.policy.needsReviewCount,
+      result.policy.needsReviewCount,
+    );
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }
@@ -7626,7 +7716,7 @@ test("runFigmaToQcTestCases strips non-Figma custom markdown trace refs before v
     const validation = JSON.parse(
       await readFile(result.artifactPaths.validationReport, "utf8"),
     ) as { errorCount: number };
-    assert.equal(validation.errorCount, 0);
+    assert.equal(validation.errorCount, 0, JSON.stringify(validation, null, 2));
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }
@@ -7717,7 +7807,11 @@ test("runFigmaToQcTestCases removes button/action hallucinations when the IR has
 
     const generated = result.generatedTestCases.testCases[0];
     assert.ok(generated);
-    assert.equal(generated.steps.length, 1);
+    assert.equal(
+      generated.steps.length,
+      1,
+      JSON.stringify(result.generatedTestCases.testCases, null, 2),
+    );
     assert.equal(generated.riskCategory, "medium");
     assert.doesNotMatch(JSON.stringify(generated), /Button|Aktionen/u);
     assert.match(JSON.stringify(generated.expectedResults), /focus-order/u);
@@ -8695,23 +8789,52 @@ test("Issue #2053: collapsed judge topology uses deterministic negative-lift fal
       },
     });
 
-    const result = await runFigmaToQcTestCases({
-      jobId: "job-2053-deterministic-fallback",
-      generatedAt: "2026-05-12T06:10:00Z",
-      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
-      outputRoot: tempRoot,
-      llm: { client: bundle.testGeneration, bundle },
-      generation: { diversityPasses: 1 },
-      harness: { mode: "off", maxRepairIterations: 0 },
-    });
+    const runJob = (jobId: string) =>
+      runFigmaToQcTestCases({
+        jobId,
+        generatedAt: "2026-05-12T06:10:00Z",
+        source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+        outputRoot: tempRoot,
+        llm: { client: bundle.testGeneration, bundle },
+        generation: { diversityPasses: 1 },
+        harness: { mode: "off", maxRepairIterations: 0 },
+      });
+
+    const result = await runJob("job-2053-deterministic-fallback");
+    const replayed = await runJob("job-2053-deterministic-fallback-replay");
 
     assert.equal(collapsedJudgeCalls, 0);
-    assert.equal(result.generatedTestCases.testCases.length, 4);
+    for (const candidate of [result, replayed]) {
+      assert.equal(candidate.generatedTestCases.testCases.length, 5);
+      assert.equal(
+        new Set(candidate.generatedTestCases.testCases.map((testCase) => testCase.id))
+          .size,
+        5,
+      );
+      assert.equal(
+        candidate.generatedTestCases.testCases.filter(
+          (testCase) => testCase.type === "negative",
+        ).length,
+        2,
+      );
+    }
+    assert.deepEqual(
+      replayed.generatedTestCases.testCases.map((testCase) => ({
+        id: testCase.id,
+        title: testCase.title,
+        type: testCase.type,
+      })),
+      result.generatedTestCases.testCases.map((testCase) => ({
+        id: testCase.id,
+        title: testCase.title,
+        type: testCase.type,
+      })),
+    );
     assert.equal(
-      result.generatedTestCases.testCases.filter(
+      replayed.generatedTestCases.testCases.filter(
         (testCase) => testCase.type === "negative",
-      ).length,
-      2,
+      )[0]?.audit.cacheHit,
+      true,
     );
 
     const trace = JSON.parse(
@@ -8754,35 +8877,44 @@ test("Issue #2053: G-NEG-CASE fails closed under enforce when lift target is mis
     path.join(os.tmpdir(), "ti-runner-2053-fail-"),
   );
   try {
+    const unchangedRatioCases = [
+      {
+        ...SAMPLE_DRAFT,
+        title: "Reject empty Investitionssumme",
+        type: "negative" as const,
+        steps: [
+          {
+            index: 1,
+            action: "Leave the Investitionssumme field empty",
+            expected: "Required-field validator surfaces a blocking error.",
+          },
+        ],
+        expectedResults: [
+          "The empty submission is rejected and the form keeps focus.",
+        ],
+      },
+      {
+        ...SAMPLE_DRAFT,
+        title: "Show Investitionssumme field help",
+        type: "functional" as const,
+        steps: [
+          {
+            index: 1,
+            action: "Open the Investitionssumme help text",
+            expected: "The field help text is visible.",
+          },
+        ],
+        expectedResults: ["The help text stays visible without submitting."],
+      },
+    ];
     const generator = createMockLlmGatewayClient({
       role: "test_generation",
       deployment: "mistral-large-3-mock",
       modelRevision: "mistral-large-3@mock",
       gatewayRelease: "mock",
-      // Generator returns a single negative case both for the initial pass
-      // and for the post-critic regeneration. Baseline negative ratio is
-      // therefore 1.0 and the post-critic ratio is 1.0 →
-      // relativeRatioIncrease=0 < threshold=0.3 → gate fails closed.
-      responder: okResponder(
-        [
-          {
-            ...SAMPLE_DRAFT,
-            title: "Reject empty Investitionssumme",
-            type: "negative" as const,
-            steps: [
-              {
-                index: 1,
-                action: "Leave the Investitionssumme field empty",
-                expected: "Required-field validator surfaces a blocking error.",
-              },
-            ],
-            expectedResults: [
-              "The empty submission is rejected and the form keeps focus.",
-            ],
-          },
-        ],
-        "mistral-large-3-mock",
-      ),
+      // Generator returns the same mixed suite before and after critic repair.
+      // Baseline ratio 0.5 remains 0.5, so lift is genuinely below threshold.
+      responder: okResponder(unchangedRatioCases, "mistral-large-3-mock"),
     });
     const judge = createMockLlmGatewayClient({
       role: "logic_judge",
@@ -8857,31 +8989,42 @@ test("Issue #2053: G-NEG-CASE records advisory when override flips gateMode and 
     path.join(os.tmpdir(), "ti-runner-2053-advisory-"),
   );
   try {
+    const unchangedRatioCases = [
+      {
+        ...SAMPLE_DRAFT,
+        title: "Reject empty Investitionssumme",
+        type: "negative" as const,
+        steps: [
+          {
+            index: 1,
+            action: "Leave the Investitionssumme field empty",
+            expected: "Required-field validator surfaces a blocking error.",
+          },
+        ],
+        expectedResults: [
+          "The empty submission is rejected and the form keeps focus.",
+        ],
+      },
+      {
+        ...SAMPLE_DRAFT,
+        title: "Show Investitionssumme field help",
+        type: "functional" as const,
+        steps: [
+          {
+            index: 1,
+            action: "Open the Investitionssumme help text",
+            expected: "The field help text is visible.",
+          },
+        ],
+        expectedResults: ["The help text stays visible without submitting."],
+      },
+    ];
     const generator = createMockLlmGatewayClient({
       role: "test_generation",
       deployment: "mistral-large-3-mock",
       modelRevision: "mistral-large-3@mock",
       gatewayRelease: "mock",
-      responder: okResponder(
-        [
-          {
-            ...SAMPLE_DRAFT,
-            title: "Reject empty Investitionssumme",
-            type: "negative" as const,
-            steps: [
-              {
-                index: 1,
-                action: "Leave the Investitionssumme field empty",
-                expected: "Required-field validator surfaces a blocking error.",
-              },
-            ],
-            expectedResults: [
-              "The empty submission is rejected and the form keeps focus.",
-            ],
-          },
-        ],
-        "mistral-large-3-mock",
-      ),
+      responder: okResponder(unchangedRatioCases, "mistral-large-3-mock"),
     });
     const judge = createMockLlmGatewayClient({
       role: "logic_judge",

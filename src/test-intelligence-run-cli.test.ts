@@ -302,12 +302,12 @@ test("parseTestIntelligenceRunArgs: env defaults flow into options when flags ab
   assert.equal(options.finopsBudgetPath, undefined);
 });
 
-test("parseTestIntelligenceRunArgs: allow-policy-blocked defaults to true", () => {
+test("parseTestIntelligenceRunArgs: allow-policy-blocked defaults to false", () => {
   const options = parseTestIntelligenceRunArgs(
     ["--figma-url", "https://figma.com/design/abc/foo", "--output", "/tmp/x"],
     {},
   );
-  assert.equal(options.allowPolicyBlocked, true);
+  assert.equal(options.allowPolicyBlocked, false);
 });
 
 test("parseTestIntelligenceRunArgs: WORKSPACE_TEST_SPACE_ALLOW_POLICY_BLOCKED enables policy bypass", () => {
@@ -2911,7 +2911,7 @@ test("runTestIntelligenceCommand: forwards customerEvalMarkdown and writes expli
   assert.equal(exitCode, 0, stderr.join(""));
   assert.equal(capturedEval, "# Kunden-Eval\n- Format.");
   const expectedRunDir = "/tmp/cli-eval-output/2023-11-14T22-13-20-000Z";
-  assert.equal(capturedOutputRoot, expectedRunDir);
+  assert.equal(capturedOutputRoot, "/tmp/cli-eval-output");
   assert.equal(capturedArtifactDir, expectedRunDir);
 });
 
