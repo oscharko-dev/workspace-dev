@@ -1,7 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert";
 
-import { resolvePublishCommand, resolvePublishEnv } from "./changesets-publish.mjs";
+import {
+  resolvePublishAuthMode,
+  resolvePublishCommand,
+  resolvePublishEnv
+} from "./changesets-publish.mjs";
 
 const withEnv = (env, fn) => {
   const previous = { ...process.env };
@@ -32,6 +36,18 @@ test("resolvePublishEnv: rejects unsupported publish auth modes outside GitHub A
       withEnv({ WORKSPACE_DEV_PUBLISH_AUTH_MODE: "bad-mode" }, () =>
         resolvePublishEnv()
       ),
+    /Unsupported WORKSPACE_DEV_PUBLISH_AUTH_MODE/
+  );
+});
+
+test("resolvePublishAuthMode: centralizes publish auth mode validation", () => {
+  assert.strictEqual(resolvePublishAuthMode({}), "trusted-publisher-oidc");
+  assert.strictEqual(
+    resolvePublishAuthMode({ WORKSPACE_DEV_PUBLISH_AUTH_MODE: "npm-token" }),
+    "npm-token"
+  );
+  assert.throws(
+    () => resolvePublishAuthMode({ WORKSPACE_DEV_PUBLISH_AUTH_MODE: "bad-mode" }),
     /Unsupported WORKSPACE_DEV_PUBLISH_AUTH_MODE/
   );
 });
@@ -161,4 +177,15 @@ test("resolvePublishCommand: keeps Changesets publish outside GitHub trusted pub
       "next"
     ]
   });
+});
+
+test("resolvePublishCommand: rejects unsupported publish auth modes", () => {
+  assert.throws(
+    () =>
+      resolvePublishCommand("latest", {
+        GITHUB_ACTIONS: "true",
+        WORKSPACE_DEV_PUBLISH_AUTH_MODE: "bad-mode"
+      }),
+    /Unsupported WORKSPACE_DEV_PUBLISH_AUTH_MODE/
+  );
 });
