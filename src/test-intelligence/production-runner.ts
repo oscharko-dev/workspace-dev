@@ -360,7 +360,6 @@ import {
   deriveUnresolvedValidationConstraintsWithScreenFallback,
   GENERIC_VALIDATION_EXPECTED_RESULT,
 } from "./unresolved-validation-rules.js";
-import { classifyFieldLifecycleTransition } from "./field-lifecycle-transition-tier.js";
 import { runValidationPipeline } from "./validation-pipeline.js";
 import { resolveTechniqueQuotas } from "./technique-quota.js";
 import {
@@ -1124,14 +1123,6 @@ export interface RunFigmaToQcTestCasesInput {
   customerLabel?: string;
   /** Render per-case calibrated confidence in customer markdown when true. */
   showConfidence?: boolean;
-  /**
-   * Optional historical confidence-calibration corpus. When omitted, the runner
-   * uses an isolated empty corpus under `outputRoot/test-intelligence/` so a
-   * live run never re-trains itself from sibling run artifacts in the same
-   * output directory. Supplying this path explicitly opts into historical
-   * calibration.
-   */
-  confidenceCalibrationDatasetRoot?: string;
   /**
    * Policy profile id used to drive prompt augmentation. Defaults to
    * `EU_BANKING_DEFAULT_POLICY_PROFILE_ID` (`"eu-banking-default"`),
@@ -2484,8 +2475,6 @@ const buildRunQualityArtifact = (input: {
  */
 const ADVERSARIAL_NEGATIVE_CASE_LIFT_RULE_REF =
   "ti:rule:adversarial-critic-negative-case-lift" as const;
-const DETERMINISTIC_POST_PROCESSING_VERSION =
-  "2026-05-12.raw-generation-cache-saturated-negative-lift-a11y-floor.v2" as const;
 
 /**
  * Issue #2053 — resolve the effective `G-NEG-CASE` configuration for a
@@ -2574,20 +2563,14 @@ const evaluateNegativeCaseLiftGate = (input: {
     };
   }
   const observed = traceArtifact.negativeCoverage.relativeRatioIncrease;
-  if (traceArtifact.negativeCoverage.meetsThreshold) {
-    const saturatedNegativeCoverage =
-      observed < config.thresholdRatio &&
-      traceArtifact.negativeCoverage.finalNegativeRatio >=
-        traceArtifact.negativeCoverage.baselineNegativeRatio;
+  if (observed >= config.thresholdRatio) {
     return {
       gateId: "G-NEG-CASE",
       status: "passed",
       ruleRef: ADVERSARIAL_NEGATIVE_CASE_LIFT_RULE_REF,
       thresholdRatio: config.thresholdRatio,
       observedRatio: observed,
-      message: saturatedNegativeCoverage
-        ? `G-NEG-CASE passed: finalNegativeRatio=${traceArtifact.negativeCoverage.finalNegativeRatio} is already saturated for baselineNegativeRatio=${traceArtifact.negativeCoverage.baselineNegativeRatio}; requested relativeRatioIncrease=${config.thresholdRatio} is mathematically unreachable.`
-        : `G-NEG-CASE passed: relativeRatioIncrease=${observed} >= threshold=${config.thresholdRatio}.`,
+      message: `G-NEG-CASE passed: relativeRatioIncrease=${observed} >= threshold=${config.thresholdRatio}.`,
     };
   }
   if (config.gateMode === "advisory") {
@@ -3786,15 +3769,11 @@ export const runFigmaToQcTestCases = async (
         });
       }
       const generationRequest = buildGenerationRequest(compiled);
-      const generationCacheKeyBase = {
-        ...compiled.cacheKey,
-        deterministicPostProcessingVersion: DETERMINISTIC_POST_PROCESSING_VERSION,
-      };
       const generationCacheKey =
         generationClient.constrainedDecoding === undefined
-          ? generationCacheKeyBase
+          ? compiled.cacheKey
           : {
-              ...generationCacheKeyBase,
+              ...compiled.cacheKey,
               constrainedDecodingAdapterId:
                 generationClient.constrainedDecoding.adapterId,
               ...(generationClient.constrainedDecoding.adapterVersion !==
@@ -3998,66 +3977,6 @@ export const runFigmaToQcTestCases = async (
         });
       } catch (err) {
         if (err instanceof ReplayCacheValidationError) {
-          if (isReplayCacheStoreValidationError(err)) {
-            emit({
-              phase: "cache_break",
-              timestamp: monotonicMs(),
-              details: {
-                reason: "invalid_generated_list_not_cached",
-                cacheKey: replayCache.computeKey(generationCacheKey),
-                validationErrorCount: err.errors.length,
-                ...(inputPass.pass.passId !== undefined
-                  ? { passId: inputPass.pass.passId }
-                  : {}),
-              },
-            });
-            if (
-              canUseDeterministicGeneratorFallback({
-                intent,
-                coveragePlan: coveragePlanResult.plan,
-              })
-            ) {
-              cacheExecResult = {
-                cacheHit: false,
-                key: replayCache.computeKey(generationCacheKey),
-                testCases: buildDeterministicGeneratorFallbackSeedList({
-                  jobId: input.jobId,
-                  generatedAt: input.generatedAt,
-                  intent,
-                  coveragePlan: coveragePlanResult.plan,
-                  cacheKey: compiled.request.hashes.cacheKey,
-                  inputHash: compiled.request.hashes.inputHash,
-                  promptHash: compiled.request.hashes.promptHash,
-                  schemaHash: compiled.request.hashes.schemaHash,
-                  reason: `Generated list failed replay-cache store validation: ${formatReplayCacheValidationErrors(err)}`,
-                }),
-              };
-              emit({
-                phase: "llm_gateway_response",
-                timestamp: monotonicMs(),
-                details: {
-                  outcome: "deterministic_fallback",
-                  role: "test_generation",
-                  deployment: "deterministic-coverage-generator",
-                  fallbackFromDeployment: generationClient.deployment,
-                  fallbackReason: "invalid_generated_list_schema",
-                  errorClass: "schema_validation",
-                },
-              });
-              return {
-                compiled,
-                cacheExecResult,
-                pass: inputPass.pass,
-                generationCacheKey,
-              };
-            }
-            throw new ProductionRunnerError({
-              failureClass: "LLM_RESPONSE_INVALID",
-              message: `Generator produced an invalid GeneratedTestCaseList after stamping: ${formatReplayCacheValidationErrors(err)}`,
-              retryable: true,
-              cause: err,
-            });
-          }
           throw new ProductionRunnerError({
             failureClass: "PERSIST_FAILED",
             message:
@@ -4070,15 +3989,6 @@ export const runFigmaToQcTestCases = async (
       }
 
       if (cacheExecResult.cacheHit) {
-        cacheExecResult = {
-          ...cacheExecResult,
-          testCases: rehydrateReplayCachedGeneratedTestCases({
-            list: cacheExecResult.testCases,
-            jobId: input.jobId,
-            generatedAt: input.generatedAt,
-            hashes: compiled.request.hashes,
-          }),
-        };
         await observeRegionAttestation({
           sourceLabel: "generator",
           deploymentId: input.llm.client.deployment,
@@ -4097,12 +4007,7 @@ export const runFigmaToQcTestCases = async (
           },
         });
       }
-      return {
-        compiled,
-        cacheExecResult,
-        pass: inputPass.pass,
-        generationCacheKey,
-      };
+      return { compiled, cacheExecResult, pass: inputPass.pass };
     };
 
     const executeGenerationPassWithFallback = async (inputPass: {
@@ -4149,34 +4054,6 @@ export const runFigmaToQcTestCases = async (
             inputPass.extraSuffixSections,
             crossFamilyGeneratorClient,
           );
-          const generationCacheKeyBase = {
-            ...compiled.cacheKey,
-            deterministicPostProcessingVersion: DETERMINISTIC_POST_PROCESSING_VERSION,
-          };
-          const generationCacheKey =
-            crossFamilyGeneratorClient.constrainedDecoding === undefined
-              ? generationCacheKeyBase
-              : {
-                  ...generationCacheKeyBase,
-                  constrainedDecodingAdapterId:
-                    crossFamilyGeneratorClient.constrainedDecoding.adapterId,
-                  ...(crossFamilyGeneratorClient.constrainedDecoding
-                    .adapterVersion !== undefined
-                    ? {
-                        constrainedDecodingAdapterVersion:
-                          crossFamilyGeneratorClient.constrainedDecoding
-                            .adapterVersion,
-                      }
-                    : {}),
-                  ...(crossFamilyGeneratorClient.constrainedDecoding
-                    .fallbackReason !== undefined
-                    ? {
-                        constrainedDecodingFallbackReason:
-                          crossFamilyGeneratorClient.constrainedDecoding
-                            .fallbackReason,
-                      }
-                    : {}),
-                };
           emit({
             phase: "llm_gateway_response",
             timestamp: monotonicMs(),
@@ -4204,7 +4081,6 @@ export const runFigmaToQcTestCases = async (
           return {
             compiled,
             pass: inputPass.pass,
-            generationCacheKey,
             cacheExecResult: {
               cacheHit: false,
               key: compiled.request.hashes.cacheKey,
@@ -4455,10 +4331,6 @@ export const runFigmaToQcTestCases = async (
         }),
       ),
     };
-    generatedList = sanitizeGeneratedListTextForEvaluation({
-      list: generatedList,
-      intent,
-    });
     const baselineGeneratedList = generatedList;
     const adversarialCriticRoundArtifacts: AdversarialCriticRoundArtifact[] =
       [];
@@ -4785,17 +4657,6 @@ export const runFigmaToQcTestCases = async (
     };
     const logicJudgeTechniqueCoverageMinimum =
       customerRubricRules?.techniqueCoverageMinimum;
-    const deterministicLogicJudgeGeneratedList = logicJudgeEnabled
-      ? generatedList
-      : prepareGeneratedListForValidation({
-          list: generatedList,
-          intent,
-          workflowTopology,
-          coveragePlan: coveragePlanResult.plan,
-          ...(logicJudgeTechniqueCoverageMinimum !== undefined
-            ? { techniqueCoverageMinimum: logicJudgeTechniqueCoverageMinimum }
-            : {}),
-        });
     let logicJudgeResult: RunLogicJudgeResult = logicJudgeEnabled
       ? await runLogicJudge({
           jobId: input.jobId,
@@ -4839,19 +4700,42 @@ export const runFigmaToQcTestCases = async (
               }
             : {}),
         })
-      : buildDeterministicDisabledLogicJudgeResult({
-          jobId: input.jobId,
-          generatedAt: input.generatedAt,
-          client: logicJudgeClient,
-          testDesignModel: compiled.artifacts.payload.testDesignModel!,
-          coveragePlan: compiled.artifacts.payload.coveragePlan!,
-          generatedTestCases: deterministicLogicJudgeGeneratedList,
-          knownNavigationIds: logicJudgeKnownNavigationIds,
-          coverageThresholds: logicJudgeCoverageThresholds,
-          ...(logicJudgeTechniqueCoverageMinimum !== undefined
-            ? { techniqueCoverageMinimum: logicJudgeTechniqueCoverageMinimum }
-            : {}),
-        });
+      : {
+          cacheHit: false,
+          promptArtifact: {
+            jobId: input.jobId,
+            systemPrompt: "",
+            userPrompt: "",
+            responseSchemaName: "logic-judge-disabled",
+            responseSchema: {},
+            hashes: {
+              promptHash: "logic-judge-disabled",
+              schemaHash: "logic-judge-disabled",
+              inputHash: "logic-judge-disabled",
+              cacheKeyDigest: "logic-judge-disabled",
+            },
+            modelBinding: {
+              deployment: logicJudgeClient.deployment,
+              modelRevision: logicJudgeClient.modelRevision,
+              gatewayRelease: logicJudgeClient.gatewayRelease,
+            },
+          },
+          verdict: {
+            schemaVersion: LOGIC_JUDGE_VERDICT_SCHEMA_VERSION,
+            contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+            promptTemplateVersion: LOGIC_JUDGE_PROMPT_TEMPLATE_VERSION,
+            generatedAt: input.generatedAt,
+            jobId: input.jobId,
+            cacheHit: false,
+            cacheKeyDigest: "logic-judge-disabled",
+            modelDeployment: logicJudgeClient.deployment,
+            modelRevision: logicJudgeClient.modelRevision,
+            gatewayRelease: logicJudgeClient.gatewayRelease,
+            verdict: "accept" as const,
+            findings: [],
+            repairInstructions: [],
+          },
+        };
     if (logicJudgeResult.gatewayResult !== undefined) {
       await recordFinopsGatewayAttempt({
         role: "test_generation",
@@ -5294,87 +5178,53 @@ export const runFigmaToQcTestCases = async (
           };
         },
         runLogicJudge: async ({ list }) => {
-          const repairLogicResult = logicJudgeEnabled
-            ? await runLogicJudge({
-                jobId: input.jobId,
-                generatedAt: input.generatedAt,
-                testDesignModel: compiled.artifacts.payload.testDesignModel!,
-                coveragePlan: compiled.artifacts.payload.coveragePlan!,
-                generatedTestCases: list,
-                client: logicJudgeClient,
-                // Per-iteration regen produces a unique input hash; bypass the
-                // disk-backed cache and use a fresh in-memory cache so deterministic
-                // repeat-iteration mocks (test fixtures) can still hit byte-stable
-                // verdicts without poisoning the shared logic-judge cache.
-                cache: createMemoryLogicJudgeCache(),
-                knownNavigationIds: logicJudgeKnownNavigationIds,
-                coverageThresholds: logicJudgeCoverageThresholds,
-                ...(logicJudgeTechniqueCoverageMinimum !== undefined
-                  ? {
-                      techniqueCoverageMinimum:
-                        logicJudgeTechniqueCoverageMinimum,
-                    }
-                  : {}),
-                ...(finopsBudget.roles.test_generation
-                  ?.maxInputTokensPerRequest !== undefined
-                  ? {
-                      maxInputTokens:
-                        finopsBudget.roles.test_generation
-                          .maxInputTokensPerRequest,
-                    }
-                  : {}),
-                ...(finopsBudget.roles.test_generation
-                  ?.maxOutputTokensPerRequest !== undefined
-                  ? {
-                      maxOutputTokens:
-                        finopsBudget.roles.test_generation
-                          .maxOutputTokensPerRequest,
-                    }
-                  : {}),
-                ...(finopsBudget.roles.test_generation
-                  ?.maxWallClockMsPerRequest !== undefined
-                  ? {
-                      maxWallClockMs:
-                        finopsBudget.roles.test_generation
-                          .maxWallClockMsPerRequest,
-                    }
-                  : {}),
-                ...(finopsBudget.roles.test_generation
-                  ?.maxRetriesPerRequest !== undefined
-                  ? {
-                      maxRetries:
-                        finopsBudget.roles.test_generation
-                          .maxRetriesPerRequest,
-                    }
-                  : {}),
-              })
-            : buildDeterministicDisabledLogicJudgeResult({
-                jobId: input.jobId,
-                generatedAt: input.generatedAt,
-                client: logicJudgeClient,
-                testDesignModel: compiled.artifacts.payload.testDesignModel!,
-                coveragePlan: compiled.artifacts.payload.coveragePlan!,
-                generatedTestCases: prepareGeneratedListForValidation({
-                  list,
-                  intent,
-                  workflowTopology,
-                  coveragePlan: coveragePlanResult.plan,
-                  ...(logicJudgeTechniqueCoverageMinimum !== undefined
-                    ? {
-                        techniqueCoverageMinimum:
-                          logicJudgeTechniqueCoverageMinimum,
-                      }
-                    : {}),
-                }),
-                knownNavigationIds: logicJudgeKnownNavigationIds,
-                coverageThresholds: logicJudgeCoverageThresholds,
-                ...(logicJudgeTechniqueCoverageMinimum !== undefined
-                  ? {
-                      techniqueCoverageMinimum:
-                        logicJudgeTechniqueCoverageMinimum,
-                    }
-                  : {}),
-              });
+          const repairLogicResult = await runLogicJudge({
+            jobId: input.jobId,
+            generatedAt: input.generatedAt,
+            testDesignModel: compiled.artifacts.payload.testDesignModel!,
+            coveragePlan: compiled.artifacts.payload.coveragePlan!,
+            generatedTestCases: list,
+            client: logicJudgeClient,
+            // Per-iteration regen produces a unique input hash; bypass the
+            // disk-backed cache and use a fresh in-memory cache so deterministic
+            // repeat-iteration mocks (test fixtures) can still hit byte-stable
+            // verdicts without poisoning the shared logic-judge cache.
+            cache: createMemoryLogicJudgeCache(),
+            knownNavigationIds: logicJudgeKnownNavigationIds,
+            coverageThresholds: logicJudgeCoverageThresholds,
+            ...(logicJudgeTechniqueCoverageMinimum !== undefined
+              ? { techniqueCoverageMinimum: logicJudgeTechniqueCoverageMinimum }
+              : {}),
+            ...(finopsBudget.roles.test_generation?.maxInputTokensPerRequest !==
+            undefined
+              ? {
+                  maxInputTokens:
+                    finopsBudget.roles.test_generation.maxInputTokensPerRequest,
+                }
+              : {}),
+            ...(finopsBudget.roles.test_generation
+              ?.maxOutputTokensPerRequest !== undefined
+              ? {
+                  maxOutputTokens:
+                    finopsBudget.roles.test_generation
+                      .maxOutputTokensPerRequest,
+                }
+              : {}),
+            ...(finopsBudget.roles.test_generation?.maxWallClockMsPerRequest !==
+            undefined
+              ? {
+                  maxWallClockMs:
+                    finopsBudget.roles.test_generation.maxWallClockMsPerRequest,
+                }
+              : {}),
+            ...(finopsBudget.roles.test_generation?.maxRetriesPerRequest !==
+            undefined
+              ? {
+                  maxRetries:
+                    finopsBudget.roles.test_generation.maxRetriesPerRequest,
+                }
+              : {}),
+          });
           if (repairLogicResult.gatewayResult !== undefined) {
             await recordFinopsGatewayAttempt({
               role: "test_generation",
@@ -5773,6 +5623,7 @@ export const runFigmaToQcTestCases = async (
         needsReview: validation.policy.needsReviewCount,
       },
     });
+
     // 9. Persist artifacts.
     emit({ phase: "export_started", timestamp: monotonicMs() });
     await mkdir(artifactDir, { recursive: true });
@@ -5834,12 +5685,8 @@ export const runFigmaToQcTestCases = async (
       faithfulnessTierReportArtifact === undefined
         ? undefined
         : join(artifactDir, FAITHFULNESS_TIER_REPORT_ARTIFACT_FILENAME);
-    const confidenceCalibrationDatasetRoot =
-      input.confidenceCalibrationDatasetRoot ??
-      join(input.outputRoot, "test-intelligence", "confidence-calibration-corpus");
-    await mkdir(confidenceCalibrationDatasetRoot, { recursive: true });
     const confidenceCalibration = await loadCaseConfidenceCalibration({
-      datasetRoot: confidenceCalibrationDatasetRoot,
+      datasetRoot: input.outputRoot,
       generatedAt: input.generatedAt,
       currentRunId: basename(artifactDir),
     });
@@ -8897,277 +8744,6 @@ const enforceTechniqueQuotasForValidation = (input: {
   return changed ? { ...input.list, testCases } : input.list;
 };
 
-const collectCoveredFieldIdsForScreenTechnique = (
-  testCases: ReadonlyArray<GeneratedTestCase>,
-  screenId: string,
-  technique: TestCaseTechnique29119 | undefined,
-): ReadonlySet<string> => {
-  const covered = new Set<string>();
-  for (const testCase of testCases) {
-    if (technique !== undefined && testCase.technique !== technique) continue;
-    if (!testCaseAnchorsScreen(testCase, screenId)) continue;
-    for (const fieldId of testCase.qualitySignals.coveredFieldIds) {
-      covered.add(fieldId);
-    }
-  }
-  return covered;
-};
-
-const hasAnyCoveredFieldIdForScreen = (
-  testCases: ReadonlyArray<GeneratedTestCase>,
-  screenId: string,
-): boolean =>
-  testCases.some(
-    (testCase) =>
-      testCaseAnchorsScreen(testCase, screenId) &&
-      testCase.qualitySignals.coveredFieldIds.length > 0,
-  );
-
-const enforceTechniqueQuotaSupplementalCasesForValidation = (input: {
-  list: GeneratedTestCaseList;
-  intent: BusinessTestIntentIr;
-  coveragePlan: CoveragePlan;
-  workflowTopology: WorkflowTopology;
-  techniqueCoverageMinimum?: TechniqueCoverageMinimumPolicy;
-}): GeneratedTestCaseList => {
-  const quotas = resolveTechniqueQuotas(
-    input.coveragePlan,
-    input.techniqueCoverageMinimum,
-  ).filter(
-    (quota) =>
-      quota.requiredCount > 0 &&
-      quota.technique === "equivalence_partitioning",
-  );
-  if (quotas.length === 0 || input.list.testCases.length === 0) {
-    return input.list;
-  }
-
-  const fieldsByScreen = new Map<
-    string,
-    Array<BusinessTestIntentIr["detectedFields"][number]>
-  >();
-  for (const field of input.intent.detectedFields) {
-    const fields = fieldsByScreen.get(field.screenId) ?? [];
-    fields.push(field);
-    fieldsByScreen.set(field.screenId, fields);
-  }
-  for (const [screenId, fields] of fieldsByScreen) {
-    fieldsByScreen.set(
-      screenId,
-      [...fields].sort((left, right) => left.id.localeCompare(right.id)),
-    );
-  }
-
-  const riskByElement = new Map<string, TestCaseRiskCategory>();
-  for (const entry of input.coveragePlan.perElement) {
-    riskByElement.set(`${entry.screenId}::${entry.elementId}`, entry.riskClass);
-  }
-
-  const testCases = [...input.list.testCases];
-  const usedIds = new Set(testCases.map((testCase) => testCase.id));
-  let changed = false;
-
-  for (const quota of quotas) {
-    const counts = countAnchoredTechniquesForScreen(testCases, quota.screenId);
-    const screenFields = fieldsByScreen.get(quota.screenId) ?? [];
-    if (screenFields.length === 0) continue;
-    const coveredFieldIds = collectCoveredFieldIdsForScreenTechnique(
-      testCases,
-      quota.screenId,
-      undefined,
-    );
-    if (
-      coveredFieldIds.size >= screenFields.length ||
-      (screenFields.length === 1 &&
-        hasAnyCoveredFieldIdForScreen(testCases, quota.screenId))
-    ) {
-      continue;
-    }
-    let missing =
-      quota.requiredCount - (counts.get("equivalence_partitioning") ?? 0);
-    missing = Math.min(missing, screenFields.length - coveredFieldIds.size);
-    if (missing <= 0) continue;
-
-    const candidateFields = [
-      ...screenFields.filter((field) => !coveredFieldIds.has(field.id)),
-      ...screenFields.filter((field) => coveredFieldIds.has(field.id)),
-    ];
-
-    const seedCase =
-      testCases
-        .filter((testCase) => testCaseAnchorsScreen(testCase, quota.screenId))
-        .sort(
-          (left, right) =>
-            left.qualitySignals.confidence - right.qualitySignals.confidence ||
-            left.id.localeCompare(right.id),
-        )[0] ?? testCases[0];
-    if (seedCase === undefined) continue;
-
-    for (const field of candidateFields) {
-      if (missing <= 0) break;
-      const fieldLabel = deterministicFieldDisplayLabel({
-        field,
-        fields: input.intent.detectedFields,
-      });
-      const supplemental = buildDeterministicFieldCoverageCase({
-        jobId: input.list.jobId,
-        seedCase,
-        field,
-        fieldLabel,
-        riskClass:
-          riskByElement.get(`${field.screenId}::${field.id}`) ?? "medium",
-        workflowTopology: input.workflowTopology,
-      });
-      if (usedIds.has(supplemental.id)) continue;
-      usedIds.add(supplemental.id);
-      testCases.push(supplemental);
-      changed = true;
-      missing -= 1;
-    }
-  }
-
-  return changed ? { ...input.list, testCases } : input.list;
-};
-
-const collectCoveredFieldLifecycleTransitionIds = (
-  testCases: ReadonlyArray<GeneratedTestCase>,
-): ReadonlySet<string> => {
-  const covered = new Set<string>();
-  for (const testCase of testCases) {
-    for (const step of testCase.steps) {
-      if (typeof step.fieldLifecycleTransitionId === "string") {
-        covered.add(step.fieldLifecycleTransitionId);
-      }
-    }
-  }
-  return covered;
-};
-
-const screenIdFromLifecycleField = (
-  fieldId: string,
-  fieldsById: ReadonlyMap<
-    string,
-    BusinessTestIntentIr["detectedFields"][number]
-  >,
-): string =>
-  fieldsById.get(fieldId)?.screenId ?? fieldId.split("::field::")[0] ?? fieldId;
-
-const enforceMandatoryWorkflowLifecycleTransitionsForValidation = (input: {
-  list: GeneratedTestCaseList;
-  intent: BusinessTestIntentIr;
-  coveragePlan: CoveragePlan;
-  workflowTopology: WorkflowTopology;
-}): GeneratedTestCaseList => {
-  if (
-    input.workflowTopology.fieldLifecycles.length === 0 ||
-    input.list.testCases.length === 0
-  ) {
-    return input.list;
-  }
-
-  const fieldsById = new Map(
-    input.intent.detectedFields.map((field) => [field.id, field]),
-  );
-  const riskByElement = new Map<string, TestCaseRiskCategory>();
-  for (const entry of input.coveragePlan.perElement) {
-    riskByElement.set(`${entry.screenId}::${entry.elementId}`, entry.riskClass);
-  }
-
-  type MandatoryLifecycleGroup = {
-    readonly screenId: string;
-    readonly trigger: string;
-    readonly transitionIds: readonly string[];
-    readonly fieldId: string;
-    readonly terminalState: string;
-  };
-  const groups = new Map<string, MandatoryLifecycleGroup>();
-  for (const lifecycle of input.workflowTopology.fieldLifecycles) {
-    const screenId = screenIdFromLifecycleField(lifecycle.fieldId, fieldsById);
-    for (const transition of lifecycle.transitions) {
-      if (
-        classifyFieldLifecycleTransition(transition) !==
-        "mandatory_negative_path"
-      ) {
-        continue;
-      }
-      const key = `${screenId}::${transition.trigger}`;
-      const existing = groups.get(key);
-      if (existing === undefined) {
-        groups.set(key, {
-          screenId,
-          trigger: transition.trigger,
-          transitionIds: [transition.transitionId],
-          fieldId: lifecycle.fieldId,
-          terminalState: transition.to,
-        });
-      } else {
-        groups.set(key, {
-          ...existing,
-          transitionIds: [...existing.transitionIds, transition.transitionId],
-        });
-      }
-    }
-  }
-  if (groups.size === 0) return input.list;
-
-  const testCases = [...input.list.testCases];
-  const usedIds = new Set(testCases.map((testCase) => testCase.id));
-  let covered = collectCoveredFieldLifecycleTransitionIds(testCases);
-  let changed = false;
-
-  for (const group of [...groups.values()].sort((left, right) =>
-    `${left.screenId}::${left.trigger}`.localeCompare(
-      `${right.screenId}::${right.trigger}`,
-    ),
-  )) {
-    if (group.transitionIds.some((transitionId) => covered.has(transitionId))) {
-      continue;
-    }
-    const field = fieldsById.get(group.fieldId);
-    if (field === undefined) continue;
-    const fieldLabel = deterministicFieldDisplayLabel({
-      field,
-      fields: input.intent.detectedFields,
-    });
-    const seedCase =
-      testCases
-        .filter((testCase) => testCaseAnchorsScreen(testCase, group.screenId))
-        .sort(
-          (left, right) =>
-            left.qualitySignals.confidence - right.qualitySignals.confidence ||
-            left.id.localeCompare(right.id),
-        )[0] ?? testCases[0];
-    if (seedCase === undefined) continue;
-    const riskClass =
-      riskByElement.get(`${field.screenId}::${field.id}`) ?? "medium";
-    const supplemental =
-      group.terminalState === "error" || group.trigger === "validation_fail"
-        ? buildDeterministicFieldNegativeCase({
-            jobId: input.list.jobId,
-            seedCase,
-            field,
-            fieldLabel,
-            riskClass,
-            workflowTopology: input.workflowTopology,
-          })
-        : buildDeterministicFieldCoverageCase({
-            jobId: input.list.jobId,
-            seedCase,
-            field,
-            fieldLabel,
-            riskClass,
-            workflowTopology: input.workflowTopology,
-          });
-    if (usedIds.has(supplemental.id)) continue;
-    usedIds.add(supplemental.id);
-    testCases.push(supplemental);
-    covered = collectCoveredFieldLifecycleTransitionIds(testCases);
-    changed = true;
-  }
-
-  return changed ? { ...input.list, testCases } : input.list;
-};
-
 const DETERMINISTIC_CASE_COUNT_FIELD_THRESHOLD = 20 as const;
 
 interface DeterministicCaseCountScreenTarget {
@@ -9177,6 +8753,7 @@ interface DeterministicCaseCountScreenTarget {
 }
 
 const deterministicSupplementalCaseId = (input: {
+  readonly jobId: string;
   readonly kind:
     | "field-coverage-target"
     | "field-negative-target"
@@ -9347,6 +8924,7 @@ const buildDeterministicFieldCoverageCase = (input: {
     testCase: {
       ...input.seedCase,
       id: deterministicSupplementalCaseId({
+        jobId: input.jobId,
         kind: "field-coverage-target",
         screenId: input.field.screenId,
         fieldId: input.field.id,
@@ -9416,6 +8994,7 @@ const buildDeterministicFieldNegativeCase = (input: {
     testCase: {
       ...input.seedCase,
       id: deterministicSupplementalCaseId({
+        jobId: input.jobId,
         kind: "field-negative-target",
         screenId: input.field.screenId,
         fieldId: input.field.id,
@@ -9492,6 +9071,7 @@ const buildDeterministicFormAccessibilityCase = (input: {
     testCase: {
       ...input.seedCase,
       id: deterministicSupplementalCaseId({
+        jobId: input.jobId,
         kind: "form-a11y-floor",
         screenId: input.screenId,
         ...(input.field !== undefined ? { fieldId: input.field.id } : {}),
@@ -9575,6 +9155,7 @@ const buildDeterministicScreenBaselineCase = (input: {
     testCase: {
       ...input.seedCase,
       id: deterministicSupplementalCaseId({
+        jobId: input.jobId,
         kind: "screen-baseline-target",
         screenId: input.screenId,
       }),
@@ -9799,72 +9380,6 @@ const hasScreenAccessibilityCase = (
       testCaseAnchorsScreen(testCase, screenId),
   );
 
-const enforceFormAccessibilityFloorForValidation = (input: {
-  readonly list: GeneratedTestCaseList;
-  readonly intent: BusinessTestIntentIr;
-  readonly workflowTopology: WorkflowTopology;
-}): GeneratedTestCaseList => {
-  if (input.intent.detectedFields.length === 0 || input.list.testCases.length === 0) {
-    return input.list;
-  }
-
-  const fieldsByScreen = new Map<
-    string,
-    Array<BusinessTestIntentIr["detectedFields"][number]>
-  >();
-  for (const field of input.intent.detectedFields) {
-    const fields = fieldsByScreen.get(field.screenId) ?? [];
-    fields.push(field);
-    fieldsByScreen.set(field.screenId, fields);
-  }
-  const screenNames = new Map(
-    input.intent.screens.map((screen) => [screen.screenId, screen.screenName]),
-  );
-  const testCases = [...input.list.testCases];
-  const usedIds = new Set(testCases.map((testCase) => testCase.id));
-  let changed = false;
-
-  for (const [index, screenId] of [...fieldsByScreen.keys()].sort().entries()) {
-    if (hasScreenAccessibilityCase(testCases, screenId)) continue;
-    const screenFields = [...(fieldsByScreen.get(screenId) ?? [])].sort((left, right) =>
-      left.id.localeCompare(right.id),
-    );
-    const seedCase =
-      testCases
-        .filter((testCase) => testCase.type !== "negative")
-        .sort(
-          (left, right) =>
-            left.qualitySignals.confidence - right.qualitySignals.confidence ||
-            left.id.localeCompare(right.id),
-        )[0] ??
-      testCases
-        .filter((testCase) => testCaseAnchorsScreen(testCase, screenId))
-        .sort((left, right) => left.id.localeCompare(right.id))[0] ??
-      testCases[0];
-    if (seedCase === undefined) continue;
-    const supplemental = buildDeterministicFormAccessibilityCase({
-      jobId: input.list.jobId,
-      seedCase,
-      screenId,
-      screenName: screenNames.get(screenId) ?? "Formular",
-      index,
-      workflowTopology: input.workflowTopology,
-      ...(screenFields[0] !== undefined ? { field: screenFields[0] } : {}),
-    });
-    if (usedIds.has(supplemental.id)) continue;
-    usedIds.add(supplemental.id);
-    testCases.push(supplemental);
-    changed = true;
-  }
-
-  return changed
-    ? {
-        ...input.list,
-        testCases: testCases.sort((left, right) => left.id.localeCompare(right.id)),
-      }
-    : input.list;
-};
-
 const isModelOwnedTargetScreenCase = (input: {
   readonly testCase: GeneratedTestCase;
   readonly targetScreenIds: ReadonlySet<string>;
@@ -10032,28 +9547,8 @@ const prepareGeneratedListForValidation = (input: {
     coveragePlan: input.coveragePlan,
     workflowTopology: input.workflowTopology,
   });
-  const accessibilityPrepared = enforceFormAccessibilityFloorForValidation({
-    list: coveragePrepared,
-    intent: input.intent,
-    workflowTopology: input.workflowTopology,
-  });
-  const quotaSupplemented = enforceTechniqueQuotaSupplementalCasesForValidation({
-    list: accessibilityPrepared,
-    intent: input.intent,
-    coveragePlan: input.coveragePlan,
-    workflowTopology: input.workflowTopology,
-    ...(input.techniqueCoverageMinimum !== undefined
-      ? { techniqueCoverageMinimum: input.techniqueCoverageMinimum }
-      : {}),
-  });
-  const lifecyclePrepared = enforceMandatoryWorkflowLifecycleTransitionsForValidation({
-    list: quotaSupplemented,
-    intent: input.intent,
-    coveragePlan: input.coveragePlan,
-    workflowTopology: input.workflowTopology,
-  });
   return sanitizeGeneratedListQualitySignalsForValidation({
-    list: lifecyclePrepared,
+    list: coveragePrepared,
     intent: input.intent,
   });
 };
@@ -10135,35 +9630,6 @@ const sanitizeNoActionText = (value: string): string =>
     .replace(/\bund Aktionen\b/giu, "")
     .replace(/\s{2,}/gu, " ")
     .trim();
-
-const sanitizeControlTypeOverclaimText = (value: string): string =>
-  value
-    .replace(
-      /\b(?:Bestätigungs-?Button|Icon-?Button|Button|Schaltfl[aä]che)\b/giu,
-      "Bedienelement",
-    )
-    .replace(/\s{2,}/gu, " ")
-    .trim();
-
-const sanitizeControlTypeOverclaims = (
-  testCase: GeneratedTestCase,
-): GeneratedTestCase => ({
-  ...testCase,
-  title: sanitizeControlTypeOverclaimText(testCase.title),
-  objective: sanitizeControlTypeOverclaimText(testCase.objective),
-  preconditions: testCase.preconditions.map(sanitizeControlTypeOverclaimText),
-  testData: testCase.testData.map(sanitizeControlTypeOverclaimText),
-  steps: testCase.steps.map((step) => ({
-    ...step,
-    action: sanitizeControlTypeOverclaimText(step.action),
-    ...(step.expected !== undefined
-      ? { expected: sanitizeControlTypeOverclaimText(step.expected) }
-      : {}),
-  })),
-  expectedResults: testCase.expectedResults.map(sanitizeControlTypeOverclaimText),
-  assumptions: testCase.assumptions.map(sanitizeControlTypeOverclaimText),
-  openQuestions: testCase.openQuestions.map(sanitizeControlTypeOverclaimText),
-});
 
 const normalizeSemanticLabel = (value: string): string =>
   value.trim().toLowerCase();
@@ -10297,70 +9763,40 @@ const maybeRewriteRadioCurrencyCase = (
   };
 };
 
-const GENERIC_CONTROL_LABEL_PATTERN =
-  /^(?:button|schaltfl[aä]che|bedienelement|submit|absenden|senden|weiter|icon)$/iu;
-
-const stepMentionsCoveredActionLabel = (
-  step: GeneratedTestCaseStep,
-  testCase: GeneratedTestCase,
-  intent: BusinessTestIntentIr,
-): boolean => {
-  const text = normalizeSemanticLabel(`${step.action}\n${step.expected ?? ""}`);
-  const coveredActionIds = new Set(testCase.qualitySignals.coveredActionIds);
-  if (coveredActionIds.size > 0 && /\bweiter\b/iu.test(text)) {
-    return true;
-  }
-  return intent.detectedActions.some((action) => {
-    if (!coveredActionIds.has(action.id)) return false;
-    const label = normalizeSemanticLabel(action.label);
-    if (label.length < 2 || GENERIC_CONTROL_LABEL_PATTERN.test(label)) {
-      return false;
-    }
-    return text.includes(label);
-  });
-};
-
 const sanitizeNoActionHallucinations = (
   testCase: GeneratedTestCase,
   intent: BusinessTestIntentIr,
 ): GeneratedTestCase => {
+  if (
+    intent.detectedActions.some((action) =>
+      isCoverageRelevantActionLike(action),
+    )
+  ) {
+    return maybeRewriteRadioCurrencyCase(testCase, intent);
+  }
   const steps = testCase.steps
-    .map((step) => {
-      const hasActionEvidence = stepMentionsCoveredActionLabel(
-        step,
-        testCase,
-        intent,
-      );
-      return {
-        original: step,
-        hasActionEvidence,
-        sanitized: hasActionEvidence
-          ? step
-          : {
-              ...step,
-              action: sanitizeNoActionText(step.action),
-              ...(step.expected !== undefined
-                ? { expected: sanitizeNoActionText(step.expected) }
-                : {}),
-            },
-      };
-    })
-    .filter(
-      ({ original, sanitized, hasActionEvidence }) => {
-        if (hasActionEvidence) return true;
-        return (
-          !PURE_NO_ACTION_HALLUCINATION_PATTERN.test(original.action) &&
-          !(
-            typeof original.expected === "string" &&
-            PURE_NO_ACTION_HALLUCINATION_PATTERN.test(original.expected)
-          ) &&
-          !PURE_NO_ACTION_HALLUCINATION_PATTERN.test(sanitized.action) &&
-          !(
-            typeof sanitized.expected === "string" &&
-            PURE_NO_ACTION_HALLUCINATION_PATTERN.test(sanitized.expected)
-          )
-        );
+    .map((step) => ({
+      original: step,
+      sanitized: {
+        ...step,
+        action: sanitizeNoActionText(step.action),
+        ...(step.expected !== undefined
+          ? { expected: sanitizeNoActionText(step.expected) }
+          : {}),
       },
+    }))
+    .filter(
+      ({ original, sanitized }) =>
+        !PURE_NO_ACTION_HALLUCINATION_PATTERN.test(original.action) &&
+        !(
+          typeof original.expected === "string" &&
+          PURE_NO_ACTION_HALLUCINATION_PATTERN.test(original.expected)
+        ) &&
+        !PURE_NO_ACTION_HALLUCINATION_PATTERN.test(sanitized.action) &&
+        !(
+          typeof sanitized.expected === "string" &&
+          PURE_NO_ACTION_HALLUCINATION_PATTERN.test(sanitized.expected)
+        ),
     )
     .map(({ sanitized }, index) => ({
       ...sanitized,
@@ -10382,20 +9818,6 @@ const sanitizeNoActionHallucinations = (
     intent,
   );
 };
-
-const sanitizeGeneratedListTextForEvaluation = (input: {
-  readonly list: GeneratedTestCaseList;
-  readonly intent: BusinessTestIntentIr;
-}): GeneratedTestCaseList => ({
-  ...input.list,
-  testCases: input.list.testCases.map((testCase) =>
-    ensureAccessibilityCoverageTerms(
-      sanitizeControlTypeOverclaims(
-        sanitizeNoActionHallucinations(testCase, input.intent),
-      ),
-    ),
-  ),
-});
 
 const ensureAccessibilityCoverageTerms = (
   testCase: GeneratedTestCase,
@@ -10594,9 +10016,6 @@ const requiredNegativeCaseCountForLift = (input: {
   if (accounting.baselineNegativeRatio === 0) {
     return accounting.finalNegativeRatio > 0 ? accounting.finalNegativeCaseCount : 1;
   }
-  if (accounting.meetsThreshold) {
-    return accounting.finalNegativeCaseCount;
-  }
   return Math.min(
     total,
     Math.ceil(
@@ -10711,6 +10130,7 @@ const buildDeterministicAdversarialNegativeCase = (input: {
   const id = `tc-${createHash("sha256")
     .update(
       canonicalJson({
+        jobId: input.jobId,
         kind: "deterministic-adversarial-negative-lift",
         index: input.index,
         anchor: input.anchor,
@@ -11036,7 +10456,7 @@ const stampGeneratedTestCase = (input: {
   const slug = createHash("sha256")
     .update(
       canonicalJson({
-        cacheKey: input.audit.cacheKey,
+        jobId: input.jobId,
         index: input.index,
         title: input.draft.title,
         ...(input.identitySalt !== undefined
@@ -11130,52 +10550,9 @@ const stampGeneratedTestCase = (input: {
       : {}),
   };
   return ensureAccessibilityCoverageTerms(
-    sanitizeControlTypeOverclaims(
-      sanitizeNoActionHallucinations(generated, input.intent),
-    ),
+    sanitizeNoActionHallucinations(generated, input.intent),
   );
 };
-
-const isReplayCacheStoreValidationError = (
-  err: ReplayCacheValidationError,
-): boolean => /refusing to store invalid GeneratedTestCaseList/u.test(err.message);
-
-const formatReplayCacheValidationErrors = (
-  err: ReplayCacheValidationError,
-): string =>
-  err.errors
-    .slice(0, 5)
-    .map((entry) => `${entry.path}: ${entry.message}`)
-    .join("; ") || err.message;
-
-const rehydrateReplayCachedGeneratedTestCases = (input: {
-  readonly list: GeneratedTestCaseList;
-  readonly jobId: string;
-  readonly generatedAt: string;
-  readonly hashes: {
-    readonly cacheKey: string;
-    readonly inputHash: string;
-    readonly promptHash: string;
-    readonly schemaHash: string;
-  };
-}): GeneratedTestCaseList => ({
-  ...input.list,
-  jobId: input.jobId,
-  testCases: input.list.testCases.map((testCase) => ({
-    ...testCase,
-    sourceJobId: input.jobId,
-    audit: {
-      ...testCase.audit,
-      jobId: input.jobId,
-      generatedAt: input.generatedAt,
-      cacheHit: true,
-      cacheKey: input.hashes.cacheKey,
-      inputHash: input.hashes.inputHash,
-      promptHash: input.hashes.promptHash,
-      schemaHash: input.hashes.schemaHash,
-    },
-  })),
-});
 
 /**
  * Detect screens whose `screenName` matches a banking/insurance semantic
@@ -11269,57 +10646,6 @@ const toHumanReviewProfileKey = (profileId: string): string =>
 
 type JudgeConsensusDisposition = "accept" | "repair" | "needs_review";
 
-const buildDeterministicDisabledLogicJudgeResult = (input: {
-  readonly jobId: string;
-  readonly generatedAt: string;
-  readonly client: LlmGatewayClient;
-  readonly testDesignModel: TestDesignModel;
-  readonly coveragePlan: CoveragePlan;
-  readonly generatedTestCases: GeneratedTestCaseList;
-  readonly knownNavigationIds: readonly string[];
-  readonly coverageThresholds: LogicJudgeCoverageThresholds;
-  readonly techniqueCoverageMinimum?: TechniqueCoverageMinimumPolicy;
-}): RunLogicJudgeResult => {
-  const promptArtifact = {
-    jobId: input.jobId,
-    systemPrompt: "",
-    userPrompt: "",
-    responseSchemaName: "logic-judge-disabled",
-    responseSchema: {},
-    hashes: {
-      promptHash: "logic-judge-disabled",
-      schemaHash: "logic-judge-disabled",
-      inputHash: "logic-judge-disabled",
-      cacheKeyDigest: "logic-judge-disabled",
-    },
-    modelBinding: {
-      deployment: input.client.deployment,
-      modelRevision: input.client.modelRevision,
-      gatewayRelease: input.client.gatewayRelease,
-    },
-  };
-  const baseVerdict: JudgeVerdict = {
-    schemaVersion: LOGIC_JUDGE_VERDICT_SCHEMA_VERSION,
-    contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
-    promptTemplateVersion: LOGIC_JUDGE_PROMPT_TEMPLATE_VERSION,
-    generatedAt: input.generatedAt,
-    jobId: input.jobId,
-    cacheHit: false,
-    cacheKeyDigest: "logic-judge-disabled",
-    modelDeployment: input.client.deployment,
-    modelRevision: input.client.modelRevision,
-    gatewayRelease: input.client.gatewayRelease,
-    verdict: "accept",
-    findings: [],
-    repairInstructions: [],
-  };
-  return {
-    cacheHit: false,
-    promptArtifact,
-    verdict: baseVerdict,
-  };
-};
-
 const resolveJudgeConsensusDisposition = (input: {
   verdict: JudgeConsensusVerdict;
   generatedTestCases: GeneratedTestCaseList;
@@ -11355,15 +10681,10 @@ const resolveJudgeConsensusDisposition = (input: {
       regulatedDisagreement,
     };
   }
-  const hasActionableRepairInstructions =
-    input.verdict.repairInstructions.length > 0;
   if (input.verdict.agreementShape === "vetoed") {
     return {
       disposition:
-        input.verdict.verdict === "reject" &&
-        !hasActionableRepairInstructions
-          ? "needs_review"
-          : "repair",
+        input.verdict.verdict === "reject" ? "needs_review" : "repair",
       voteCounts,
       regulatedDisagreement,
     };
@@ -11412,7 +10733,7 @@ const resolveJudgeConsensusDisposition = (input: {
     };
   }
   return {
-    disposition: hasActionableRepairInstructions ? "repair" : "needs_review",
+    disposition: "needs_review",
     voteCounts,
     regulatedDisagreement,
   };

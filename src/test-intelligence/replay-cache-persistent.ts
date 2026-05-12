@@ -144,19 +144,20 @@ export const createPersistentReplayCache = (
       try {
         const parsed = JSON.parse(raw) as unknown;
         entry = decodeEntry(digest, parsed);
-        const validation = validateGeneratedTestCaseList(entry.testCases);
-        if (!validation.valid) {
-          throw new ReplayCacheValidationError(
-            `persistent replay cache entry ${digest} failed schema validation`,
-            validation.errors.map((e) => ({
-              path: e.path,
-              message: e.message,
-            })),
-          );
-        }
-      } catch {
-        await quarantineCorruptCacheEntry(path);
-        return { hit: false, key: digest };
+      } catch (err) {
+        if (err instanceof ReplayCacheValidationError) throw err;
+        throw new ReplayCacheValidationError(
+          `persistent replay cache entry ${digest} is not valid JSON`,
+          [{ path: "$", message: "invalid JSON" }],
+        );
+      }
+
+      const validation = validateGeneratedTestCaseList(entry.testCases);
+      if (!validation.valid) {
+        throw new ReplayCacheValidationError(
+          `persistent replay cache entry ${digest} failed schema validation`,
+          validation.errors.map((e) => ({ path: e.path, message: e.message })),
+        );
       }
 
       // Refresh mtime so this entry is treated as recently-used by LRU eviction.
@@ -312,17 +313,6 @@ const writeAtomicJson = async (path: string, value: unknown): Promise<void> => {
   const tmpPath = `${path}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`;
   await writeFile(tmpPath, canonicalJson(value), "utf8");
   await rename(tmpPath, path);
-};
-
-const quarantineCorruptCacheEntry = async (
-  path: string,
-): Promise<void> => {
-  const quarantinePath = `${path}.corrupt-${Date.now().toString(36)}`;
-  try {
-    await rename(path, quarantinePath);
-  } catch {
-    await rm(path, { force: true }).catch(() => {});
-  }
 };
 
 /**

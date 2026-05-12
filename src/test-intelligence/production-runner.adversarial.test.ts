@@ -432,7 +432,7 @@ test("production runner adversarial: corrupted persistent replay-cache entries a
     assert.equal(cacheFiles.length, 1);
     await writeFile(cacheFiles[0]!, "{", "utf8");
 
-    await assert.doesNotReject(
+    await assert.rejects(
       runFigmaToQcTestCases({
         jobId: "job-cache-poison",
         generatedAt: "2026-05-04T10:00:00Z",
@@ -444,8 +444,14 @@ test("production runner adversarial: corrupted persistent replay-cache entries a
         generation: { diversityPasses: 1 },
         logicJudge: { enabled: false },
       }),
+      (err) => {
+        assert.ok(err instanceof ProductionRunnerError);
+        assert.equal(err.failureClass, "PERSIST_FAILED");
+        assert.match(err.message, /replay cache entry failed validation/u);
+        return true;
+      },
     );
-    assert.equal(client.callCount(), 2);
+    assert.equal(client.callCount(), 1);
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
     await rm(cacheRoot, { recursive: true, force: true });
@@ -683,7 +689,7 @@ test("production runner adversarial: cancellation releases the gateway slot and 
       // is generator-only and dispatches must remain at 2.
       logicJudge: { enabled: false },
     });
-    assert.equal(secondRun.generatedTestCases.testCases.length, 3);
+    assert.equal(secondRun.generatedTestCases.testCases.length, 1);
     assert.equal(dispatches, 2);
   } finally {
     await rm(tempRoot, { recursive: true, force: true });

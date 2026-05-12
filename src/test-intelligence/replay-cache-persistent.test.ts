@@ -133,7 +133,6 @@ const buildList = (jobId: string): GeneratedTestCaseList => ({
 
 const compileForFixture = (
   jobId: string,
-  policyBundleVersion = "policy-2026-04-25",
 ): { cacheKey: ReplayCacheKey; cacheKeyDigest: string } => {
   const intent = deriveBusinessTestIntentIr({ figma: figmaInput });
   const compiled = compilePrompt({
@@ -142,7 +141,7 @@ const compileForFixture = (
     visual: visualInput,
     modelBinding: sampleModelBinding,
     visualBinding: sampleVisualBinding,
-    policyBundleVersion,
+    policyBundleVersion: "policy-2026-04-25",
   });
   return {
     cacheKey: compiled.cacheKey,
@@ -354,16 +353,14 @@ test("persistent cache: LRU eviction respects the byte budget", async () => {
       byteBudget: 1,
     });
 
-    // Build two distinct cache keys. Execution job ids are intentionally
-    // ignored by replay identity, so vary a real generation input instead.
+    // Build two distinct cache keys (different jobIds produce different prompts
+    // because the jobId is part of the compiled prompt hashes).
     const { cacheKey: keyA } = compileForFixture("job-evict-a");
-    const { cacheKey: keyB } = compileForFixture(
-      "job-evict-b",
-      "policy-2026-04-26",
-    );
+    const { cacheKey: keyB } = compileForFixture("job-evict-b");
     const listA = buildList("job-evict-a");
     const listB = buildList("job-evict-b");
 
+    // keyA is different from keyB only when jobId differs in the hashes.
     // If they hash to the same key, use a workaround by checking the digests.
     const digestA = computeReplayCacheKeyDigest(keyA);
     const digestB = computeReplayCacheKeyDigest(keyB);
