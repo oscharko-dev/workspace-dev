@@ -12,7 +12,7 @@ const MODULE_DIR =
     : path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(MODULE_DIR, "..");
 const expectedRepositoryUrl =
-  "git+https://github.com/oscharko-dev/workspace-dev.git";
+  "https://github.com/oscharko-dev/workspace-dev";
 const expectedHomepageUrl =
   "https://github.com/oscharko-dev/workspace-dev#readme";
 const expectedBugsUrl = "https://github.com/oscharko-dev/workspace-dev/issues";
