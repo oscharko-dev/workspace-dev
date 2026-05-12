@@ -75,7 +75,7 @@ jobs:
         run: pnpm run lint:types-publish
 
   release:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.WORKSPACE_DEV_ENABLE_NPM_PUBLISH == 'true'
     runs-on: ubuntu-latest
     needs: release-preflight
     steps:
