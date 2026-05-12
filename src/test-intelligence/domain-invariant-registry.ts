@@ -206,6 +206,8 @@ const VAT_TEXT_RE =
   /\b(vat|value added tax|mwst\.?|mehrwertsteuer(?:n|s)?|umsatzsteuer(?:n|s)?)\b/i;
 const NETTO_TEXT_RE = /\b(netto|net amount)\b/i;
 const BRUTTO_TEXT_RE = /\b(brutto|gross amount)\b/i;
+const NETTO_BRUTTO_FINANCIAL_RESULT_TEXT_RE =
+  /\b(amounts?|betr[aä]g(?:e|en)?|berechn(?:et|ung)|equals?|ergibt|financ(?:e|ing) need|finanzierungsbedarf(?:es|s|e)?|gesamt(?:betrag|summe|wert)?|gleich|kaufpreis|preis|summe|total|value|wert)\b|\d[\d.,]*\s*(?:€|eur)\b/i;
 const OPTIONAL_COST_TEXT_RE =
   /\b(optional (?:cost|fee|charge)|optional[ae]r? (?:kosten|gebühr|aufpreis))\b/i;
 
@@ -229,6 +231,11 @@ const caseTextMatches = (
   testCase: GeneratedTestCase,
   pattern: RegExp,
 ): boolean => collectCaseStrings(testCase).some((text) => pattern.test(text));
+
+const isNettoBruttoFinancialResultConflation = (text: string): boolean =>
+  NETTO_TEXT_RE.test(text) &&
+  BRUTTO_TEXT_RE.test(text) &&
+  NETTO_BRUTTO_FINANCIAL_RESULT_TEXT_RE.test(text);
 
 const screenIdsForCase = (testCase: GeneratedTestCase): Set<string> =>
   new Set(testCase.figmaTraceRefs.map((ref) => ref.screenId));
@@ -338,21 +345,28 @@ const buildNettoBruttoExclusivityInvariant = (): DomainInvariant => ({
         });
       }
     });
-    return !candidates.some(
-      (entry) =>
-        NETTO_TEXT_RE.test(entry.text) && BRUTTO_TEXT_RE.test(entry.text),
+    return !candidates.some((entry) =>
+      isNettoBruttoFinancialResultConflation(entry.text),
     );
   },
   violationMessage: (testCase) => {
-    let path = "expectedResults";
-    for (const [idx, text] of testCase.expectedResults.entries()) {
-      if (NETTO_TEXT_RE.test(text) && BRUTTO_TEXT_RE.test(text)) {
-        path = `expectedResults[${idx}]`;
-        break;
+    const candidates: { path: string; text: string }[] = [];
+    testCase.expectedResults.forEach((text, idx) =>
+      candidates.push({ path: `expectedResults[${idx}]`, text }),
+    );
+    testCase.steps.forEach((step, idx) => {
+      if (typeof step.expected === "string") {
+        candidates.push({
+          path: `steps[${idx}].expected`,
+          text: step.expected,
+        });
       }
-    }
+    });
+    const offending = candidates.find((entry) =>
+      isNettoBruttoFinancialResultConflation(entry.text),
+    );
     return {
-      path,
+      path: offending?.path ?? "expectedResults",
       message:
         "Expected result conflates Netto and Brutto in a single string; invariant INV-NETTO-BRUTTO-01 forbids the dual basis without an explicit conversion step.",
     };

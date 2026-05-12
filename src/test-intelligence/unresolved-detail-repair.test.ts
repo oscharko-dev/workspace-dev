@@ -76,6 +76,31 @@ const buildIntent = (): BusinessTestIntentIr => ({
   redactions: [],
 });
 
+const buildIntentWithUnresolvedFinancingNeedResult =
+  (): BusinessTestIntentIr => ({
+    ...buildIntent(),
+    detectedFields: [
+      ...buildIntent().detectedFields,
+      {
+        id: "s-financing::field::financing-need-result",
+        screenId: "s-financing",
+        trace: { nodeId: "n-financing-need-result" },
+        provenance: "figma_node",
+        confidence: 0.9,
+        label: "Finanzierungsbedarf des Investitionsobjekts",
+        type: "text",
+      },
+    ],
+    assumptions: [
+      "custom_context_markdown: Der Hinweis Die MwSt. ist nicht Teil des Finanzierungsbedarfs.",
+    ],
+    openQuestions: [
+      ...buildIntent().openQuestions,
+      "custom_context_markdown: Der Hinweis Die MwSt. ist nicht Teil des Finanzierungsbedarfs.",
+      "custom_context_markdown: Es ist fachlich zu klären, wie sich der Wert Finanzierungsbedarf des Investitionsobjekts exakt berechnet.",
+    ],
+  });
+
 const baseCase = (overrides: Partial<GeneratedTestCase>): GeneratedTestCase => ({
   id: "tc-base",
   sourceJobId: JOB_ID,
@@ -392,6 +417,52 @@ test("validation pipeline emits zero unsupported_unresolved_validation_detail er
         change.path === "testData[3]",
     ),
     "MwSt numeric is removed at the H0 path",
+  );
+});
+
+test("validation pipeline strips exact financing-need result amounts when calculation is unresolved", () => {
+  const offending = baseCase({
+    id: "tc-financing-result",
+    title: "TC - Äquivalenzpartitionierung für Feld Finanzierungssumme",
+    expectedResults: ['Das Ergebnisfeld zeigt "55.000,00 EUR".'],
+    qualitySignals: {
+      coveredFieldIds: [
+        "s-financing::field::financing-need-result",
+        "s-financing::field::netto",
+      ],
+      coveredActionIds: [],
+      coveredValidationIds: [],
+      coveredNavigationIds: [],
+      confidence: 0.85,
+    },
+  });
+  const artifacts = runValidationPipeline({
+    jobId: JOB_ID,
+    generatedAt: GENERATED_AT,
+    list: buildList([offending]),
+    intent: buildIntentWithUnresolvedFinancingNeedResult(),
+  });
+
+  assert.equal(artifacts.validation.errorCount, 0);
+  assert.deepEqual(
+    artifacts.validation.issues.filter(
+      (issue) => issue.code === "domain_invariant_violation",
+    ),
+    [],
+  );
+  assert.ok(
+    artifacts.unresolvedDetailRepairChanges.some(
+      (change) =>
+        change.testCaseId === "tc-financing-result" &&
+        change.kind === "removed_expected_result" &&
+        change.path === "expectedResults[0]",
+    ),
+  );
+  assert.equal(
+    artifacts.generatedTestCases.testCases[0]?.expectedResults.some((entry) =>
+      entry.includes("55.000,00 EUR"),
+    ),
+    false,
   );
 });
 

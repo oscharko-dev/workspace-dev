@@ -13,7 +13,14 @@ import {
   createAzurePortfolioBinding,
   EU_BANKING_DEFAULT_MODEL_ROUTING_POLICY,
 } from "./model-routing-policy.js";
-import { resolveProductionTopologyModelRoutingPolicy } from "./production-topology-clients.js";
+import {
+  PRODUCTION_FINOPS_BUDGET_ENVELOPE,
+  PRODUCTION_GENERATOR_WALL_CLOCK_MS,
+} from "./finops-budget.js";
+import {
+  buildProductionTopologyClientConfigs,
+  resolveProductionTopologyModelRoutingPolicy,
+} from "./production-topology-clients.js";
 
 const routeForRole = (
   policy: ModelRoutingPolicy,
@@ -182,5 +189,87 @@ test("production topology policy: coverage planner config uses its own routed de
   assert.equal(
     coveragePlanner?.modelRevision,
     "phi-4-mini-instruct@2026-05-09",
+  );
+});
+
+test("production topology configs do not cap FinOps retry budgets below production defaults", () => {
+  const configs = buildProductionTopologyClientConfigs({
+    endpoint: "https://gateway.example.test",
+    visualEndpoint: "https://vision.example.test",
+    deployment: "mistral-large-3",
+    visualPrimaryDeployment: "llama-4-maverick-vision",
+    visualFallbackDeployment: "phi-4-multimodal-instruct",
+    logicJudgeDeployment: "gpt-oss-120b",
+    a11yJudgeDeployment: "phi-4-multimodal-instruct",
+    coveragePlannerDeployment: "phi-4-mini-instruct",
+    riskRankerDeployment: "phi-4",
+    modelRevisionSuffix: "2026-05-09",
+    gatewayRelease: "azure-ai-foundry@2026.05",
+    policyProfileId: EU_BANKING_DEFAULT_POLICY_PROFILE_ID,
+  });
+
+  const expectedTextRetries =
+    PRODUCTION_FINOPS_BUDGET_ENVELOPE.roles.test_generation
+      ?.maxRetriesPerRequest;
+  const expectedVisualRetries =
+    PRODUCTION_FINOPS_BUDGET_ENVELOPE.roles.visual_primary
+      ?.maxRetriesPerRequest;
+  const expectedVisualFallbackRetries =
+    PRODUCTION_FINOPS_BUDGET_ENVELOPE.roles.visual_fallback
+      ?.maxRetriesPerRequest;
+
+  assert.equal(configs.testGeneration.maxRetries, expectedTextRetries);
+  assert.equal(
+    configs.testGeneration.timeoutMs,
+    PRODUCTION_GENERATOR_WALL_CLOCK_MS,
+  );
+  assert.equal(
+    configs.testGeneration.circuitBreaker.failureThreshold,
+    configs.testGeneration.maxRetries + 1,
+  );
+  assert.equal(configs.testGenerationSecondary?.deployment, "gpt-oss-120b");
+  if (configs.testGenerationSecondary !== undefined) {
+    assert.equal(configs.testGenerationSecondary.maxRetries, expectedTextRetries);
+    assert.equal(
+      configs.testGenerationSecondary.timeoutMs,
+      PRODUCTION_GENERATOR_WALL_CLOCK_MS,
+    );
+    assert.equal(
+      configs.testGenerationSecondary.circuitBreaker.failureThreshold,
+      configs.testGenerationSecondary.maxRetries + 1,
+    );
+  }
+  assert.equal(configs.logicJudge?.maxRetries, expectedTextRetries);
+  assert.equal(configs.coveragePlanner?.maxRetries, expectedTextRetries);
+  assert.equal(configs.riskRanker?.maxRetries, expectedTextRetries);
+  assert.equal(configs.visualPrimary.maxRetries, expectedVisualRetries);
+  assert.equal(
+    configs.visualPrimary.circuitBreaker.failureThreshold,
+    configs.visualPrimary.maxRetries + 1,
+  );
+  assert.equal(configs.a11yJudge?.maxRetries, expectedVisualRetries);
+  assert.equal(
+    configs.visualFallback.maxRetries,
+    expectedVisualFallbackRetries,
+  );
+  assert.equal(
+    configs.visualFallback.circuitBreaker.failureThreshold,
+    configs.visualFallback.maxRetries + 1,
+  );
+
+  const legacyPrimaryConfigs = buildProductionTopologyClientConfigs({
+    endpoint: "https://gateway.example.test",
+    visualEndpoint: "https://vision.example.test",
+    deployment: "gpt-oss-120b",
+    visualPrimaryDeployment: "llama-4-maverick-vision",
+    visualFallbackDeployment: "phi-4-multimodal-instruct",
+    modelRevisionSuffix: "2026-05-09",
+    gatewayRelease: "azure-ai-foundry@2026.05",
+    policyProfileId: EU_BANKING_DEFAULT_POLICY_PROFILE_ID,
+  });
+  assert.equal(legacyPrimaryConfigs.testGeneration.deployment, "gpt-oss-120b");
+  assert.equal(
+    legacyPrimaryConfigs.testGenerationSecondary?.deployment,
+    "mistral-large-3",
   );
 });

@@ -81,6 +81,8 @@ const USER_PROMPT_PREAMBLE = [
   "Cover the detected fields, actions, validations, and navigation edges of every screen.",
   "Use the ISO/IEC/IEEE 29119-4 technique that best fits each case.",
   GENERATOR_TECHNIQUE_QUOTA_RULE,
+  "Treat CoveragePlan.generationTargets as the concrete acceptance contract for base field coverage: each listed elementId needs one focused equivalence_partitioning case, and no elementId needs more than one such base case.",
+  "Do not satisfy an equivalence_partitioning quota by varying many values for the same field; distribute base cases across the listed generationTargets before adding deeper scenario cases.",
   "Populate qualitySignals.coveredFieldIds, coveredActionIds, coveredValidationIds, coveredNavigationIds with the matching bounded ids.",
   "Every generated step MUST set steps[*].fieldLifecycleTransitionId to one transition id from WorkflowTopology.fieldLifecycles. Do not invent ids.",
   "An empty coveredFieldIds array (qualitySignals.coveredFieldIds: []) is a schema violation — every non-trivial case must cite at least one IR id across the four covered* arrays.",
@@ -569,9 +571,30 @@ const buildCoveragePlanSection = (coveragePlan: CoveragePlan): string =>
     "[4] CoveragePlan",
     "CoveragePlan.techniqueQuotas",
     canonicalJson(flattenCoveragePlanTechniqueQuotas(coveragePlan.perScreen)),
+    "CoveragePlan.generationTargets",
+    canonicalJson(buildCoverageGenerationTargets(coveragePlan)),
     "CoveragePlan.full",
     canonicalJson(coveragePlan),
   ].join("\n");
+
+const buildCoverageGenerationTargets = (
+  coveragePlan: CoveragePlan,
+): ReadonlyArray<{
+  screenId: string;
+  elementId: string;
+  technique: "equivalence_partitioning";
+  cardinality: "exactly_one_base_case";
+  mustHaveCase: true;
+}> =>
+  coveragePlan.perElement
+    .filter((element) => element.mustHaveCase)
+    .map((element) => ({
+      screenId: element.screenId,
+      elementId: element.elementId,
+      technique: "equivalence_partitioning" as const,
+      cardinality: "exactly_one_base_case" as const,
+      mustHaveCase: true as const,
+    }));
 
 const buildWorkflowTopologySection = (workflowTopology: WorkflowTopology): string =>
   [

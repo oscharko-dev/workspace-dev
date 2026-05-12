@@ -15,9 +15,16 @@ import {
   type ModelRoutingPolicy,
   type ModelRoutingRole,
 } from "../contracts/index.js";
-import { buildRuntimeModelRoutingPolicy } from "./model-routing-policy.js";
+import {
+  PRODUCTION_FINOPS_BUDGET_ENVELOPE,
+  PRODUCTION_GENERATOR_WALL_CLOCK_MS,
+} from "./finops-budget.js";
+import {
+  buildRuntimeModelRoutingPolicy,
+  getDefaultModelRoutingPolicy,
+} from "./model-routing-policy.js";
 
-const TEXT_ROLE_TIMEOUT_MS = 240_000;
+const TEXT_ROLE_TIMEOUT_MS = PRODUCTION_GENERATOR_WALL_CLOCK_MS;
 const AUX_TEXT_ROLE_TIMEOUT_MS = 60_000;
 const VISUAL_ROLE_TIMEOUT_MS = 300_000;
 const LEGACY_GPT_OSS_DEPLOYMENT = "gpt-oss-120b";
@@ -38,6 +45,15 @@ export interface BuildProductionTopologyClientConfigsInput {
   policyProfileId?: string;
   modelRoutingOverride?: ModelRoutingOverride;
 }
+
+type ProductionTopologyRole =
+  | "test_generation"
+  | "logic_judge"
+  | "coverage_planner"
+  | "risk_ranker"
+  | "visual_primary"
+  | "visual_fallback"
+  | "a11y_judge";
 
 const withOptionalDeployment = <T extends object>(
   key: string,
@@ -84,6 +100,51 @@ const wireStructuredOutputOverrideForDeployment = (
     ? { wireStructuredOutputMode: "none" }
     : {};
 
+const maxRetriesForProductionRole = (role: ProductionTopologyRole): number => {
+  switch (role) {
+    case "test_generation":
+    case "logic_judge":
+    case "coverage_planner":
+    case "risk_ranker":
+      return (
+        PRODUCTION_FINOPS_BUDGET_ENVELOPE.roles.test_generation
+          ?.maxRetriesPerRequest ?? 6
+      );
+    case "visual_primary":
+    case "a11y_judge":
+      return (
+        PRODUCTION_FINOPS_BUDGET_ENVELOPE.roles.visual_primary
+          ?.maxRetriesPerRequest ?? 4
+      );
+    case "visual_fallback":
+      return (
+        PRODUCTION_FINOPS_BUDGET_ENVELOPE.roles.visual_fallback
+          ?.maxRetriesPerRequest ?? 4
+      );
+  }
+};
+
+const routeDeployment = (
+  route: ModelRoutingPolicy["routes"][number] | undefined,
+): string | undefined =>
+  route?.modelBinding.inferenceProfileId ?? route?.modelBinding.modelId;
+
+const defaultTestGenerationFallbackDeployment = (input: {
+  readonly policyProfileId: string | undefined;
+  readonly primaryDeployment: string;
+}): string | undefined => {
+  const defaultPolicy = getDefaultModelRoutingPolicy(
+    input.policyProfileId ?? EU_BANKING_DEFAULT_POLICY_PROFILE_ID,
+  );
+  return defaultPolicy.routes
+    .filter((route) => route.role === "test_generation")
+    .map(routeDeployment)
+    .find(
+      (deployment): deployment is string =>
+        deployment !== undefined && deployment !== input.primaryDeployment,
+    );
+};
+
 const withOptionalIctRef = (
   config: LlmGatewayClientConfig,
   ictRegisterRef: string | undefined,
@@ -91,20 +152,14 @@ const withOptionalIctRef = (
   ictRegisterRef !== undefined ? { ...config, ictRegisterRef } : config;
 
 export const buildProductionRoleClientConfig = (input: {
-  role:
-    | "test_generation"
-    | "logic_judge"
-    | "coverage_planner"
-    | "risk_ranker"
-    | "visual_primary"
-    | "visual_fallback"
-    | "a11y_judge";
+  role: ProductionTopologyRole;
   endpoint: string;
   deployment: string;
   modelRevisionSuffix: string;
   gatewayRelease: string;
   ictRegisterRef?: string;
 }): LlmGatewayClientConfig => {
+  const maxRetries = maxRetriesForProductionRole(input.role);
   const shared = {
     compatibilityMode: "openai_chat" as const,
     baseUrl: input.endpoint,
@@ -112,8 +167,11 @@ export const buildProductionRoleClientConfig = (input: {
     modelRevision: `${input.deployment}@${input.modelRevisionSuffix}`,
     gatewayRelease: input.gatewayRelease,
     authMode: "api_key" as const,
-    maxRetries: 1,
-    circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
+    maxRetries,
+    circuitBreaker: {
+      failureThreshold: maxRetries + 1,
+      resetTimeoutMs: 30_000,
+    },
   };
 
   switch (input.role) {
@@ -178,24 +236,35 @@ export const buildProductionTopologyClientConfigs = (
     }
     return route?.modelBinding.modelId ?? input.deployment;
   };
+  const testGenerationDeployment = deploymentFor("test_generation");
+  const routedSecondaryDeployment = deploymentFor(
+    "test_generation",
+    "secondary",
+  );
+  const testGenerationSecondaryDeployment =
+    routedSecondaryDeployment !== testGenerationDeployment
+      ? routedSecondaryDeployment
+      : defaultTestGenerationFallbackDeployment({
+          policyProfileId: input.policyProfileId,
+          primaryDeployment: testGenerationDeployment,
+        });
   return {
     testGeneration: buildProductionRoleClientConfig({
       role: "test_generation",
       endpoint: input.endpoint,
-      deployment: deploymentFor("test_generation"),
+      deployment: testGenerationDeployment,
       modelRevisionSuffix: input.modelRevisionSuffix,
       gatewayRelease: input.gatewayRelease,
       ...(input.ictRegisterRef !== undefined
         ? { ictRegisterRef: input.ictRegisterRef }
         : {}),
     }),
-    ...(deploymentFor("test_generation", "secondary") !==
-    deploymentFor("test_generation")
+    ...(testGenerationSecondaryDeployment !== undefined
       ? {
           testGenerationSecondary: buildProductionRoleClientConfig({
             role: "test_generation",
             endpoint: input.endpoint,
-            deployment: deploymentFor("test_generation", "secondary"),
+            deployment: testGenerationSecondaryDeployment,
             modelRevisionSuffix: input.modelRevisionSuffix,
             gatewayRelease: input.gatewayRelease,
             ...(input.ictRegisterRef !== undefined

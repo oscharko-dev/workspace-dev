@@ -30,6 +30,7 @@ import {
   DEFAULT_FINOPS_BUDGET_ENVELOPE,
   EU_BANKING_DEFAULT_FINOPS_BUDGET,
   PRODUCTION_FINOPS_BUDGET_ENVELOPE,
+  PRODUCTION_GENERATOR_WALL_CLOCK_MS,
   resolveFinOpsRequestLimits,
   resolveTestGenerationWallClockBudget,
   resolveWallClockBudget,
@@ -619,7 +620,7 @@ test("PRODUCTION_FINOPS_BUDGET_ENVELOPE pins the calibrated production limits", 
   // masks with cross-family judges + adversarial-critic + repair loop.
   assert.equal(
     PRODUCTION_FINOPS_BUDGET_ENVELOPE.maxJobWallClockMs,
-    30 * 60 * 1000,
+    PRODUCTION_GENERATOR_WALL_CLOCK_MS,
   );
   // Replay-cache miss-rate gate disabled — quality/stability stance.
   assert.equal(PRODUCTION_FINOPS_BUDGET_ENVELOPE.maxReplayCacheMissRate, 1.0);
@@ -633,9 +634,9 @@ test("PRODUCTION_FINOPS_BUDGET_ENVELOPE pins the calibrated production limits", 
   assert.equal(tg.maxTotalOutputTokens, 200_000);
   assert.equal(tg.maxRetriesPerRequest, 6);
   assert.equal(tg.maxAttempts, 12);
-  // 10 minutes per request (was 2 min); total role wall-clock resolves
-  // elastically at runtime from run shape instead of a static constant.
-  assert.equal(tg.maxWallClockMsPerRequest, 600_000);
+  // 24h practical hard ceiling: long generator/fallback runs stay visible
+  // instead of failing mid-generation.
+  assert.equal(tg.maxWallClockMsPerRequest, PRODUCTION_GENERATOR_WALL_CLOCK_MS);
   assert.equal(tg.maxTotalWallClockMs, undefined);
   assert.equal(tg.maxLiveSmokeCalls, 0);
   const vp = PRODUCTION_FINOPS_BUDGET_ENVELOPE.roles.visual_primary;

@@ -329,7 +329,7 @@ export const createLlmGatewayClient = (
       const shouldRetry =
         result.retryable &&
         (isTransientFailure(result.errorClass) ||
-          isRetryableStructuredOutputSyntaxFailure(result));
+          isRetryableStructuredOutputGatewayFailure(result));
 
       if (shouldRetry) {
         breaker.recordTransientFailure();
@@ -617,12 +617,13 @@ const isTransientFailure = (errorClass: LlmGatewayErrorClass): boolean => {
   );
 };
 
-const isRetryableStructuredOutputSyntaxFailure = (
+const isRetryableStructuredOutputGatewayFailure = (
   result: LlmGenerationFailure,
 ): boolean =>
   result.errorClass === "schema_invalid" &&
   result.retryable &&
-  result.message === "structured-output content is not valid JSON";
+  (result.message === "structured-output content is not valid JSON" ||
+    result.message.startsWith("message.content missing or empty"));
 
 const expandMaxOutputTokensForRetry = (current: number): number => {
   if (!Number.isSafeInteger(current) || current <= 0) return current;
@@ -869,6 +870,7 @@ interface OpenAiChatBody {
   seed?: number;
   reasoning_effort?: "low" | "medium" | "high";
   max_completion_tokens?: number;
+  max_tokens?: number;
   stream?: boolean;
 }
 
@@ -879,6 +881,15 @@ const resolveWireMode = (
   config: LlmGatewayClientConfig,
 ): LlmGatewayWireStructuredOutputMode =>
   config.wireStructuredOutputMode ?? DEFAULT_WIRE_STRUCTURED_OUTPUT_MODE;
+
+const resolveOutputTokenLimitWireField = (
+  config: LlmGatewayClientConfig,
+): "max_completion_tokens" | "max_tokens" => {
+  const deployment = config.deployment.toLowerCase();
+  return deployment.startsWith("mistral")
+    ? "max_tokens"
+    : "max_completion_tokens";
+};
 
 const buildOpenAiChatBody = (
   config: LlmGatewayClientConfig,
@@ -970,7 +981,7 @@ const buildOpenAiChatBody = (
     config.declaredCapabilities.maxOutputTokensSupport &&
     request.maxOutputTokens !== undefined
   ) {
-    body.max_completion_tokens = request.maxOutputTokens;
+    body[resolveOutputTokenLimitWireField(config)] = request.maxOutputTokens;
   }
   return body;
 };
@@ -1270,7 +1281,7 @@ const parseOpenAiChatResponse = async ({
           outcome: "error",
           errorClass: "schema_invalid",
           message: describeMissingMessageContent(message),
-          retryable: false,
+          retryable: true,
           attempt,
         };
       }

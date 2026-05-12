@@ -432,10 +432,12 @@ import {
   type RunLogicJudgeResult,
 } from "./logic-judge.js";
 import {
+  buildCoveragePlan,
   buildCoveragePlanWithAugmentation,
   writeCoveragePlanArtifact,
 } from "./coverage-planner.js";
 import {
+  buildRiskRanking,
   buildRiskRankingWithAugmentation,
   writeRiskRankingArtifact,
 } from "./risk-ranker.js";
@@ -492,7 +494,22 @@ export const PROMPT_MAX_FIELDS_PER_SCREEN = 60 as const;
 export const PROMPT_MAX_ACTIONS_PER_SCREEN = 30 as const;
 export const PROMPT_MAX_VALIDATIONS_PER_SCREEN = 30 as const;
 export const PROMPT_MAX_NAVIGATION_PER_SCREEN = 30 as const;
+export const PROMPT_TARGETED_FIELDS_PER_SCREEN = 16 as const;
+export const PROMPT_TARGETED_ACTIONS_PER_SCREEN = 12 as const;
+export const PROMPT_TARGETED_VALIDATIONS_PER_SCREEN = 12 as const;
+export const PROMPT_TARGETED_NAVIGATION_PER_SCREEN = 12 as const;
+export const PROMPT_CONTEXT_BUDGET_SAFETY_RATIO = 0.72 as const;
 export const MAX_FIGMA_PAYLOAD_BYTES: number = 128 * 1024 * 1024;
+
+const resolvePromptCompileMaxInputTokens = (
+  maxInputTokens: number | undefined,
+): number | undefined => {
+  if (maxInputTokens === undefined) return undefined;
+  return Math.max(
+    1,
+    Math.floor(maxInputTokens * PROMPT_CONTEXT_BUDGET_SAFETY_RATIO),
+  );
+};
 
 /**
  * Hard ceiling for the {@link maxFigmaPayloadBytes} override (Issue #2172).
@@ -3457,6 +3474,56 @@ export const runFigmaToQcTestCases = async (
         result: riskRankingResult.gatewayResult,
       });
     }
+
+    const largeFormCoverageTargets = resolveDeterministicCaseCountScreenTargets({
+      intent,
+      coveragePlan: coveragePlanResult.plan,
+    });
+    const useTargetedGenerationPrompt = largeFormCoverageTargets.length > 0;
+    const generationPromptIntent = useTargetedGenerationPrompt
+      ? boundIntentForLlm(intent, {
+          maxFieldsPerScreen: PROMPT_TARGETED_FIELDS_PER_SCREEN,
+          maxActionsPerScreen: PROMPT_TARGETED_ACTIONS_PER_SCREEN,
+          maxValidationsPerScreen: PROMPT_TARGETED_VALIDATIONS_PER_SCREEN,
+          maxNavigationPerScreen: PROMPT_TARGETED_NAVIGATION_PER_SCREEN,
+        })
+      : wireIntent;
+    const generationPromptVisualBatch = useTargetedGenerationPrompt
+      ? undefined
+      : promptVisualBatch;
+    const generationPromptTestDesignModel = useTargetedGenerationPrompt
+      ? buildTestDesignModel({
+          jobId: input.jobId,
+          intent: generationPromptIntent,
+          ...(semanticEvidenceSourceEnvelope !== undefined
+            ? { sourceEnvelope: semanticEvidenceSourceEnvelope }
+            : {}),
+        })
+      : testDesignModel;
+    const generationPromptWorkflowTopology = useTargetedGenerationPrompt
+      ? buildWorkflowTopology({
+          model: generationPromptTestDesignModel,
+          ...(customContextMarkdown?.bodyPlain !== undefined
+            ? { customContextMarkdown: customContextMarkdown.bodyPlain }
+            : {}),
+        })
+      : workflowTopology;
+    const generationPromptCoveragePlan = useTargetedGenerationPrompt
+      ? buildCoveragePlan({
+          model: generationPromptTestDesignModel,
+          workflowTopology: generationPromptWorkflowTopology,
+          ...(compiledSourceMixPlan !== undefined
+            ? { sourceMixPlan: compiledSourceMixPlan }
+            : {}),
+        })
+      : coveragePlanResult.plan;
+    const generationPromptRiskRanking = useTargetedGenerationPrompt
+      ? buildRiskRanking({
+          jobId: input.jobId,
+          coveragePlan: generationPromptCoveragePlan,
+        })
+      : riskRankingResult.ranking;
+
     const requestedDiversityPasses = resolveDiversityPassCount({
       generation: input.generation,
       policyRules: policyProfileRules,
@@ -3484,6 +3551,8 @@ export const runFigmaToQcTestCases = async (
     //    deterministic suffix layout.
     // FinOps-resolved per-request limits override the legacy llm.* fields.
     const effectiveMaxInputTokens = finopsLimits.maxInputTokens;
+    const promptCompileMaxInputTokens =
+      resolvePromptCompileMaxInputTokens(effectiveMaxInputTokens);
     const effectiveMaxOutputTokens =
       finopsLimits.maxOutputTokens ?? input.llm.maxOutputTokens;
     const effectiveMaxWallClockMs =
@@ -3556,9 +3625,9 @@ export const runFigmaToQcTestCases = async (
     ) => {
       const compiled = compilePrompt({
         jobId: input.jobId,
-        intent: wireIntent,
-        ...(promptVisualBatch !== undefined
-          ? { visual: promptVisualBatch }
+        intent: generationPromptIntent,
+        ...(generationPromptVisualBatch !== undefined
+          ? { visual: generationPromptVisualBatch }
           : {}),
         ...(activeAgentLessons.length > 0
           ? { agentLessons: activeAgentLessons }
@@ -3572,10 +3641,10 @@ export const runFigmaToQcTestCases = async (
         policyBundleVersion: POLICY_BUNDLE_VERSION,
         roleStepId: "test_generation",
         customerRubric,
-        testDesignModel,
-        workflowTopology,
-        coveragePlan: coveragePlanResult.plan,
-        riskRanking: riskRankingResult.ranking,
+        testDesignModel: generationPromptTestDesignModel,
+        workflowTopology: generationPromptWorkflowTopology,
+        coveragePlan: generationPromptCoveragePlan,
+        riskRanking: generationPromptRiskRanking,
         responseSchema: draftSchema,
         responseSchemaName: "workspace-dev-production-runner-draft-list-v1",
         outputSchemaHintLabel: "ProductionRunnerDraftResponse",
@@ -3596,11 +3665,11 @@ export const runFigmaToQcTestCases = async (
         ...(compiledSourceMixPlan !== undefined
           ? { sourceMixPlan: compiledSourceMixPlan }
           : {}),
-        ...(finopsLimits.maxInputTokens !== undefined
+        ...(promptCompileMaxInputTokens !== undefined
           ? {
               contextBudget: {
                 roleStepId: "test_generation",
-                maxInputTokens: finopsLimits.maxInputTokens,
+                maxInputTokens: promptCompileMaxInputTokens,
               },
             }
           : {}),
@@ -3661,6 +3730,7 @@ export const runFigmaToQcTestCases = async (
       client?: LlmGatewayClient;
       pass: GenerationPassConfig;
       extraSuffixSections?: readonly CompilePromptSuffixSection[];
+      fallbackFromDeployment?: string;
       emitPrimaryPromptCompiled: boolean;
       recordHarnessAttempt: boolean;
     }) => {
@@ -3678,7 +3748,23 @@ export const runFigmaToQcTestCases = async (
             promptHash: compiled.request.hashes.promptHash,
             schemaHash: compiled.request.hashes.schemaHash,
             maxOutputTokens: effectiveMaxOutputTokens,
+            maxInputTokens: effectiveMaxInputTokens,
+            promptCompileMaxInputTokens,
             maxWallClockMs: effectiveMaxWallClockMs,
+            maxRetries: effectiveMaxRetries,
+            promptMode: useTargetedGenerationPrompt
+              ? "targeted_large_form_slice"
+              : "standard",
+            ...(useTargetedGenerationPrompt
+              ? {
+                  promptMaxFieldsPerScreen: PROMPT_TARGETED_FIELDS_PER_SCREEN,
+                  fullCoverageTargetScreens: largeFormCoverageTargets.length,
+                  fullCoverageTargetFields: largeFormCoverageTargets.reduce(
+                    (sum, target) => sum + target.requiredElementIds.length,
+                    0,
+                  ),
+                }
+              : {}),
           },
         });
       }
@@ -3717,6 +3803,14 @@ export const runFigmaToQcTestCases = async (
               details: {
                 role: "test_generation",
                 deployment: generationClient.deployment,
+                ...(inputPass.fallbackFromDeployment !== undefined
+                  ? {
+                      fallbackFromDeployment:
+                        inputPass.fallbackFromDeployment,
+                      fallbackReason:
+                        "primary_retryable_transport_exhausted",
+                    }
+                  : {}),
                 ...(inputPass.pass.passId !== undefined
                   ? { passId: inputPass.pass.passId }
                   : {}),
@@ -3753,11 +3847,16 @@ export const runFigmaToQcTestCases = async (
                   : {}),
                 ...(llmResult.outcome === "success"
                   ? {
+                      attempt: llmResult.attempt,
                       inputTokens: llmResult.usage.inputTokens,
                       outputTokens: llmResult.usage.outputTokens,
                       finishReason: llmResult.finishReason,
                     }
-                  : { errorClass: llmResult.errorClass }),
+                  : {
+                      attempt: llmResult.attempt,
+                      errorClass: llmResult.errorClass,
+                      retryable: llmResult.retryable,
+                    }),
               },
             });
 
@@ -3909,6 +4008,87 @@ export const runFigmaToQcTestCases = async (
         });
       }
       return { compiled, cacheExecResult, pass: inputPass.pass };
+    };
+
+    const executeGenerationPassWithFallback = async (inputPass: {
+      client?: LlmGatewayClient;
+      pass: GenerationPassConfig;
+      extraSuffixSections?: readonly CompilePromptSuffixSection[];
+      fallbackFromDeployment?: string;
+      emitPrimaryPromptCompiled: boolean;
+      recordHarnessAttempt: boolean;
+    }) => {
+      try {
+        return await executeGenerationPass(inputPass);
+      } catch (err) {
+        const attemptedClient = inputPass.client ?? input.llm.client;
+        if (
+          !(err instanceof ProductionRunnerError) ||
+          err.failureClass !== "LLM_GATEWAY_FAILED" ||
+          !err.retryable ||
+          crossFamilyGeneratorClient === undefined ||
+          attemptedClient === crossFamilyGeneratorClient
+        ) {
+          throw err;
+        }
+        try {
+          return await executeGenerationPass({
+            ...inputPass,
+            client: crossFamilyGeneratorClient,
+            fallbackFromDeployment: attemptedClient.deployment,
+            emitPrimaryPromptCompiled: false,
+          });
+        } catch (fallbackErr) {
+          if (
+            !(fallbackErr instanceof ProductionRunnerError) ||
+            fallbackErr.failureClass !== "LLM_GATEWAY_FAILED" ||
+            !canUseDeterministicGeneratorFallback({
+              intent,
+              coveragePlan: coveragePlanResult.plan,
+            })
+          ) {
+            throw fallbackErr;
+          }
+          const compiled = compileGenerationPass(
+            inputPass.pass,
+            inputPass.extraSuffixSections,
+            crossFamilyGeneratorClient,
+          );
+          emit({
+            phase: "llm_gateway_response",
+            timestamp: monotonicMs(),
+            details: {
+              outcome: "deterministic_fallback",
+              role: "test_generation",
+              deployment: "deterministic-coverage-generator",
+              fallbackFromDeployment: crossFamilyGeneratorClient.deployment,
+              fallbackReason:
+                "all_generator_routes_unavailable_deterministic_coverage_applied",
+              errorClass: "gateway_error",
+            },
+          });
+          const degradedList = buildDeterministicGeneratorFallbackSeedList({
+            jobId: input.jobId,
+            generatedAt: input.generatedAt,
+            intent,
+            coveragePlan: coveragePlanResult.plan,
+            cacheKey: compiled.request.hashes.cacheKey,
+            inputHash: compiled.request.hashes.inputHash,
+            promptHash: compiled.request.hashes.promptHash,
+            schemaHash: compiled.request.hashes.schemaHash,
+            reason: fallbackErr.message,
+          });
+          return {
+            compiled,
+            pass: inputPass.pass,
+            cacheExecResult: {
+              cacheHit: false,
+              key: compiled.request.hashes.cacheKey,
+              testCases: degradedList,
+            },
+          };
+        }
+      }
     };
 
     const regenerateWithSuffixSections = async (inputRegeneration: {
@@ -4083,7 +4263,7 @@ export const runFigmaToQcTestCases = async (
 
     const generationExecutions = await Promise.all(
       generationPasses.map((pass, index) =>
-        executeGenerationPass({
+        executeGenerationPassWithFallback({
           pass,
           emitPrimaryPromptCompiled: index === 0,
           recordHarnessAttempt: diversityPasses === 1,
@@ -7498,6 +7678,13 @@ export const boundIntentForLlm = (
     caps.maxNavigationPerScreen,
     "Navigation",
   );
+  const boundedFieldIds = new Set(boundedFields.map((field) => field.id));
+  const omittedFieldLabels = intent.detectedFields
+    .filter((field) => !boundedFieldIds.has(field.id))
+    .map((field) => field.label.trim())
+    .filter((label) => label.length > 0);
+  const referencesOmittedField = (value: string): boolean =>
+    omittedFieldLabels.some((label) => value.includes(label));
 
   return {
     ...intent,
@@ -7505,7 +7692,13 @@ export const boundIntentForLlm = (
     detectedActions: boundedActions,
     detectedValidations: boundedValidations,
     detectedNavigation: boundedNavigation,
-    assumptions: [...intent.assumptions, ...truncationNotes],
+    assumptions: [
+      ...intent.assumptions.filter((note) => !referencesOmittedField(note)),
+      ...truncationNotes,
+    ],
+    openQuestions: intent.openQuestions.filter(
+      (question) => !referencesOmittedField(question),
+    ),
   };
 };
 
@@ -8115,6 +8308,87 @@ const mergeUniqueSortedIds = (
   right: Iterable<string>,
 ): string[] => [...new Set([...(left ?? []), ...right])].sort();
 
+const canonicalizeDraftCoverageIds = (
+  ids: readonly string[] | undefined,
+  index: ReadonlyMap<string, string>,
+): string[] | undefined => {
+  if (ids === undefined) return undefined;
+  const canonicalIds = new Set<string>();
+  for (const id of ids) {
+    const canonicalId = index.get(id);
+    if (canonicalId !== undefined) canonicalIds.add(canonicalId);
+  }
+  return [...canonicalIds].sort();
+};
+
+const sanitizeGeneratedListQualitySignalsForValidation = (input: {
+  readonly list: GeneratedTestCaseList;
+  readonly intent: BusinessTestIntentIr;
+}): GeneratedTestCaseList => {
+  const index = buildTraceTargetIndex(input.intent);
+  const testCases = input.list.testCases.map((testCase) => {
+    const coveredFieldIds =
+      canonicalizeDraftCoverageIds(
+        testCase.qualitySignals.coveredFieldIds,
+        index.fieldIds,
+      ) ?? [];
+    const coveredActionIds =
+      canonicalizeDraftCoverageIds(
+        testCase.qualitySignals.coveredActionIds,
+        index.actionIds,
+      ) ?? [];
+    const coveredValidationIds =
+      canonicalizeDraftCoverageIds(
+        testCase.qualitySignals.coveredValidationIds,
+        index.validationIds,
+      ) ?? [];
+    const coveredNavigationIds =
+      canonicalizeDraftCoverageIds(
+        testCase.qualitySignals.coveredNavigationIds,
+        index.navigationIds,
+      ) ?? [];
+    if (
+      coveredFieldIds.length === testCase.qualitySignals.coveredFieldIds.length &&
+      coveredFieldIds.every(
+        (id, index) => id === testCase.qualitySignals.coveredFieldIds[index],
+      ) &&
+      coveredActionIds.length ===
+        testCase.qualitySignals.coveredActionIds.length &&
+      coveredActionIds.every(
+        (id, index) => id === testCase.qualitySignals.coveredActionIds[index],
+      ) &&
+      coveredValidationIds.length ===
+        testCase.qualitySignals.coveredValidationIds.length &&
+      coveredValidationIds.every(
+        (id, index) =>
+          id === testCase.qualitySignals.coveredValidationIds[index],
+      ) &&
+      coveredNavigationIds.length ===
+        testCase.qualitySignals.coveredNavigationIds.length &&
+      coveredNavigationIds.every(
+        (id, index) =>
+          id === testCase.qualitySignals.coveredNavigationIds[index],
+      )
+    ) {
+      return testCase;
+    }
+    return {
+      ...testCase,
+      qualitySignals: {
+        ...testCase.qualitySignals,
+        coveredFieldIds,
+        coveredActionIds,
+        coveredValidationIds,
+        coveredNavigationIds,
+      },
+    };
+  });
+  const changed = testCases.some(
+    (testCase, index) => testCase !== input.list.testCases[index],
+  );
+  return changed ? { ...input.list, testCases } : input.list;
+};
+
 const screenIdFromWorkflowFieldId = (fieldId: string): string | undefined => {
   const separator = "::field::";
   const index = fieldId.indexOf(separator);
@@ -8156,6 +8430,15 @@ const workflowTransitionIdForStep = (input: {
 }): string | undefined => {
   const isNegativeFlow =
     input.type === "negative" || input.type === "validation";
+  const negativeTerminalValidationFail =
+    isNegativeFlow && input.index === input.lastIndex
+      ? workflowFieldLifecycleTransitionIdFor({
+          topology: input.topology,
+          fieldId: input.fieldId,
+          from: "in_progress",
+          to: "error",
+        })
+      : undefined;
   const positiveTerminalValidationPass =
     !isNegativeFlow && input.index === input.lastIndex
       ? workflowFieldLifecycleTransitionIdFor({
@@ -8166,6 +8449,7 @@ const workflowTransitionIdForStep = (input: {
         })
       : undefined;
   const preferred =
+    negativeTerminalValidationFail ??
     positiveTerminalValidationPass ??
     (input.index === 0
       ? workflowFieldLifecycleTransitionIdFor({
@@ -8249,12 +8533,7 @@ const enrichWorkflowTopologyCoverage = (input: {
     workflowTopology: input.workflowTopology,
     screenIds,
   });
-  const coveredFieldIds =
-    lifecycleFieldId === undefined
-      ? input.testCase.qualitySignals.coveredFieldIds
-      : mergeUniqueSortedIds(input.testCase.qualitySignals.coveredFieldIds, [
-          lifecycleFieldId,
-        ]);
+  const coveredFieldIds = input.testCase.qualitySignals.coveredFieldIds;
   const matchedActionIds = workflowActionIdsForTargets({
     topology: input.workflowTopology,
     coveredFieldIds,
@@ -8282,15 +8561,6 @@ const enrichWorkflowTopologyCoverage = (input: {
     primaryFieldId === undefined
       ? input.testCase.steps
       : input.testCase.steps.map((step, index, steps) => {
-          if (
-            step.fieldLifecycleTransitionId !== undefined &&
-            workflowTransitionIdExists(
-              input.workflowTopology,
-              step.fieldLifecycleTransitionId,
-            )
-          ) {
-            return step;
-          }
           const lastIndex = steps.length - 1;
           const transitionId = workflowTransitionIdForStep({
             topology: input.workflowTopology,
@@ -8299,6 +8569,23 @@ const enrichWorkflowTopologyCoverage = (input: {
             lastIndex,
             type: input.testCase.type,
           });
+          const shouldUseSemanticTerminalAnchor =
+            transitionId !== undefined && index === lastIndex;
+          if (
+            step.fieldLifecycleTransitionId !== undefined &&
+            workflowTransitionIdExists(
+              input.workflowTopology,
+              step.fieldLifecycleTransitionId,
+            )
+          ) {
+            if (
+              shouldUseSemanticTerminalAnchor &&
+              step.fieldLifecycleTransitionId !== transitionId
+            ) {
+              return { ...step, fieldLifecycleTransitionId: transitionId };
+            }
+            return step;
+          }
           if (transitionId === undefined) {
             const cleaned = { ...step };
             delete cleaned.fieldLifecycleTransitionId;
@@ -8462,16 +8749,19 @@ const DETERMINISTIC_CASE_COUNT_FIELD_THRESHOLD = 20 as const;
 interface DeterministicCaseCountScreenTarget {
   readonly screenId: string;
   readonly requiredElementIds: readonly string[];
-  readonly targetCount: number;
   readonly accessibilityRequired: boolean;
 }
 
 const deterministicSupplementalCaseId = (input: {
   readonly jobId: string;
-  readonly kind: "case-count-floor" | "form-a11y-floor";
+  readonly kind:
+    | "field-coverage-target"
+    | "field-negative-target"
+    | "form-a11y-floor"
+    | "screen-baseline-target";
   readonly screenId: string;
   readonly fieldId?: string;
-  readonly index: number;
+  readonly index?: number;
 }): string =>
   `tc-${createHash("sha256")
     .update(canonicalJson(input))
@@ -8483,6 +8773,9 @@ const deterministicExampleValueForField = (input: {
   readonly type: string;
 }): string => {
   const text = `${input.label} ${input.type}`.toLowerCase();
+  if (/\b(?:radio|checkbox|option|select|dropdown|auswahl)\b/u.test(text)) {
+    return input.label;
+  }
   if (/\b(?:iban)\b/u.test(text)) return "iban-wert-001";
   if (/\b(?:bic)\b/u.test(text)) return "bic-wert-001";
   if (/\b(?:e-?mail|mail)\b/u.test(text)) return "email-wert-001";
@@ -8495,11 +8788,37 @@ const deterministicExampleValueForField = (input: {
     return "ABC-12345";
   }
   if (/\b(?:plz|postleitzahl|zip)\b/u.test(text)) return "10115";
-  if (/\b(?:select|dropdown|auswahl|option)\b/u.test(text)) return "Option A";
   if (/\b(?:name|vorname|nachname|person)\b/u.test(text)) {
     return "personen-auswahl-a";
   }
   return "Fachwert-123";
+};
+
+const deterministicInvalidValueForField = (input: {
+  readonly label: string;
+  readonly type: string;
+}): string => {
+  const text = `${input.label} ${input.type}`.toLowerCase();
+  if (/\b(?:radio|checkbox|option|select|dropdown|auswahl)\b/u.test(text)) {
+    return "ungueltige-auswahl";
+  }
+  if (/\b(?:iban)\b/u.test(text)) return "DE00INVALID0000000000";
+  if (/\b(?:bic)\b/u.test(text)) return "INVALIDBIC";
+  if (/\b(?:e-?mail|mail)\b/u.test(text)) return "ungueltige-email";
+  if (/\b(?:telefon|phone|mobil)\b/u.test(text)) return "abc";
+  if (/\b(?:datum|date|geburtsdatum)\b/u.test(text)) return "31.02.2026";
+  if (
+    /\b(?:betrag|amount|preis|price|summe|saldo|rate|dauer|monate|prozent|satz)\b/u.test(
+      text,
+    )
+  ) {
+    return "-1";
+  }
+  if (/\b(?:nummer|number|id|referenz|vertrag|konto)\b/u.test(text)) {
+    return "ungueltige-nummer";
+  }
+  if (/\b(?:plz|postleitzahl|zip)\b/u.test(text)) return "ABCDE";
+  return "";
 };
 
 const figmaTraceRefForField = (
@@ -8510,6 +8829,72 @@ const figmaTraceRefForField = (
   ...(field.trace.nodeName !== undefined ? { nodeName: field.trace.nodeName } : {}),
   ...(field.trace.nodePath !== undefined ? { nodePath: field.trace.nodePath } : {}),
 });
+
+const COMMON_SHORT_CHOICE_LABEL_PATTERN =
+  /^(?:ja|nein|yes|no|true|false|wahr|falsch|netto|brutto)$/iu;
+
+const OPTION_FIELD_TYPE_PATTERN = /\b(?:radio|checkbox|option|select)\b/iu;
+
+const fieldNodeSegments = (fieldId: string): readonly string[] => {
+  const separator = "::field::";
+  const nodeId =
+    fieldId.includes(separator)
+      ? fieldId.slice(fieldId.indexOf(separator) + separator.length)
+      : fieldId;
+  return nodeId.split(";").filter((segment) => segment.length > 0);
+};
+
+const sharedPrefixLength = (
+  left: readonly string[],
+  right: readonly string[],
+): number => {
+  const limit = Math.min(left.length, right.length);
+  let index = 0;
+  while (index < limit && left[index] === right[index]) {
+    index += 1;
+  }
+  return index;
+};
+
+const shouldContextualizeFieldLabel = (
+  field: BusinessTestIntentIr["detectedFields"][number],
+): boolean =>
+  OPTION_FIELD_TYPE_PATTERN.test(field.type) ||
+  COMMON_SHORT_CHOICE_LABEL_PATTERN.test(field.label.trim());
+
+const deterministicFieldDisplayLabel = (input: {
+  readonly field: BusinessTestIntentIr["detectedFields"][number];
+  readonly fields: readonly BusinessTestIntentIr["detectedFields"][number][];
+}): string => {
+  if (!shouldContextualizeFieldLabel(input.field)) {
+    return input.field.label;
+  }
+  const targetSegments = fieldNodeSegments(input.field.id);
+  const contextualParent = input.fields
+    .filter(
+      (candidate) =>
+        candidate.id !== input.field.id &&
+        candidate.screenId === input.field.screenId &&
+        !shouldContextualizeFieldLabel(candidate),
+    )
+    .map((candidate) => ({
+      candidate,
+      sharedPrefix: sharedPrefixLength(
+        targetSegments,
+        fieldNodeSegments(candidate.id),
+      ),
+    }))
+    .filter((candidate) => candidate.sharedPrefix > 0)
+    .sort(
+      (left, right) =>
+        right.sharedPrefix - left.sharedPrefix ||
+        left.candidate.label.length - right.candidate.label.length ||
+        left.candidate.id.localeCompare(right.candidate.id),
+    )[0]?.candidate;
+  return contextualParent === undefined
+    ? input.field.label
+    : `${contextualParent.label} = ${input.field.label}`;
+};
 
 const finalizeDeterministicSupplementalCase = (input: {
   readonly testCase: GeneratedTestCase;
@@ -8526,12 +8911,12 @@ const buildDeterministicFieldCoverageCase = (input: {
   readonly jobId: string;
   readonly seedCase: GeneratedTestCase;
   readonly field: BusinessTestIntentIr["detectedFields"][number];
+  readonly fieldLabel: string;
   readonly riskClass: TestCaseRiskCategory;
-  readonly index: number;
   readonly workflowTopology: WorkflowTopology;
 }): GeneratedTestCase => {
   const value = deterministicExampleValueForField({
-    label: input.field.label,
+    label: input.fieldLabel,
     type: input.field.type,
   });
   return finalizeDeterministicSupplementalCase({
@@ -8540,13 +8925,12 @@ const buildDeterministicFieldCoverageCase = (input: {
       ...input.seedCase,
       id: deterministicSupplementalCaseId({
         jobId: input.jobId,
-        kind: "case-count-floor",
+        kind: "field-coverage-target",
         screenId: input.field.screenId,
         fieldId: input.field.id,
-        index: input.index,
       }),
-      title: `Positivfall: ${input.field.label} akzeptiert gültigen Wert`,
-      objective: `Prüft, dass das Feld „${input.field.label}“ einen gültigen fachlichen Wert akzeptiert.`,
+      title: `Positivfall: ${input.fieldLabel} akzeptiert gültigen Wert`,
+      objective: `Prüft, dass das Feld „${input.fieldLabel}“ einen gültigen fachlichen Wert akzeptiert.`,
       type: "functional",
       polarity: "positive",
       category: "positive_path",
@@ -8559,23 +8943,97 @@ const buildDeterministicFieldCoverageCase = (input: {
       riskCategory: input.riskClass,
       technique: "equivalence_partitioning",
       preconditions: ["Die zugehörige Maske ist geöffnet und eingabebereit."],
-      testData: [`${input.field.label}: ${value}`],
+      testData: [`${input.fieldLabel}: ${value}`],
       steps: [
         {
           index: 1,
-          action: `Erfasse im Feld „${input.field.label}“ den Wert „${value}“.`,
+          action: `Erfasse im Feld „${input.fieldLabel}“ den Wert „${value}“.`,
           expected: "Der Wert wird im Feld sichtbar übernommen.",
         },
         {
           index: 2,
-          action: `Verlasse das Feld „${input.field.label}“ und prüfe den Feldzustand.`,
+          action: `Verlasse das Feld „${input.fieldLabel}“ und prüfe den Feldzustand.`,
           expected:
             "Das Feld bleibt ohne Validierungsfehler im fachlich gültigen Zustand.",
         },
       ],
       expectedResults: [
-        `Das Feld „${input.field.label}“ akzeptiert den Wert „${value}“.`,
+        `Das Feld „${input.fieldLabel}“ akzeptiert den Wert „${value}“.`,
         "Es wird keine Fehlermeldung für die gültige Eingabe angezeigt.",
+      ],
+      figmaTraceRefs: [figmaTraceRefForField(input.field)],
+      assumptions: [],
+      openQuestions: [],
+      qualitySignals: {
+        ...input.seedCase.qualitySignals,
+        coveredFieldIds: [input.field.id],
+        coveredActionIds: [],
+        coveredValidationIds: [],
+        coveredNavigationIds: [],
+        confidence: Math.min(input.seedCase.qualitySignals.confidence, 0.86),
+      },
+      reviewState: "needs_review",
+    },
+  });
+};
+
+const buildDeterministicFieldNegativeCase = (input: {
+  readonly jobId: string;
+  readonly seedCase: GeneratedTestCase;
+  readonly field: BusinessTestIntentIr["detectedFields"][number];
+  readonly fieldLabel: string;
+  readonly riskClass: TestCaseRiskCategory;
+  readonly workflowTopology: WorkflowTopology;
+}): GeneratedTestCase => {
+  const invalidValue = deterministicInvalidValueForField({
+    label: input.fieldLabel,
+    type: input.field.type,
+  });
+  return finalizeDeterministicSupplementalCase({
+    workflowTopology: input.workflowTopology,
+    testCase: {
+      ...input.seedCase,
+      id: deterministicSupplementalCaseId({
+        jobId: input.jobId,
+        kind: "field-negative-target",
+        screenId: input.field.screenId,
+        fieldId: input.field.id,
+      }),
+      title: `Negativfall: ${input.fieldLabel} lehnt ungültigen Wert ab`,
+      objective: `Prüft, dass das Feld „${input.fieldLabel}“ einen ungültigen oder fehlenden Fachwert nicht akzeptiert.`,
+      type: "negative",
+      polarity: "negative",
+      category: "negative_path",
+      priority:
+        input.riskClass === "high" ||
+        input.riskClass === "regulated_data" ||
+        input.riskClass === "financial_transaction"
+          ? "p1"
+          : "p2",
+      riskCategory: input.riskClass,
+      technique: "equivalence_partitioning",
+      preconditions: ["Die zugehörige Maske ist geöffnet und eingabebereit."],
+      testData: [`${input.fieldLabel}: ${invalidValue || "<leer>"}`],
+      steps: [
+        {
+          index: 1,
+          action:
+            invalidValue.length === 0
+              ? `Lasse das Feld „${input.fieldLabel}“ leer.`
+              : `Erfasse im Feld „${input.fieldLabel}“ den ungültigen Wert „${invalidValue}“.`,
+          expected:
+            "Die Eingabe wird als fachlich ungültig erkannt oder bleibt korrekt als fehlend markiert.",
+        },
+        {
+          index: 2,
+          action: `Verlasse das Feld „${input.fieldLabel}“ und prüfe den Validierungszustand.`,
+          expected:
+            "Das Feld zeigt einen nachvollziehbaren Validierungsfehler und der Fehlerzustand bleibt erhalten.",
+        },
+      ],
+      expectedResults: [
+        `Das Feld „${input.fieldLabel}“ akzeptiert den ungültigen Wert nicht.`,
+        "Der negative Pfad endet in einem fachlich sichtbaren Validierungsfehler.",
       ],
       figmaTraceRefs: [figmaTraceRefForField(input.field)],
       assumptions: [],
@@ -8673,6 +9131,91 @@ const buildDeterministicFormAccessibilityCase = (input: {
   });
 };
 
+const buildDeterministicScreenBaselineCase = (input: {
+  readonly jobId: string;
+  readonly seedCase: GeneratedTestCase;
+  readonly screenId: string;
+  readonly screenName: string;
+  readonly fields: readonly BusinessTestIntentIr["detectedFields"][number][];
+  readonly workflowTopology: WorkflowTopology;
+}): GeneratedTestCase => {
+  const coveredFields = input.fields.slice(0, 5);
+  const fieldSummaries = coveredFields.map((field) => {
+    const fieldLabel = deterministicFieldDisplayLabel({
+      field,
+      fields: input.fields,
+    });
+    return `${fieldLabel}: ${deterministicExampleValueForField({
+      label: fieldLabel,
+      type: field.type,
+    })}`;
+  });
+  return finalizeDeterministicSupplementalCase({
+    workflowTopology: input.workflowTopology,
+    testCase: {
+      ...input.seedCase,
+      id: deterministicSupplementalCaseId({
+        jobId: input.jobId,
+        kind: "screen-baseline-target",
+        screenId: input.screenId,
+      }),
+      title: `Basisfall: ${input.screenName} mit gültigen Kerneingaben ausführen`,
+      objective:
+        "Prüft den fachlichen Standardpfad der Maske mit gültigen, repräsentativen Eingaben.",
+      type: "functional",
+      polarity: "positive",
+      category: "positive_path",
+      priority: "p1",
+      riskCategory:
+        input.seedCase.riskCategory === "low"
+          ? "medium"
+          : input.seedCase.riskCategory,
+      technique: "use_case",
+      preconditions: [`Die Maske „${input.screenName}“ ist geöffnet.`],
+      testData: fieldSummaries,
+      steps: [
+        {
+          index: 1,
+          action: `Öffne die Maske „${input.screenName}“.`,
+          expected: "Die Maske ist sichtbar und eingabebereit.",
+        },
+        {
+          index: 2,
+          action:
+            "Erfasse die repräsentativen Kerneingaben der Maske mit gültigen Fachwerten.",
+          expected:
+            "Alle eingegebenen Werte werden sichtbar übernommen und bleiben ohne Validierungsfehler.",
+        },
+        {
+          index: 3,
+          action: "Führe den fachlichen Standardpfad bis zum nächsten stabilen Zustand aus.",
+          expected:
+            "Der Vorgang bleibt im positiven fachlichen Pfad und zeigt keine unerwartete Fehlermeldung.",
+        },
+      ],
+      expectedResults: [
+        "Der Standardpfad der Maske kann mit gültigen Eingaben ausgeführt werden.",
+        "Die Maske bleibt in einem fachlich konsistenten, validierten Zustand.",
+      ],
+      figmaTraceRefs:
+        coveredFields.length === 0
+          ? [{ screenId: input.screenId }]
+          : coveredFields.map((field) => figmaTraceRefForField(field)),
+      assumptions: [],
+      openQuestions: [],
+      qualitySignals: {
+        ...input.seedCase.qualitySignals,
+        coveredFieldIds: coveredFields.map((field) => field.id),
+        coveredActionIds: [],
+        coveredValidationIds: [],
+        coveredNavigationIds: [],
+        confidence: Math.min(input.seedCase.qualitySignals.confidence, 0.85),
+      },
+      reviewState: "needs_review",
+    },
+  });
+};
+
 const resolveDeterministicCaseCountScreenTargets = (input: {
   readonly intent: BusinessTestIntentIr;
   readonly coveragePlan: CoveragePlan;
@@ -8694,30 +9237,138 @@ const resolveDeterministicCaseCountScreenTargets = (input: {
     if (requiredElementIds.length < DETERMINISTIC_CASE_COUNT_FIELD_THRESHOLD) {
       return [];
     }
-    const nonEquivalenceQuotaCount = screen.techniqueQuotas
-      .filter((quota) => quota.technique !== "equivalence_partitioning")
-      .reduce((sum, quota) => sum + Math.max(0, quota.minCount), 0);
     const accessibilityRequired = formScreenIds.has(screen.screenId);
     return [
       {
         screenId: screen.screenId,
         requiredElementIds,
-        targetCount:
-          requiredElementIds.length +
-          nonEquivalenceQuotaCount +
-          (accessibilityRequired ? 1 : 0),
         accessibilityRequired,
       },
     ];
   });
 };
 
-const countScreenAnchoredCases = (
-  testCases: readonly GeneratedTestCase[],
-  screenId: string,
-): number =>
-  testCases.filter((testCase) => testCaseAnchorsScreen(testCase, screenId))
-    .length;
+const canUseDeterministicGeneratorFallback = (input: {
+  readonly intent: BusinessTestIntentIr;
+  readonly coveragePlan: CoveragePlan;
+}): boolean =>
+  resolveDeterministicCaseCountScreenTargets(input).some(
+    (target) => target.requiredElementIds.length > 0,
+  );
+
+const buildDeterministicGeneratorFallbackSeedList = (input: {
+  readonly jobId: string;
+  readonly generatedAt: string;
+  readonly intent: BusinessTestIntentIr;
+  readonly coveragePlan: CoveragePlan;
+  readonly cacheKey: string;
+  readonly inputHash: string;
+  readonly promptHash: string;
+  readonly schemaHash: string;
+  readonly reason: string;
+}): GeneratedTestCaseList => {
+  const targets = resolveDeterministicCaseCountScreenTargets({
+    intent: input.intent,
+    coveragePlan: input.coveragePlan,
+  });
+  const firstTarget = targets[0];
+  const firstField =
+    firstTarget === undefined
+      ? undefined
+      : input.intent.detectedFields
+          .filter(
+            (field) =>
+              field.screenId === firstTarget.screenId &&
+              firstTarget.requiredElementIds.includes(field.id),
+          )
+          .sort((left, right) => left.id.localeCompare(right.id))[0];
+  const screenId =
+    firstTarget?.screenId ?? input.intent.screens[0]?.screenId ?? "screen";
+  const screenName =
+    input.intent.screens.find((screen) => screen.screenId === screenId)
+      ?.screenName ?? "Formular";
+  const fieldLabel =
+    firstField === undefined
+      ? "Formularfeld"
+      : deterministicFieldDisplayLabel({
+          field: firstField,
+          fields: input.intent.detectedFields,
+        });
+  const audit: GeneratedTestCaseAuditMetadata = {
+    jobId: input.jobId,
+    generatedAt: input.generatedAt,
+    contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+    schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+    promptTemplateVersion: TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
+    redactionPolicyVersion: REDACTION_POLICY_VERSION,
+    visualSidecarSchemaVersion: VISUAL_SIDECAR_SCHEMA_VERSION,
+    cacheHit: false,
+    cacheKey: input.cacheKey,
+    inputHash: input.inputHash,
+    promptHash: input.promptHash,
+    schemaHash: input.schemaHash,
+    truncatedInstructionCount: 0,
+  };
+  return {
+    schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+    jobId: input.jobId,
+    testCases: [
+      {
+        id: `${input.jobId}-deterministic-generator-fallback-seed`,
+        sourceJobId: input.jobId,
+        contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+        schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+        promptTemplateVersion: TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
+        title: `Technischer Fallback-Seed: ${screenName}`,
+        objective:
+          "Interner Seed fuer deterministische Coverage-Erzeugung, wenn alle Generator-Routen technisch nicht verfuegbar sind.",
+        level: "system",
+        type: "functional",
+        polarity: "positive",
+        category: "positive_path",
+        priority: "p2",
+        riskCategory: "medium",
+        technique: "use_case",
+        preconditions: [`Die Maske „${screenName}“ ist geoeffnet.`],
+        testData: [`${fieldLabel}: deterministischer Fallbackwert`],
+        steps: [
+          {
+            index: 1,
+            action:
+              "Erzeuge die fachliche Testabdeckung deterministisch aus Intent, Coverage-Plan und Workflow-Topologie.",
+            expected:
+              "Die Pipeline erzeugt stabile positive und negative Coverage-Faelle ohne einen uebergrossen Generator-Prompt.",
+          },
+        ],
+        expectedResults: [
+          "Die deterministische Coverage-Erzeugung ersetzt den technischen Generatorausfall.",
+        ],
+        figmaTraceRefs:
+          firstField === undefined
+            ? [{ screenId }]
+            : [figmaTraceRefForField(firstField)],
+        assumptions: [
+          `Generator fallback reason: ${input.reason.slice(0, 180)}`,
+        ],
+        openQuestions: [],
+        qcMappingPreview: {
+          exportable: false,
+          blockingReasons: ["internal_deterministic_fallback_seed"],
+          decisionBasis: "mapping_preview_only",
+        },
+        qualitySignals: {
+          coveredFieldIds: firstField === undefined ? [] : [firstField.id],
+          coveredActionIds: [],
+          coveredValidationIds: [],
+          coveredNavigationIds: [],
+          confidence: 0.5,
+        },
+        reviewState: "needs_review",
+        audit,
+      },
+    ],
+  };
+};
 
 const hasScreenAccessibilityCase = (
   testCases: readonly GeneratedTestCase[],
@@ -8729,19 +9380,15 @@ const hasScreenAccessibilityCase = (
       testCaseAnchorsScreen(testCase, screenId),
   );
 
-const countFieldCoverage = (
-  testCases: readonly GeneratedTestCase[],
-): Map<string, number> => {
-  const counts = new Map<string, number>();
-  for (const testCase of testCases) {
-    for (const fieldId of testCase.qualitySignals.coveredFieldIds) {
-      counts.set(fieldId, (counts.get(fieldId) ?? 0) + 1);
-    }
-  }
-  return counts;
-};
+const isModelOwnedTargetScreenCase = (input: {
+  readonly testCase: GeneratedTestCase;
+  readonly targetScreenIds: ReadonlySet<string>;
+}): boolean =>
+  input.testCase.figmaTraceRefs.some((traceRef) =>
+    input.targetScreenIds.has(traceRef.screenId),
+  );
 
-const enforceDeterministicCaseCountForValidation = (input: {
+const enforceDeterministicCoverageTargetsForValidation = (input: {
   readonly list: GeneratedTestCaseList;
   readonly intent: BusinessTestIntentIr;
   readonly coveragePlan: CoveragePlan;
@@ -8767,9 +9414,16 @@ const enforceDeterministicCaseCountForValidation = (input: {
       element.riskClass,
     ]),
   );
-  const testCases = input.list.testCases.slice();
+  const targetScreenIds = new Set(targets.map((target) => target.screenId));
+  const testCases = input.list.testCases.filter(
+    (testCase) =>
+      !isModelOwnedTargetScreenCase({
+        testCase,
+        targetScreenIds,
+      }),
+  );
   const seedCase =
-    testCases
+    input.list.testCases
       .filter((testCase) => testCase.type !== "negative")
       .sort(
         (left, right) =>
@@ -8777,7 +9431,7 @@ const enforceDeterministicCaseCountForValidation = (input: {
           left.id.localeCompare(right.id),
       )[0] ?? testCases[0]!;
 
-  let changed = false;
+  let changed = testCases.length !== input.list.testCases.length;
   let supplementalIndex = 0;
   for (const target of targets) {
     const targetFields = target.requiredElementIds
@@ -8786,6 +9440,17 @@ const enforceDeterministicCaseCountForValidation = (input: {
         return field === undefined ? [] : [field];
       })
       .sort((left, right) => left.id.localeCompare(right.id));
+    testCases.push(
+      buildDeterministicScreenBaselineCase({
+        jobId: input.list.jobId,
+        seedCase,
+        screenId: target.screenId,
+        screenName: screenNames.get(target.screenId) ?? "Formular",
+        fields: targetFields,
+        workflowTopology: input.workflowTopology,
+      }),
+    );
+    changed = true;
     if (
       target.accessibilityRequired &&
       !hasScreenAccessibilityCase(testCases, target.screenId)
@@ -8805,27 +9470,30 @@ const enforceDeterministicCaseCountForValidation = (input: {
       supplementalIndex += 1;
     }
 
-    while (
-      countScreenAnchoredCases(testCases, target.screenId) < target.targetCount
-    ) {
-      const fieldCoverage = countFieldCoverage(testCases);
-      const field = targetFields
-        .slice()
-        .sort(
-          (left, right) =>
-            (fieldCoverage.get(left.id) ?? 0) -
-              (fieldCoverage.get(right.id) ?? 0) ||
-            left.id.localeCompare(right.id),
-        )[0];
-      if (field === undefined) break;
+    for (const field of targetFields) {
+      const fieldLabel = deterministicFieldDisplayLabel({
+        field,
+        fields: input.intent.detectedFields,
+      });
+      const riskClass =
+        riskByElementId.get(`${target.screenId}::${field.id}`) ?? "medium";
       testCases.push(
         buildDeterministicFieldCoverageCase({
           jobId: input.list.jobId,
           seedCase,
           field,
-          riskClass:
-            riskByElementId.get(`${target.screenId}::${field.id}`) ?? "medium",
-          index: supplementalIndex,
+          fieldLabel,
+          riskClass,
+          workflowTopology: input.workflowTopology,
+        }),
+      );
+      testCases.push(
+        buildDeterministicFieldNegativeCase({
+          jobId: input.list.jobId,
+          seedCase,
+          field,
+          fieldLabel,
+          riskClass,
           workflowTopology: input.workflowTopology,
         }),
       );
@@ -8862,18 +9530,26 @@ const prepareGeneratedListForValidation = (input: {
       ),
     ),
   };
-  const quotaPrepared = enforceTechniqueQuotasForValidation({
+  const signalPrepared = sanitizeGeneratedListQualitySignalsForValidation({
     list: workflowPrepared,
+    intent: input.intent,
+  });
+  const quotaPrepared = enforceTechniqueQuotasForValidation({
+    list: signalPrepared,
     coveragePlan: input.coveragePlan,
     ...(input.techniqueCoverageMinimum !== undefined
       ? { techniqueCoverageMinimum: input.techniqueCoverageMinimum }
       : {}),
   });
-  return enforceDeterministicCaseCountForValidation({
+  const coveragePrepared = enforceDeterministicCoverageTargetsForValidation({
     list: quotaPrepared,
     intent: input.intent,
     coveragePlan: input.coveragePlan,
     workflowTopology: input.workflowTopology,
+  });
+  return sanitizeGeneratedListQualitySignalsForValidation({
+    list: coveragePrepared,
+    intent: input.intent,
   });
 };
 
@@ -10305,10 +10981,11 @@ const buildDraftResponseSchema = (): Record<string, unknown> => ({
                 action: { type: "string", minLength: 1 },
                 data: { type: "string" },
                 expected: { type: "string" },
-                fieldLifecycleTransitionId: {
-                  type: "string",
-                  minLength: 1,
-                },
+                // Lifecycle IDs are deterministically rewritten from
+                // WorkflowTopology before final validation. Keep the raw
+                // gateway schema tolerant so a single malformed optional
+                // model value cannot fail the whole run before enrichment.
+                fieldLifecycleTransitionId: {},
               },
             },
           },
