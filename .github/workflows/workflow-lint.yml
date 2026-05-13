@@ -1,6 +1,8 @@
 name: workflow lint
 
 on:
+  push:
+    branches: [dev, main]
   pull_request:
     branches: [dev, main]
   workflow_dispatch:
@@ -21,12 +23,12 @@ jobs:
       security-events: write
       actions: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
 
       - name: actionlint
-        uses: rhysd/actionlint@914e7df21a07ef503a81201c76d2b11c789d3fca  # v1.7.12
+        uses: rhysd/actionlint@914e7df21a07ef503a81201c76d2b11c789d3fca # v1.7.12
 
       - name: Install zizmor
         run: pip install zizmor==1.24.1 --quiet
@@ -36,7 +38,7 @@ jobs:
 
       - name: Upload SARIF to code scanning
         if: always()
-        uses: github/codeql-action/upload-sarif@e46ed2cbd01164d986452f91f178727624ae40d7  # v4
+        uses: github/codeql-action/upload-sarif@e46ed2cbd01164d986452f91f178727624ae40d7 # v4
         with:
           sarif_file: zizmor.sarif
           category: zizmor

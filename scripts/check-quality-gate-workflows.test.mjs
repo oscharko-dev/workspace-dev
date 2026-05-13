@@ -157,3 +157,33 @@ test("main source guard can satisfy the required check on main pushes", async ()
     /git diff --quiet "\$\{CHECK_SHA\}" refs\/remotes\/origin\/dev/,
   );
 });
+
+test("required branch-protection checks run on protected branch pushes", async () => {
+  const workflowLint = await readWorkflow(
+    ".github/workflows/workflow-lint.yml",
+  );
+  const pinCheck = await readWorkflow(".github/workflows/pin-check.yml");
+  const dependencyReview = await readWorkflow(
+    ".github/workflows/dependency-review.yml",
+  );
+
+  for (const workflow of [workflowLint, pinCheck, dependencyReview]) {
+    assert.match(workflow, /push:\n\s+branches: \[dev, main\]/);
+    assert.match(workflow, /pull_request:\n\s+branches: \[dev, main\]/);
+  }
+
+  assert.match(
+    dependencyReview,
+    /Review dependency changes for known advisories \(PR\)\n\s+if: github\.event_name == 'pull_request'/,
+  );
+  assert.match(
+    dependencyReview,
+    /Review dependency changes for known advisories \(push\)\n\s+if: github\.event_name == 'push'/,
+  );
+  assert.match(dependencyReview, /base-ref: \$\{\{ github\.event\.before \}\}/);
+  assert.match(dependencyReview, /head-ref: \$\{\{ github\.sha \}\}/);
+  assert.match(
+    dependencyReview,
+    /fail-on-severity: \$\{\{ github\.ref_name == 'main' && 'moderate' \|\| 'high' \}\}/,
+  );
+});
