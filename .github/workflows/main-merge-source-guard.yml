@@ -3,18 +3,41 @@ name: main merge source guard
 on:
   pull_request:
     branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
 
 jobs:
   allow-only-dev:
-    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    runs-on: ubuntu-22.04
     steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
       - name: Enforce dev as the only source branch for main
         env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
           GITHUB_HEAD_REF: ${{ github.head_ref }}
+          GITHUB_SHA: ${{ github.sha }}
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "${GITHUB_HEAD_REF}" != "dev" ]]; then
-            echo "Only branch 'dev' may merge into 'main'. Current source branch: '${GITHUB_HEAD_REF}'." >&2
+
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            if [[ "${GITHUB_HEAD_REF}" != "dev" ]]; then
+              echo "Only branch 'dev' may merge into 'main'. Current source branch: '${GITHUB_HEAD_REF}'." >&2
+              exit 1
+            fi
+            exit 0
+          fi
+
+          git fetch --no-tags --prune origin refs/heads/dev:refs/remotes/origin/dev
+          if ! git diff --quiet "${GITHUB_SHA}" refs/remotes/origin/dev; then
+            echo "Main must match origin/dev exactly. Current main commit '${GITHUB_SHA}' differs from origin/dev." >&2
             exit 1
           fi

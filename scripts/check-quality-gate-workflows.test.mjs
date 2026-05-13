@@ -117,3 +117,29 @@ test("dev summary aggregates every dev gate job", async () => {
     /for name in POLICY_GUARDS TYPECHECK UNIT_TESTS TEMPLATE_TESTS GOLDEN_AND_TI MUTATION_TESTING COVERAGE E2E SECURITY_SMOKE BUILD_AND_PUBLISH_CHECKS PERFORMANCE_WEB;/,
   );
 });
+
+test("main source guard can satisfy the required check on main pushes", async () => {
+  const workflow = await readWorkflow(
+    ".github/workflows/main-merge-source-guard.yml",
+  );
+
+  assert.match(workflow, /pull_request:\n\s+branches: \[main\]/);
+  assert.match(workflow, /push:\n\s+branches: \[main\]/);
+  assert.match(workflow, /allow-only-dev:\n\s+timeout-minutes: 5/);
+  assert.match(workflow, /persist-credentials: false/);
+  assert.match(workflow, /GITHUB_EVENT_NAME: \$\{\{ github\.event_name \}\}/);
+  assert.match(workflow, /GITHUB_HEAD_REF: \$\{\{ github\.head_ref \}\}/);
+  assert.match(
+    workflow,
+    /if \[\[ "\$\{GITHUB_EVENT_NAME\}" == "pull_request" \]\]/,
+  );
+  assert.match(workflow, /"\$\{GITHUB_HEAD_REF\}" != "dev"/);
+  assert.match(
+    workflow,
+    /git fetch --no-tags --prune origin refs\/heads\/dev:refs\/remotes\/origin\/dev/,
+  );
+  assert.match(
+    workflow,
+    /git diff --quiet "\$\{GITHUB_SHA\}" refs\/remotes\/origin\/dev/,
+  );
+});
