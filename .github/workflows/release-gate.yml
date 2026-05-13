@@ -58,6 +58,8 @@ jobs:
           pnpm run verify:workflow-install-scripts
           pnpm run verify:workflow-persist-credentials
           pnpm run verify:built-deps-allowlist
+          pnpm run verify:pnpm-supply-chain-policy
+          pnpm run verify:supply-chain-iocs
           pnpm run verify:npmrc-freshness
           pnpm run verify:lockfile-hosts
           pnpm run template:tailwind:dependency-denylist

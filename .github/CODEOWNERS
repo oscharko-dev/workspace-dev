@@ -5,9 +5,11 @@
 .github/workflows/ @oscharko-dev
 package.json @oscharko-dev
 pnpm-lock.yaml @oscharko-dev
+pnpm-workspace.yaml @oscharko-dev
 scripts/ @oscharko-dev
 .npmrc @oscharko-dev
 template/**/.npmrc @oscharko-dev
+template/**/pnpm-workspace.yaml @oscharko-dev
 
 # DORA Art. 28 + GDPR Ch. V coupling (Issue #2113).
 # The subprocessor register and the cross-border transfer ADR MUST be

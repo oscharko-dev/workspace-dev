@@ -53,12 +53,6 @@ test("integration: web performance gate policy, baseline path, and docs stay ali
   const perfRunner = await readRepoFile(
     "template/react-mui-app/scripts/perf-runner.mjs",
   );
-  const devWorkflow = await readRepoFile(
-    ".github/workflows/dev-quality-gate.yml",
-  );
-  const releaseWorkflow = await readRepoFile(
-    ".github/workflows/release-gate.yml",
-  );
   const changesetsWorkflow = await readRepoFile(
     ".github/workflows/changesets-release.yml",
   );
@@ -71,8 +65,6 @@ test("integration: web performance gate policy, baseline path, and docs stay ali
     await access(path.resolve(packageRoot, template.baseline));
   }
 
-  const devPerfJob = getJobSlice(devWorkflow, "  performance-web:\n");
-  const releasePerfJob = getJobSlice(releaseWorkflow, "  performance-web:\n");
   const changesetsPerfJob = getJobSlice(
     changesetsWorkflow,
     "  performance-web:\n",
@@ -108,9 +100,8 @@ test("integration: web performance gate policy, baseline path, and docs stay ali
     packageJson.scripts?.["release:quality-gates:publish-lifecycle"] ?? "",
     /perf:web:tailwind:baseline:gate && pnpm run perf:web:tailwind:assert/,
   );
-  assert.match(performanceDoc, /release-gate\.yml/);
   assert.match(performanceDoc, /changesets-release\.yml/);
-  assert.match(performanceDoc, /dev-quality-gate\.yml/);
+  assert.match(performanceDoc, /release:quality-gates/);
   assert.match(performanceDoc, /lcp_p75_ms/);
   assert.match(performanceDoc, /cls_p75/);
   assert.match(
@@ -118,19 +109,15 @@ test("integration: web performance gate policy, baseline path, and docs stay ali
     /path\.join\(process\.cwd\(\), "perf-baseline\.json"\)/,
   );
 
-  for (const workflow of [devPerfJob, releasePerfJob, changesetsPerfJob]) {
+  for (const workflow of [changesetsPerfJob]) {
     for (const template of templatePerformancePaths) {
       assert.match(
         workflow,
         new RegExp(`packageDir: ${template.packageDir.replaceAll("/", "\\/")}`),
       );
-      assert.match(
-        workflow,
-        new RegExp(
-          `lockfile: ${template.packageDir.replaceAll("/", "\\/")}\\/pnpm-lock\\.yaml`,
-        ),
-      );
     }
+    assert.match(workflow, /package-manager-cache: false/);
+    assert.match(workflow, /install --frozen-lockfile --ignore-scripts/);
     assert.match(workflow, /run perf:baseline/);
     assert.match(
       workflow,
@@ -141,11 +128,6 @@ test("integration: web performance gate policy, baseline path, and docs stay ali
     assert.match(workflow, /FIGMAPIPE_PERF_ALLOW_BASELINE_BOOTSTRAP: "false"/);
   }
 
-  assert.match(devPerfJob, /continue-on-error: true/);
-  assert.match(devPerfJob, /warn-only/);
-
-  assert.doesNotMatch(releasePerfJob, /continue-on-error: true/);
   assert.doesNotMatch(changesetsPerfJob, /continue-on-error: true/);
-  assert.doesNotMatch(releasePerfJob, /warn-only/);
   assert.doesNotMatch(changesetsPerfJob, /warn-only/);
 });

@@ -11,7 +11,7 @@ The bundled React templates ship with release-grade web performance gates. Each 
 - Ephemeral CI and local artifacts: `template/<template-name>/artifacts/performance`
 - Assertion runner: `template/<template-name>/scripts/perf-runner.mjs`
 
-The committed baseline is the canonical release reference. CI keeps `FIGMAPIPE_PERF_ALLOW_BASELINE_BOOTSTRAP=false`, so missing baselines fail instead of being silently recreated during release or dev gate runs.
+The committed baseline is the canonical release reference. Blocking release checks keep `FIGMAPIPE_PERF_ALLOW_BASELINE_BOOTSTRAP=false`, so missing baselines fail instead of being silently recreated during release or publish-lifecycle runs.
 The Tailwind template uses Playwright browser-timing collection so the default
 template does not ship Lighthouse's transitive telemetry SDK packages.
 
@@ -22,8 +22,9 @@ template does not ship Lighthouse's transitive telemetry SDK packages.
 - `pnpm --dir template/react-tailwind-app run perf:baseline` refreshes the approved Tailwind template baseline.
 - `pnpm --dir template/react-tailwind-app run perf:assert` is the authoritative Tailwind template assertion command.
 - `pnpm run perf:web:tailwind:baseline:gate` captures a Tailwind measured-baseline artifact for release gates without overwriting the committed baseline.
-- `.github/workflows/dev-quality-gate.yml` keeps the matrixed `performance-web` job non-blocking so teams can iterate without the dev gate failing on every approved baseline refresh.
-- `.github/workflows/release-gate.yml` and `.github/workflows/changesets-release.yml` treat the same assertions as blocking.
+- `pnpm run release:quality-gates` and `pnpm run release:quality-gates:publish-lifecycle` keep Tailwind template performance as part of the full local release profile.
+- `.github/workflows/changesets-release.yml` runs the matrixed `performance-web` job as a blocking publish-path check for both React templates.
+- `.github/workflows/dev-quality-gate.yml` and `.github/workflows/release-gate.yml` intentionally do not run browser performance benchmarks; they stay fast branch gates for supply-chain policy, lint, typecheck, build, and focused runtime smoke coverage.
 - The MUI template currently covers `["/","/overview","/checkout"]`; the Tailwind seed covers `["/"]` until the default pipeline emits routed output. Both templates use the `["mobile","desktop"]` profile matrix.
 
 Workflow gates first run `perf:baseline` with

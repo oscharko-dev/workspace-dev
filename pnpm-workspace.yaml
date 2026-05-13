@@ -1,7 +1,9 @@
 packages:
   - .
 
-minimumReleaseAge: 4320
+minimumReleaseAge: 10080
+minimumReleaseAgeExclude:
+  - fast-uri
 strictDepBuilds: true
 allowBuilds: {}
 dangerouslyAllowAllBuilds: false

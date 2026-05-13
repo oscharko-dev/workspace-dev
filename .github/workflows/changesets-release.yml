@@ -58,6 +58,12 @@ jobs:
       - name: Enforce pnpm built dependency allowlist
         run: pnpm run verify:built-deps-allowlist
 
+      - name: Enforce pnpm supply-chain policy
+        run: pnpm run verify:pnpm-supply-chain-policy
+
+      - name: Scan active supply-chain IOCs
+        run: pnpm run verify:supply-chain-iocs
+
       - name: Enforce dependency freshness policy
         run: pnpm run verify:npmrc-freshness
 
@@ -428,6 +434,10 @@ jobs:
       - name: Release summary
         if: always()
         shell: bash
+        env:
+          GITHUB_RELEASE_TAG: ${{ steps.github_release.outputs.tag }}
+          GITHUB_RELEASE_URL: ${{ steps.github_release.outputs.url }}
+          PUBLISH_AUTH_MODE: ${{ steps.npm_auth_mode.outputs.auth_mode }}
         run: |
           CURRENT_VERSION="$(node -p "require('./package.json').version")"
           if [[ "$CURRENT_VERSION" == *-* ]]; then
@@ -443,8 +453,8 @@ jobs:
             echo "|------|-------|"
             echo "| Version (current package.json) | \`${CURRENT_VERSION}\` |"
             echo "| npm tag lane | \`${CURRENT_NPM_TAG}\` |"
-            echo "| Publish auth mode | \`${{ steps.npm_auth_mode.outputs.auth_mode }}\` |"
+            echo "| Publish auth mode | \`${PUBLISH_AUTH_MODE}\` |"
             echo "| Provenance path | \`pnpm run release:changesets:publish\` |"
-            echo "| GitHub release tag | \`${{ steps.github_release.outputs.tag }}\` |"
-            echo "| GitHub release URL | ${{ steps.github_release.outputs.url }} |"
+            echo "| GitHub release tag | \`${GITHUB_RELEASE_TAG}\` |"
+            echo "| GitHub release URL | ${GITHUB_RELEASE_URL} |"
           } >> "$GITHUB_STEP_SUMMARY"

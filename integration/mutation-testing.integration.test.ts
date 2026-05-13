@@ -117,24 +117,19 @@ test("integration: mutation-testing config, docs, and workflows stay aligned", a
   assert.match(contributingDoc, /Current baseline mutation score:/i);
   assert.match(mutationSummaryScript, /"src\/job-engine\/paste-tree-diff\.ts"/);
 
-  for (const workflow of [devQualityWorkflow, mutationNightlyWorkflow]) {
-    const mutationJobBlock = extractMutationTestingJobBlock(workflow);
-    assert.match(workflow, /\n  mutation-testing:\n/);
-    assert.doesNotMatch(mutationJobBlock, /continue-on-error:\s*true/);
-    assert.match(mutationJobBlock, /Run mutation baseline \(blocking >=58%\)/);
-    assert.match(mutationJobBlock, /pnpm run test:mutation/);
-    assert.match(mutationJobBlock, /print-mutation-report-summary\.mjs/);
-    assert.match(mutationJobBlock, /artifacts\/testing\/mutation/);
-  }
-
-  assert.match(
-    devQualityWorkflow,
-    /\n  mutation-testing:\n    needs: \[setup\]/,
-  );
-  assert.match(
+  const mutationJobBlock = extractMutationTestingJobBlock(
     mutationNightlyWorkflow,
-    /ref: dev/,
   );
+  assert.match(mutationNightlyWorkflow, /\n  mutation-testing:\n/);
+  assert.doesNotMatch(mutationJobBlock, /continue-on-error:\s*true/);
+  assert.match(mutationJobBlock, /Run mutation baseline \(blocking >=58%\)/);
+  assert.match(mutationJobBlock, /pnpm run test:mutation/);
+  assert.match(mutationJobBlock, /print-mutation-report-summary\.mjs/);
+  assert.match(mutationJobBlock, /artifacts\/testing\/mutation/);
+
+  assert.doesNotMatch(devQualityWorkflow, /\n  mutation-testing:\n/);
+  assert.doesNotMatch(devQualityWorkflow, /pnpm run test:mutation/);
+  assert.match(mutationNightlyWorkflow, /ref: dev/);
   assert.doesNotMatch(releaseGateWorkflow, /\n  mutation-testing:\n/);
   assert.doesNotMatch(releaseGateWorkflow, /pnpm run test:mutation/);
   assert.doesNotMatch(changesetsReleaseWorkflow, /\n  mutation-testing:\n/);

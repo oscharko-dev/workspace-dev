@@ -1,2 +1,10 @@
 packages:
   - .
+
+minimumReleaseAge: 4320
+strictDepBuilds: true
+allowBuilds: {}
+dangerouslyAllowAllBuilds: false
+blockExoticSubdeps: true
+trustPolicy: no-downgrade
+trustPolicyIgnoreAfter: 525600

@@ -1,8 +1,8 @@
 name: PR auto-close warning
 
-"on":
-  pull_request_target:
-    types: [opened, edited, reopened, synchronize, closed]
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
@@ -10,20 +10,19 @@ concurrency:
 
 permissions:
   contents: read
-  issues: write
-  pull-requests: write
 
 jobs:
   warn-missing-autoclose-keywords:
     name: Warn about issue references without auto-close keywords
     runs-on: ubuntu-22.04
     steps:
-      - name: Checkout trusted base repository code
+      - name: Checkout trusted base repository helper
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
+          ref: ${{ github.event.pull_request.base.sha }}
 
-      - name: Post or update warning comment
+      - name: Emit warning summary
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
@@ -35,9 +34,8 @@ jobs:
             );
             const { runPrAutocloseWarning } = await import(pathToFileURL(helperPath).href);
 
-            // Contract implemented by scripts/pr-autoclose-warning.mjs:
-            // core.warning(
-            // github.rest.issues.createComment
-            // github.rest.issues.updateComment
-            // github.rest.issues.deleteComment
-            await runPrAutocloseWarning({ core, context, github });
+            await runPrAutocloseWarning({
+              core,
+              context,
+              commentMode: "summary",
+            });

@@ -47,6 +47,8 @@ jobs:
           pnpm run verify:workflow-install-scripts
           pnpm run verify:workflow-persist-credentials
           pnpm run verify:built-deps-allowlist
+          pnpm run verify:pnpm-supply-chain-policy
+          pnpm run verify:supply-chain-iocs
           pnpm run verify:npmrc-freshness
           pnpm run verify:lockfile-hosts
           pnpm run verify:audit
@@ -60,9 +62,11 @@ jobs:
           pnpm run ui:lint
 
       - name: Contract and governance drift policy
+        env:
+          BASE_REF: ${{ github.base_ref || 'dev' }}
         run: |
           pnpm run verify:prompt-template-version
-          pnpm run verify:contract-changelog -- --base "origin/${{ github.base_ref }}" --head HEAD --merge-base
+          pnpm run verify:contract-changelog -- --base "origin/${BASE_REF}" --head HEAD --merge-base
           pnpm run model-card:check
 
       - name: Typecheck

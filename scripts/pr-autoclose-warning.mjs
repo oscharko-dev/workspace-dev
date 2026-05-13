@@ -32,7 +32,9 @@ export function findMissingAutoCloseReferences({ title = "", body = "" }) {
 }
 
 export function buildAutoCloseWarningComment(missingIssueNumbers) {
-  const references = missingIssueNumbers.map((issueNumber) => `#${issueNumber}`);
+  const references = missingIssueNumbers.map(
+    (issueNumber) => `#${issueNumber}`,
+  );
   const bullets = references.map((reference) => `- ${reference}`).join("\n");
 
   return `${PR_AUTOCLOSE_WARNING_MARKER}
@@ -44,7 +46,12 @@ Missing auto-close keywords for:
 ${bullets}`;
 }
 
-export async function runPrAutocloseWarning({ core, context, github }) {
+export async function runPrAutocloseWarning({
+  core,
+  context,
+  github,
+  commentMode = "write",
+}) {
   const pr = context.payload.pull_request;
   if (!pr) {
     core.notice("No pull request payload found; skipping.");
@@ -63,6 +70,41 @@ export async function runPrAutocloseWarning({ core, context, github }) {
   const referencedIssues = extractIssueReferences(
     `${pr.title ?? ""}\n\n${pr.body ?? ""}`,
   );
+
+  if (commentMode === "summary") {
+    if (referencedIssues.length === 0) {
+      core.notice("No #N issue references found in PR title/body.");
+      return;
+    }
+
+    if (missingAutoClose.length === 0) {
+      core.notice("All referenced issues include an auto-close keyword.");
+      return;
+    }
+
+    const missingList = missingAutoClose
+      .map((issueNumber) => `#${issueNumber}`)
+      .join(", ");
+    const commentBody = buildAutoCloseWarningComment(missingAutoClose).replace(
+      `${PR_AUTOCLOSE_WARNING_MARKER}\n`,
+      "",
+    );
+
+    await core.summary
+      .addHeading("PR auto-close warning")
+      .addRaw(`${commentBody}\n`)
+      .write();
+    core.warning(
+      `PR references ${missingList} without an auto-close keyword. Prefer 'Fixes #N', 'Closes #N', or 'Resolves #N'.`,
+    );
+    return;
+  }
+
+  if (!github) {
+    throw new TypeError(
+      "github client is required when commentMode is 'write'",
+    );
+  }
 
   const comments = await github.paginate(github.rest.issues.listComments, {
     owner: context.repo.owner,

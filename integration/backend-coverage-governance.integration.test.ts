@@ -16,9 +16,6 @@ test("integration: backend coverage gate keeps core import and governance paths 
     scripts?: Record<string, string>;
   };
   const pipelineDoc = await readRepoFile("PIPELINE.md");
-  const devQualityWorkflow = await readRepoFile(
-    ".github/workflows/dev-quality-gate.yml",
-  );
   const releaseGateWorkflow = await readRepoFile(
     ".github/workflows/release-gate.yml",
   );
@@ -27,15 +24,9 @@ test("integration: backend coverage gate keeps core import and governance paths 
   );
 
   const coverageScript = packageJson.scripts?.["test:coverage"] ?? "";
-  assert.match(
-    coverageScript,
-    /--all --src src --include "src\/\*\*\/\*\.ts"/,
-  );
+  assert.match(coverageScript, /--all --src src --include "src\/\*\*\/\*\.ts"/);
   assert.match(coverageScript, /c8(?:\.js)?/);
-  assert.match(
-    coverageScript,
-    /node scripts\/check-coverage-thresholds\.mjs$/,
-  );
+  assert.match(coverageScript, /node scripts\/check-coverage-thresholds\.mjs$/);
   assert.doesNotMatch(coverageScript, /--exclude "src\/job-engine\.ts"/);
   assert.doesNotMatch(
     coverageScript,
@@ -47,10 +38,7 @@ test("integration: backend coverage gate keeps core import and governance paths 
     pipelineDoc,
     /src\/job-engine\.ts.*src\/job-engine\/figma-source\.ts/s,
   );
-  assert.match(
-    pipelineDoc,
-    /stay inside that global backend gate/i,
-  );
+  assert.match(pipelineDoc, /stay inside that global backend gate/i);
   assert.match(
     pipelineDoc,
     /lines >= 90%.*statements >= 90%.*functions >= 90%.*branches >= 85%/is,
@@ -60,11 +48,9 @@ test("integration: backend coverage gate keeps core import and governance paths 
     /must be documented here with an explicit rationale, owner, and retirement condition/i,
   );
 
-  for (const workflow of [
-    devQualityWorkflow,
-    releaseGateWorkflow,
-    changesetsReleaseWorkflow,
-  ]) {
-    assert.match(workflow, /pnpm run test:coverage/);
-  }
+  const releaseQualityScript =
+    packageJson.scripts?.["release:quality-gates"] ?? "";
+  assert.match(releaseQualityScript, /pnpm run test:coverage/);
+  assert.match(changesetsReleaseWorkflow, /pnpm run test:coverage/);
+  assert.doesNotMatch(releaseGateWorkflow, /pnpm run test:coverage/);
 });

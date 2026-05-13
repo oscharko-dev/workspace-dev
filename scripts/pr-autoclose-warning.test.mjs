@@ -6,6 +6,7 @@ import {
   extractAutoCloseReferences,
   extractIssueReferences,
   findMissingAutoCloseReferences,
+  runPrAutocloseWarning,
 } from "./pr-autoclose-warning.mjs";
 
 test("extractIssueReferences deduplicates bare issue references", () => {
@@ -38,4 +39,48 @@ test("buildAutoCloseWarningComment includes marker and missing issues", () => {
   assert.match(body, new RegExp(PR_AUTOCLOSE_WARNING_MARKER));
   assert.match(body, /- #7/);
   assert.match(body, /- #12/);
+});
+
+test("runPrAutocloseWarning summary mode emits warning without github writes", async () => {
+  const warnings = [];
+  const summaryLines = [];
+  const core = {
+    notice() {},
+    warning(message) {
+      warnings.push(message);
+    },
+    summary: {
+      addHeading(value) {
+        summaryLines.push(`# ${value}`);
+        return this;
+      },
+      addRaw(value) {
+        summaryLines.push(value);
+        return this;
+      },
+      async write() {},
+    },
+  };
+
+  await runPrAutocloseWarning({
+    core,
+    context: {
+      payload: {
+        action: "opened",
+        pull_request: {
+          title: "Addresses #7",
+          body: "Also relates to #12.",
+        },
+      },
+    },
+    commentMode: "summary",
+  });
+
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /#7, #12/);
+  assert.match(summaryLines.join("\n"), /PR auto-close warning/);
+  assert.doesNotMatch(
+    summaryLines.join("\n"),
+    /workspace-dev:pr-autoclose-warning/,
+  );
 });

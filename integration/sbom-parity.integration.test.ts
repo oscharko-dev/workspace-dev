@@ -15,29 +15,38 @@ test("integration: SBOM parity gate stays wired into scripts and workflows", asy
   const packageJson = JSON.parse(await readRepoFile("package.json")) as {
     scripts?: Record<string, string>;
   };
-  const devQualityWorkflow = await readRepoFile(".github/workflows/dev-quality-gate.yml");
-  const releaseGateWorkflow = await readRepoFile(".github/workflows/release-gate.yml");
-  const changesetsReleaseWorkflow = await readRepoFile(".github/workflows/changesets-release.yml");
+  const devQualityWorkflow = await readRepoFile(
+    ".github/workflows/dev-quality-gate.yml",
+  );
+  const releaseGateWorkflow = await readRepoFile(
+    ".github/workflows/release-gate.yml",
+  );
+  const changesetsReleaseWorkflow = await readRepoFile(
+    ".github/workflows/changesets-release.yml",
+  );
 
   assert.equal(
     packageJson.scripts?.["verify:sbom:parity"],
-    "pnpm run sbom:profiles && node scripts/check-sbom-parity.mjs"
+    "pnpm run sbom:profiles && node scripts/check-sbom-parity.mjs",
   );
-  assert.match(packageJson.scripts?.["release:quality-gates"] ?? "", /pnpm run verify:sbom:parity/);
-  assert.match(packageJson.scripts?.["release:quality-gates"] ?? "", /pnpm run verify:profile-gates/);
+  assert.match(
+    packageJson.scripts?.["release:quality-gates"] ?? "",
+    /pnpm run verify:sbom:parity/,
+  );
+  assert.match(
+    packageJson.scripts?.["release:quality-gates"] ?? "",
+    /pnpm run verify:profile-gates/,
+  );
   assert.match(
     packageJson.scripts?.["release:quality-gates:publish-lifecycle"] ?? "",
-    /pnpm run verify:profile-gates/
+    /pnpm run verify:profile-gates/,
   );
 
-  for (const workflow of [devQualityWorkflow, releaseGateWorkflow]) {
-    assert.match(workflow, /Run profile release gates/);
-    assert.match(workflow, /pnpm run verify:profile-gates/);
-  }
+  assert.doesNotMatch(devQualityWorkflow, /Run profile release gates/);
+  assert.doesNotMatch(devQualityWorkflow, /pnpm run verify:profile-gates/);
+  assert.doesNotMatch(releaseGateWorkflow, /Run profile release gates/);
+  assert.doesNotMatch(releaseGateWorkflow, /pnpm run verify:profile-gates/);
 
   assert.match(changesetsReleaseWorkflow, /Run profile release gates/);
-  assert.match(
-    changesetsReleaseWorkflow,
-    /pnpm run verify:profile-gates/
-  );
+  assert.match(changesetsReleaseWorkflow, /pnpm run verify:profile-gates/);
 });

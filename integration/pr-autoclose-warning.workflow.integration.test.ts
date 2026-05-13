@@ -13,18 +13,22 @@ test("integration: PR auto-close warning workflow stays warning-only and keyword
     "utf8",
   );
 
-  assert.match(workflow, /pull_request_target:/);
-  assert.match(workflow, /types: \[opened, edited, reopened, synchronize, closed\]/);
-  assert.match(workflow, /pull-requests: write/);
+  assert.match(workflow, /pull_request:/);
+  assert.doesNotMatch(workflow, /pull_request_target:/);
+  assert.match(workflow, /types: \[opened, edited, reopened, synchronize\]/);
+  assert.match(workflow, /contents: read/);
+  assert.doesNotMatch(workflow, /pull-requests: write/);
+  assert.doesNotMatch(workflow, /issues: write/);
   assert.match(workflow, /actions\/checkout@(?:v6|[0-9a-f]{40})\s*#\s*v6/);
   assert.match(
     workflow,
-    /actions\/github-script@(?:v9|[0-9a-f]{40})\s*#\s*v9/,
+    /ref: \$\{\{ github\.event\.pull_request\.base\.sha \}\}/,
   );
-  assert.match(workflow, /core\.warning\(/);
-  assert.match(workflow, /issues\.createComment/);
-  assert.match(workflow, /issues\.updateComment/);
-  assert.match(workflow, /issues\.deleteComment/);
+  assert.match(workflow, /actions\/github-script@(?:v9|[0-9a-f]{40})\s*#\s*v9/);
+  assert.match(workflow, /commentMode: "summary"/);
+  assert.doesNotMatch(workflow, /issues\.createComment/);
+  assert.doesNotMatch(workflow, /issues\.updateComment/);
+  assert.doesNotMatch(workflow, /issues\.deleteComment/);
   assert.match(workflow, /scripts\/pr-autoclose-warning\.mjs/);
   assert.doesNotMatch(workflow, /core\.setFailed\(/);
 });
@@ -39,8 +43,5 @@ test("integration: PR auto-close warning helper keeps GitHub keyword matching lo
   assert.equal(helper.includes("fix(?:e[sd])?"), true);
   assert.equal(helper.includes("resolve[sd]?"), true);
   assert.match(helper, /PR_AUTOCLOSE_WARNING_MARKER/);
-  assert.equal(
-    helper.includes("without a GitHub auto-close keyword"),
-    true,
-  );
+  assert.equal(helper.includes("without a GitHub auto-close keyword"), true);
 });

@@ -52,6 +52,8 @@ test("main release gate keeps required check names while staying fast", async ()
   const quality = extractJob(workflow, "quality", "fips-smoke");
   assert.match(quality, /timeout-minutes: 25/);
   assert.match(quality, /Supply-chain and workflow policy/);
+  assert.match(quality, /pnpm run verify:pnpm-supply-chain-policy/);
+  assert.match(quality, /pnpm run verify:supply-chain-iocs/);
   assert.match(quality, /Repository policy/);
   assert.match(quality, /Focused runtime smoke tests/);
   assertNoHeavyBlockingCommands(quality, "release quality job");
@@ -91,6 +93,8 @@ test("PR quality gate remains fast for normal dev iteration", async () => {
   assert.match(workflow, /pull_request:\n\s+branches: \[dev\]/);
   assert.match(workflow, /timeout-minutes: 30/);
   assert.match(workflow, /Workflow and supply-chain policy/);
+  assert.match(workflow, /pnpm run verify:pnpm-supply-chain-policy/);
+  assert.match(workflow, /pnpm run verify:supply-chain-iocs/);
   assert.match(workflow, /Focused tests/);
   assertNoHeavyBlockingCommands(workflow, "PR quality gate");
 });
