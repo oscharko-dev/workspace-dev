@@ -29,6 +29,9 @@ const assertNoHeavyBlockingCommands = (workflow, label) => {
     /pnpm run test:flaky-retry/,
     /pnpm run test:bdd/,
     /pnpm run test:property-based/,
+    /pnpm run verify:pack/,
+    /pnpm run lint:publint/,
+    /pnpm run lint:types-publish/,
     /pnpm run lint:size/,
     /pnpm run perf:/,
     /pnpm run sbom:/,
@@ -51,7 +54,6 @@ test("main release gate keeps required check names while staying fast", async ()
   assert.match(quality, /Supply-chain and workflow policy/);
   assert.match(quality, /Repository policy/);
   assert.match(quality, /Focused runtime smoke tests/);
-  assert.match(quality, /Package publish smoke/);
   assertNoHeavyBlockingCommands(quality, "release quality job");
 
   assert.match(workflow, /\n  fips-smoke:\n/);

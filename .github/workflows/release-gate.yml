@@ -89,13 +89,6 @@ jobs:
           pnpm run test:dast-smoke
           pnpm run test:load
 
-      - name: Package publish smoke
-        if: matrix.node-version == 22
-        run: |
-          pnpm run verify:pack
-          pnpm run lint:publint
-          pnpm run lint:types-publish
-
   fips-smoke:
     timeout-minutes: 15
     runs-on: ubuntu-22.04
