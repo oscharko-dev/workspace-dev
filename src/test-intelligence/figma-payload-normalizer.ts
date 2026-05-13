@@ -61,7 +61,7 @@ const INPUT_HINT_RE =
 const BUTTON_HINT_RE =
   /\b(button|cta|submit|next|weiter|speichern|save|ok|bestätigen|confirm|abbrechen|cancel|zurück|back|navigate|link)\b/iu;
 const RADIO_HINT_RE =
-  /\b(radio|option|choice|brutto|netto|einmalig|monatlich|jährlich|ja|nein)\b|to?oggle(?:button|buttongroup)?|toogle(?:button|buttongroup)?/iu;
+  /(?:^|[\s<_/.-])(?:radio|option|choice|brutto|netto|einmalig|monatlich|jährlich|ja|nein|(?:toggle|toogle)(?:[-_\s]?button(?:[-_\s]?group)?)?)(?=$|[\s>_/.-])/iu;
 const SELECT_HINT_RE =
   /\b(select|dropdown|combo|auswahl|auswahlfeld|picker)\b/iu;
 const RESULT_HINT_RE =

@@ -1,6 +1,6 @@
 name: PR auto-close warning
 
-on:
+"on":
   pull_request_target:
     types: [opened, edited, reopened, synchronize, closed]
 
@@ -28,11 +28,12 @@ jobs:
         with:
           script: |
             const path = require("node:path");
+            const { pathToFileURL } = require("node:url");
             const helperPath = path.join(
               process.env.GITHUB_WORKSPACE,
               "scripts/pr-autoclose-warning.mjs",
             );
-            const { runPrAutocloseWarning } = await import(helperPath);
+            const { runPrAutocloseWarning } = await import(pathToFileURL(helperPath).href);
 
             // Contract implemented by scripts/pr-autoclose-warning.mjs:
             // core.warning(

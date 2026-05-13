@@ -56,7 +56,7 @@ for **Issue #2321**.
 - Template performance runners now use material absolute-delta floors so
   sub-100ms browser timing jitter does not fail deterministic CI checks.
 
-### Migration
+### Migration (Issue #2321)
 
 No persisted artifact migration is required. Existing artifacts remain
 readable; new runs receive more stable prompt/cache inputs and therefore

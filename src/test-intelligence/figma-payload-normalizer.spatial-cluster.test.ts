@@ -132,6 +132,31 @@ test("toggle button descendant TEXT is classified as a selectable option", () =>
   assert.equal(screen.nodes[0]?.text, "Investitionsfinanzierung");
 });
 
+test("toggle hint does not match substrings inside unrelated names", () => {
+  const input = buildScreen([
+    node({
+      id: "shell",
+      name: "AutoToggleableContainer",
+      type: "INSTANCE",
+      absoluteBoundingBox: { x: 100, y: 100, width: 600, height: 120 },
+      children: [
+        node({
+          id: "shell-copy",
+          name: "Typography",
+          type: "TEXT",
+          characters: "Produktinformation",
+          absoluteBoundingBox: { x: 120, y: 140, width: 180, height: 20 },
+        }),
+      ],
+    }),
+  ]);
+
+  const result = normalizeFigmaFileToIntentInput(input);
+  const screen = result.screens[0]!;
+  assert.notEqual(screen.nodes[0]?.nodeType, "RADIO_OPTION");
+  assert.notEqual(screen.nodes[0]?.semanticKind, "radio_option");
+});
+
 test("nested Button → ChildButton → ChildText: deepest button wins", () => {
   const input = buildScreen([
     node({
