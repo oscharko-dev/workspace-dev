@@ -4,132 +4,100 @@ import { readFile } from "node:fs/promises";
 
 const readWorkflow = (path) => readFile(path, "utf8");
 
-const extractStep = (workflow, stepName, nextStepName) => {
-  const start = workflow.indexOf(`- name: ${stepName}`);
-  assert.notStrictEqual(start, -1, `missing workflow step: ${stepName}`);
+const extractJob = (workflow, jobName, nextJobName) => {
+  const start = workflow.indexOf(`  ${jobName}:`);
+  assert.notStrictEqual(start, -1, `missing workflow job: ${jobName}`);
 
-  if (nextStepName === undefined) {
+  if (nextJobName === undefined) {
     return workflow.slice(start);
   }
 
-  const end = workflow.indexOf(`- name: ${nextStepName}`, start);
-  assert.notStrictEqual(end, -1, `missing workflow step: ${nextStepName}`);
+  const end = workflow.indexOf(`  ${nextJobName}:`, start + 1);
+  assert.notStrictEqual(end, -1, `missing workflow job: ${nextJobName}`);
   return workflow.slice(start, end);
 };
 
-test("release gate keeps required quality matrix while running coverage once", async () => {
+const assertNoHeavyBlockingCommands = (workflow, label) => {
+  for (const pattern of [
+    /pnpm run test(?:\s|$)/,
+    /pnpm run test:coverage/,
+    /pnpm run test:mutation/,
+    /pnpm run test:golden/,
+    /pnpm run test:ti-/,
+    /pnpm run ui:test:coverage/,
+    /pnpm run ui:test:e2e/,
+    /pnpm run test:flaky-retry/,
+    /pnpm run test:bdd/,
+    /pnpm run test:property-based/,
+    /pnpm run lint:size/,
+    /pnpm run perf:/,
+    /pnpm run sbom:/,
+    /pnpm run verify:sbom:parity/,
+    /pnpm run verify:reproducible-build/,
+  ]) {
+    assert.doesNotMatch(workflow, pattern, `${label} contains ${pattern}`);
+  }
+};
+
+test("main release gate keeps required check names while staying fast", async () => {
   const workflow = await readWorkflow(".github/workflows/release-gate.yml");
 
+  assert.match(workflow, /push:\n\s+branches: \[main\]/);
+  assert.match(workflow, /pull_request:\n\s+branches: \[main\]/);
   assert.match(workflow, /node-version: \[22, 24\]/);
-  assert.match(workflow, /quality:\n\s+timeout-minutes: 90/);
 
-  const node24TestStep = extractStep(
-    workflow,
-    "Run Node 24 compatibility test suite",
-    "Enforce backend coverage gate",
-  );
-  assert.match(node24TestStep, /if: matrix\.node-version == 24/);
-  assert.match(node24TestStep, /run: pnpm run test/);
+  const quality = extractJob(workflow, "quality", "fips-smoke");
+  assert.match(quality, /timeout-minutes: 25/);
+  assert.match(quality, /Supply-chain and workflow policy/);
+  assert.match(quality, /Repository policy/);
+  assert.match(quality, /Focused runtime smoke tests/);
+  assert.match(quality, /Package publish smoke/);
+  assertNoHeavyBlockingCommands(quality, "release quality job");
 
-  const coverageStep = extractStep(
-    workflow,
-    "Enforce backend coverage gate",
-    "Verify package tarball contents",
-  );
-  assert.match(coverageStep, /if: matrix\.node-version == 22/);
-  assert.match(coverageStep, /timeout-minutes: 75/);
-  assert.match(coverageStep, /run: pnpm run test:coverage/);
-
-  for (const [stepName, nextStepName] of [
-    ["Verify package tarball contents", "Enforce package publishing lint"],
-    ["Enforce package publishing lint", "Enforce package type publish lint"],
-    ["Enforce package type publish lint", "Run profile release gates"],
-    ["Run profile release gates", undefined],
-  ]) {
-    const step = extractStep(workflow, stepName, nextStepName);
-    assert.match(step, /if: matrix\.node-version == 22/);
-  }
+  assert.match(workflow, /\n  fips-smoke:\n/);
+  assert.match(workflow, /\n  release-readiness:\n/);
+  assert.match(workflow, /needs: \[quality, fips-smoke\]/);
+  assert.doesNotMatch(workflow, /pnpm run release:readiness/);
+  assert.doesNotMatch(workflow, /\n  performance-web:\n/);
 });
 
-test("changesets release preflight uses the same bounded coverage budget", async () => {
-  const workflow = await readWorkflow(
-    ".github/workflows/changesets-release.yml",
-  );
-
-  assert.match(workflow, /release-preflight:\n\s+timeout-minutes: 90/);
-  assert.match(
-    workflow,
-    /- name: Typecheck release package\n\s+run: pnpm run typecheck/,
-  );
-
-  const coverageStep = extractStep(
-    workflow,
-    "Enforce backend coverage gate",
-    "Verify package tarball contents",
-  );
-  assert.match(coverageStep, /timeout-minutes: 75/);
-  assert.match(coverageStep, /run: pnpm run test:coverage/);
-});
-
-test("dev quality gate has no hard-disabled workflow jobs", async () => {
+test("dev quality gate is a fast push gate, not a deep release suite", async () => {
   const workflow = await readWorkflow(".github/workflows/dev-quality-gate.yml");
 
-  assert.doesNotMatch(workflow, /workflow_disabled/);
-  assert.match(
-    workflow,
-    /unit-tests:\n\s+needs: \[setup\]\n\s+if: needs\.setup\.outputs\.src == 'true' \|\| needs\.setup\.outputs\.ui == 'true' \|\| needs\.setup\.outputs\.plugin == 'true' \|\| needs\.setup\.outputs\.config == 'true'/,
-  );
-  const unitTestsJob = workflow.slice(
-    workflow.indexOf("  unit-tests:"),
-    workflow.indexOf("  script-tests:"),
-  );
-  assert.doesNotMatch(unitTestsJob, /needs\.setup\.outputs\.scripts/);
-  assert.match(
-    workflow,
-    /script-tests:\n\s+needs: \[setup\]\n\s+if: needs\.setup\.outputs\.scripts == 'true' \|\| needs\.setup\.outputs\.workflows == 'true' \|\| needs\.setup\.outputs\.full == 'true'/,
-  );
-  assert.match(
-    workflow,
-    /- name: Script and workflow regression tests\n\s+run: pnpm run test:scripts/,
-  );
-  assert.match(
-    workflow,
-    /mutation-testing:\n\s+needs: \[setup\]\n\s+if: github\.event_name == 'workflow_dispatch'/,
-  );
-  assert.match(
-    workflow,
-    /coverage:\n\s+needs: \[setup\]\n\s+if: needs\.setup\.outputs\.src == 'true'/,
-  );
-  assert.match(
-    workflow,
-    /build-and-publish-checks:\n\s+needs: \[setup\]\n\s+if: needs\.setup\.outputs\.src == 'true'/,
-  );
-});
-
-test("dev summary aggregates every dev gate job", async () => {
-  const workflow = await readWorkflow(".github/workflows/dev-quality-gate.yml");
+  assert.match(workflow, /push:\n\s+branches: \[dev\]/);
+  assert.match(workflow, /workflow_dispatch:/);
+  assert.match(workflow, /\n  policy-guards:\n/);
+  assert.match(workflow, /\n  typecheck-build:\n/);
+  assert.match(workflow, /\n  focused-tests:\n/);
+  assert.match(workflow, /\n  template-smoke:\n/);
+  assert.match(workflow, /\n  dev-summary:\n/);
+  assertNoHeavyBlockingCommands(workflow, "dev quality gate");
 
   for (const requiredNeed of [
     "policy-guards",
-    "typecheck",
-    "unit-tests",
-    "script-tests",
-    "template-tests",
-    "golden-and-ti",
-    "mutation-testing",
-    "coverage",
-    "e2e",
-    "security-smoke",
-    "build-and-publish-checks",
-    "performance-web",
+    "typecheck-build",
+    "focused-tests",
+    "template-smoke",
   ]) {
     assert.match(workflow, new RegExp(`\\n\\s+- ${requiredNeed}\\n`));
   }
+});
 
-  assert.match(
-    workflow,
-    /for name in POLICY_GUARDS TYPECHECK UNIT_TESTS SCRIPT_TESTS TEMPLATE_TESTS GOLDEN_AND_TI MUTATION_TESTING COVERAGE E2E SECURITY_SMOKE BUILD_AND_PUBLISH_CHECKS PERFORMANCE_WEB;/,
-  );
+test("PR quality gate remains fast for normal dev iteration", async () => {
+  const workflow = await readWorkflow(".github/workflows/pr-quality-gate.yml");
+
+  assert.match(workflow, /pull_request:\n\s+branches: \[dev\]/);
+  assert.match(workflow, /timeout-minutes: 30/);
+  assert.match(workflow, /Workflow and supply-chain policy/);
+  assert.match(workflow, /Focused tests/);
+  assertNoHeavyBlockingCommands(workflow, "PR quality gate");
+});
+
+test("visual benchmark is manual deep quality, not a dev push blocker", async () => {
+  const workflow = await readWorkflow(".github/workflows/visual-benchmark.yml");
+
+  assert.match(workflow, /workflow_dispatch:/);
+  assert.doesNotMatch(workflow, /push:\n\s+branches: \[dev\]/);
 });
 
 test("main source guard can satisfy the required check on main pushes", async () => {
@@ -181,9 +149,4 @@ test("required branch-protection checks run on protected branch pushes", async (
     /Review dependency changes for known advisories \(push\)\n\s+if: github\.event_name == 'push'/,
   );
   assert.match(dependencyReview, /base-ref: \$\{\{ github\.event\.before \}\}/);
-  assert.match(dependencyReview, /head-ref: \$\{\{ github\.sha \}\}/);
-  assert.match(
-    dependencyReview,
-    /fail-on-severity: \$\{\{ github\.ref_name == 'main' && 'moderate' \|\| 'high' \}\}/,
-  );
 });

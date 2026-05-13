@@ -43,6 +43,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
 
+      - name: Prepare MUI template validation seed
+        run: node scripts/run-with-heartbeat.mjs --label "MUI template validation seed install" --interval-seconds 60 -- pnpm --dir template/react-mui-app install --frozen-lockfile --ignore-scripts --prefer-offline
+
+      - name: Prepare Tailwind template validation seed
+        run: node scripts/run-with-heartbeat.mjs --label "Tailwind template validation seed install" --interval-seconds 60 -- pnpm --dir template/react-tailwind-app install --frozen-lockfile --ignore-scripts --prefer-offline
+
       - name: Enforce workflow install policy
         run: pnpm run verify:workflow-install-scripts
 
@@ -72,7 +78,7 @@ jobs:
 
       - name: Enforce backend coverage gate
         timeout-minutes: 75
-        run: pnpm run test:coverage
+        run: node scripts/run-with-heartbeat.mjs --label "backend coverage gate" --interval-seconds 60 -- pnpm run test:coverage
 
       - name: Verify package tarball contents
         run: pnpm run verify:pack

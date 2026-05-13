@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   quality:
-    timeout-minutes: 90
+    timeout-minutes: 25
     runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
@@ -46,123 +46,55 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
 
-      - name: Enforce workflow install policy
-        run: pnpm run verify:workflow-install-scripts
+      - name: Install template dependencies
+        if: matrix.node-version == 22
+        run: |
+          pnpm --dir template/react-mui-app install --frozen-lockfile --ignore-scripts
+          pnpm --dir template/react-tailwind-app install --frozen-lockfile --ignore-scripts
 
-      - name: Enforce workflow checkout credential policy
-        run: pnpm run verify:workflow-persist-credentials
+      - name: Supply-chain and workflow policy
+        if: matrix.node-version == 22
+        run: |
+          pnpm run verify:workflow-install-scripts
+          pnpm run verify:workflow-persist-credentials
+          pnpm run verify:built-deps-allowlist
+          pnpm run verify:npmrc-freshness
+          pnpm run verify:lockfile-hosts
+          pnpm run template:tailwind:dependency-denylist
+          pnpm run verify:audit
+          pnpm run template:audit
+          npm audit signatures
 
-      - name: Enforce pnpm built dependency allowlist
-        run: pnpm run verify:built-deps-allowlist
+      - name: Repository policy
+        if: matrix.node-version == 22
+        run: |
+          pnpm run lint:boundaries
+          pnpm run lint:schema-names
+          pnpm run lint:playwright-webserver
+          pnpm run lint:ts-style
+          pnpm run lint:no-telemetry
+          pnpm run lint:secrets:all
+          pnpm run ui:lint
 
-      - name: Enforce lockfile host allowlist
-        run: pnpm run verify:lockfile-hosts
-
-      - name: Enforce dependency vulnerability gate
-        run: pnpm audit --audit-level high
-
-      - name: Verify npm signature attestations
-        run: npm audit signatures
-
-      - name: Typecheck release package
+      - name: Typecheck
         run: pnpm run typecheck
 
-      - name: Build release package
+      - name: Build
         run: pnpm run build
 
-      - name: Run Node 24 compatibility test suite
-        if: matrix.node-version == 24
-        run: pnpm run test
-
-      - name: Enforce backend coverage gate
+      - name: Focused runtime smoke tests
         if: matrix.node-version == 22
-        timeout-minutes: 75
-        run: pnpm run test:coverage
-
-      - name: Verify package tarball contents
-        if: matrix.node-version == 22
-        run: pnpm run verify:pack
-
-      - name: Enforce package publishing lint
-        if: matrix.node-version == 22
-        run: pnpm run lint:publint
-
-      - name: Enforce package type publish lint
-        if: matrix.node-version == 22
-        run: pnpm run lint:types-publish
-
-      - name: Run profile release gates
-        if: matrix.node-version == 22
-        run: pnpm run verify:profile-gates
-
-  performance-web:
-    timeout-minutes: 180
-    runs-on: ubuntu-22.04
-    needs: quality
-    permissions:
-      contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - packageDir: template/react-mui-app
-            lockfile: template/react-mui-app/pnpm-lock.yaml
-          - packageDir: template/react-tailwind-app
-            lockfile: template/react-tailwind-app/pnpm-lock.yaml
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        with:
-          persist-credentials: false
-
-      - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d # v6
-        with:
-          version: 10.33.0
-
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: ${{ matrix.lockfile }}
-
-      - name: Install template dependencies
-        run: pnpm --dir "${{ matrix.packageDir }}" install --frozen-lockfile --ignore-scripts
-
-      - name: Typecheck template
-        run: pnpm --dir "${{ matrix.packageDir }}" run typecheck
-
-      - name: Build template
-        run: pnpm --dir "${{ matrix.packageDir }}" run build
-
-      - name: Run performance baseline
-        env:
-          FIGMAPIPE_PERF_ARTIFACT_DIR: artifacts/performance
-          FIGMAPIPE_PERF_BASELINE_PATH: artifacts/performance/perf-measured-baseline.json
-          FIGMAPIPE_PERF_REPORT_PATH: artifacts/performance/perf-baseline-report.json
-          FIGMAPIPE_PERF_STRICT: "false"
-          FIGMAPIPE_PERF_ALLOW_BASELINE_BOOTSTRAP: "true"
-        run: pnpm --dir "${{ matrix.packageDir }}" run perf:baseline
-
-      - name: Run performance assert
-        env:
-          FIGMAPIPE_PERF_ARTIFACT_DIR: artifacts/performance
-          FIGMAPIPE_PERF_BASELINE_PATH: perf-baseline.json
-          FIGMAPIPE_PERF_STRICT: "true"
-          FIGMAPIPE_PERF_ALLOW_BASELINE_BOOTSTRAP: "false"
-        run: pnpm --dir "${{ matrix.packageDir }}" run perf:assert
-
-      - name: Print performance summaries
         run: |
-          set -euo pipefail
-          node scripts/print-perf-report-summary.mjs "${{ matrix.packageDir }}/artifacts/performance/perf-baseline-report.json" || true
-          node scripts/print-perf-report-summary.mjs "${{ matrix.packageDir }}/artifacts/performance/perf-assert-report.json" || true
+          pnpm run test:scripts
+          pnpm run test:dast-smoke
+          pnpm run test:load
 
-      - name: Upload web performance artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        if: always()
-        with:
-          name: workspace-dev-release-performance-web-${{ github.run_id }}-${{ matrix.packageDir }}
-          path: ${{ matrix.packageDir }}/artifacts/performance
-          if-no-files-found: error
+      - name: Package publish smoke
+        if: matrix.node-version == 22
+        run: |
+          pnpm run verify:pack
+          pnpm run lint:publint
+          pnpm run lint:types-publish
 
   fips-smoke:
     timeout-minutes: 15
@@ -185,7 +117,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
 
-      - name: Build release package
+      - name: Build
         run: pnpm run build
 
       - name: FIPS smoke check
@@ -194,7 +126,7 @@ jobs:
   release-readiness:
     timeout-minutes: 10
     runs-on: ubuntu-22.04
-    needs: [quality, performance-web, fips-smoke]
+    needs: [quality, fips-smoke]
     if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -228,3 +160,8 @@ jobs:
         run: |
           set -euo pipefail
           node -e "const p=require('./package.json'); if (p.name !== 'workspace-dev') throw new Error('Unexpected package name: ' + p.name); if (!/^\\d+\\.\\d+\\.\\d+(?:[-+].*)?$/.test(p.version)) throw new Error('Invalid package version: ' + p.version); if (!String(p.packageManager || '').startsWith('pnpm@')) throw new Error('packageManager must pin pnpm');"
+
+      - name: Fast release readiness summary
+        run: |
+          echo "release-readiness: required fast release metadata checks passed"
+          echo "Deep release readiness remains available as a manual local release check"

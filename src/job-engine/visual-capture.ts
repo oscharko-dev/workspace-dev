@@ -485,7 +485,10 @@ const waitForServerReady = async (
 };
 
 interface PlaywrightBrowserType {
-  launch(options?: { headless?: boolean }): Promise<PlaywrightBrowser>;
+  launch(options?: {
+    headless?: boolean;
+    timeout?: number;
+  }): Promise<PlaywrightBrowser>;
 }
 
 interface PlaywrightBrowser {
@@ -608,8 +611,7 @@ const captureStabilizedScreenshot = async (input: {
     }
 
     if (
-      consecutiveMatchCount >=
-      stabilizationConfig.requireConsecutiveMatches
+      consecutiveMatchCount >= stabilizationConfig.requireConsecutiveMatches
     ) {
       input.onLog(
         `Capture stabilization reached after ${String(attempt)} attempt(s) with ${String(consecutiveMatchCount)} consecutive matching screenshots.`,
@@ -645,7 +647,10 @@ export const captureScreenshot = async (input: {
   log(`Launching headless ${browserName} browser`);
   let browser: PlaywrightBrowser;
   try {
-    browser = await browserType.launch({ headless: true });
+    browser = await browserType.launch({
+      headless: true,
+      timeout: config.timeoutMs,
+    });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "unknown error";
     throw new Error(`Failed to launch ${browserName} browser: ${message}`);

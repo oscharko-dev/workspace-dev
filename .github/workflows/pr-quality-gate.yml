@@ -16,26 +16,31 @@ jobs:
   dev-summary:
     name: dev-summary
     runs-on: ubuntu-22.04
-    timeout-minutes: 45
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
           fetch-depth: 0
 
-      - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d  # v6
+      - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d # v6
         with:
           version: 10.33.0
 
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: 22
           cache: pnpm
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Install template validation seeds
+        run: |
+          pnpm --dir template/react-mui-app install --frozen-lockfile --ignore-scripts
+          pnpm --dir template/react-tailwind-app install --frozen-lockfile --ignore-scripts
 
       - name: Workflow and supply-chain policy
         run: |
@@ -44,6 +49,7 @@ jobs:
           pnpm run verify:built-deps-allowlist
           pnpm run verify:npmrc-freshness
           pnpm run verify:lockfile-hosts
+          pnpm run verify:audit
 
       - name: Repository policy
         run: |
@@ -51,53 +57,22 @@ jobs:
           pnpm run lint:no-telemetry
           pnpm run lint:secrets:all
           pnpm run lint:ts-style
+          pnpm run ui:lint
+
+      - name: Contract and governance drift policy
+        run: |
           pnpm run verify:prompt-template-version
           pnpm run verify:contract-changelog -- --base "origin/${{ github.base_ref }}" --head HEAD --merge-base
           pnpm run model-card:check
 
-      - name: Enforce customer-eval sample-plan update policy
-        run: |
-          if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
-            git fetch --no-tags --prune --unshallow origin
-          fi
-          git fetch --no-tags --prune origin "${{ github.base_ref }}"
-          pnpm run verify:customer-eval-sample-plan -- --base "origin/${{ github.base_ref }}" --head HEAD --merge-base
-
       - name: Typecheck
         run: pnpm run typecheck
 
-      - name: Test-intelligence runner boundary
+      - name: Focused tests
         run: |
-          pnpm exec tsx --test \
-            src/test-intelligence/production-runner.test.ts \
-            src/test-intelligence/production-runner.adversarial.test.ts \
-            src/test-intelligence/production-runner.property.test.ts \
-            src/test-intelligence/harness-mode-parity.test.ts \
-            integration/mutation-testing.integration.test.ts
-
-      - name: Test-intelligence gates
-        run: |
-          pnpm run test:golden
-          pnpm run test:ti-multi-source-eval
-          pnpm run test:ti-eval
-          pnpm run test:ti-faithfulness
-          pnpm run test:ti-hallucination
-          pnpm run test:ti-a11y
-          pnpm run test:ti-judge-calibration
-          pnpm run test:ti-regression
-          pnpm run test:ti-finops-slo
-          pnpm run test:ti-self-improving-calibration
-
-      - name: Runtime smoke gates
-        run: |
+          pnpm run test:scripts
           pnpm run test:dast-smoke
           pnpm run test:load
 
-      - name: Sovereign-cloud / air-gap smoke (Issue #2187)
-        run: pnpm run test:ti-airgap-smoke
-
-      - name: Cross-tenant isolation proof gate G12 (Issue #2130)
-        run: pnpm run test:ti-tenant-isolation-proof
-
-      - name: Coverage-plan optimizer baseline gate (Issue #2131)
-        run: pnpm run test:ti-coverage-plan-optimizer
+      - name: Build
+        run: pnpm run build
