@@ -56,7 +56,7 @@ test("changesets release workflow: trusted publishing uses token-free npmrc and 
   assert.match(authStep, /audience=npm%3Aregistry\.npmjs\.org/);
   assert.match(authStep, /OIDC_RESPONSE_FILE="\$\{RUNNER_TEMP\}\/npm-oidc-response\.json"/);
   assert.match(authStep, /--output "\$\{OIDC_RESPONSE_FILE\}"/);
-  assert.match(authStep, /JSON\.parse\(readFileSync\(responsePath, "utf8"\)\)/);
+  assert.match(authStep, /JSON\.parse\(readFileSync\(process\.argv\[1\], "utf8"\)\)/);
   assert.doesNotMatch(authStep, /curl[\s\S]*\|[\s\S]*node/);
   assert.match(authStep, /echo "::add-mask::\$\{NPM_ID_TOKEN\}"/);
   assert.match(authStep, /NPM_ID_TOKEN_FILE="\$\{RUNNER_TEMP\}\/npm-id-token"/);

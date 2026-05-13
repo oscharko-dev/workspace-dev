@@ -267,17 +267,7 @@ jobs:
                 --header "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
                 --output "${OIDC_RESPONSE_FILE}" \
                 "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=npm%3Aregistry.npmjs.org"
-              NPM_ID_TOKEN="$(node - "${OIDC_RESPONSE_FILE}" <<'NODE'
-              const { readFileSync } = require("node:fs");
-              const responsePath = process.argv[2];
-              const payload = JSON.parse(readFileSync(responsePath, "utf8"));
-              if (typeof payload.value !== "string" || payload.value.length === 0) {
-                console.error("GitHub OIDC response did not include a token value.");
-                process.exit(1);
-              }
-              process.stdout.write(payload.value);
-              NODE
-              )"
+              NPM_ID_TOKEN="$(node -e 'const { readFileSync } = require("node:fs"); const payload = JSON.parse(readFileSync(process.argv[1], "utf8")); if (typeof payload.value !== "string" || payload.value.length === 0) { console.error("GitHub OIDC response did not include a token value."); process.exit(1); } process.stdout.write(payload.value);' "${OIDC_RESPONSE_FILE}")"
               echo "::add-mask::${NPM_ID_TOKEN}"
               NPM_ID_TOKEN_FILE="${RUNNER_TEMP}/npm-id-token"
               printf '%s' "${NPM_ID_TOKEN}" > "${NPM_ID_TOKEN_FILE}"
