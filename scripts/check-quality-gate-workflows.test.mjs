@@ -156,3 +156,22 @@ test("required branch-protection checks run on protected branch pushes", async (
   );
   assert.match(dependencyReview, /base-ref: \$\{\{ github\.event\.before \}\}/);
 });
+
+test("code-scanning workflows refresh default-branch alerts", async () => {
+  const codeql = await readWorkflow(".github/workflows/codeql.yml");
+  const scorecard = await readWorkflow(".github/workflows/ossf-scorecard.yml");
+
+  assert.match(codeql, /push:\n\s+branches: \[dev, main\]/);
+  assert.match(codeql, /pull_request:\n\s+branches: \[dev, main\]/);
+  assert.match(codeql, /actions: read/);
+  assert.match(codeql, /contents: read/);
+  assert.match(codeql, /security-events: write/);
+
+  assert.match(scorecard, /push:\n\s+branches: \[dev\]/);
+  assert.match(scorecard, /security-events: write/);
+  assert.match(scorecard, /Upload Scorecard SARIF/);
+  assert.doesNotMatch(
+    scorecard,
+    /Upload Scorecard SARIF\n\s+if: github\.event_name != 'push'/,
+  );
+});
