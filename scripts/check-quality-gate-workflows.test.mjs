@@ -77,7 +77,20 @@ test("dev quality gate has no hard-disabled workflow jobs", async () => {
   assert.doesNotMatch(workflow, /workflow_disabled/);
   assert.match(
     workflow,
-    /unit-tests:\n\s+needs: \[setup\]\n\s+if: needs\.setup\.outputs\.src == 'true'/,
+    /unit-tests:\n\s+needs: \[setup\]\n\s+if: needs\.setup\.outputs\.src == 'true' \|\| needs\.setup\.outputs\.ui == 'true' \|\| needs\.setup\.outputs\.plugin == 'true' \|\| needs\.setup\.outputs\.config == 'true'/,
+  );
+  const unitTestsJob = workflow.slice(
+    workflow.indexOf("  unit-tests:"),
+    workflow.indexOf("  script-tests:"),
+  );
+  assert.doesNotMatch(unitTestsJob, /needs\.setup\.outputs\.scripts/);
+  assert.match(
+    workflow,
+    /script-tests:\n\s+needs: \[setup\]\n\s+if: needs\.setup\.outputs\.scripts == 'true' \|\| needs\.setup\.outputs\.workflows == 'true' \|\| needs\.setup\.outputs\.full == 'true'/,
+  );
+  assert.match(
+    workflow,
+    /- name: Script and workflow regression tests\n\s+run: pnpm run test:scripts/,
   );
   assert.match(
     workflow,
@@ -100,6 +113,7 @@ test("dev summary aggregates every dev gate job", async () => {
     "policy-guards",
     "typecheck",
     "unit-tests",
+    "script-tests",
     "template-tests",
     "golden-and-ti",
     "mutation-testing",
@@ -114,7 +128,7 @@ test("dev summary aggregates every dev gate job", async () => {
 
   assert.match(
     workflow,
-    /for name in POLICY_GUARDS TYPECHECK UNIT_TESTS TEMPLATE_TESTS GOLDEN_AND_TI MUTATION_TESTING COVERAGE E2E SECURITY_SMOKE BUILD_AND_PUBLISH_CHECKS PERFORMANCE_WEB;/,
+    /for name in POLICY_GUARDS TYPECHECK UNIT_TESTS SCRIPT_TESTS TEMPLATE_TESTS GOLDEN_AND_TI MUTATION_TESTING COVERAGE E2E SECURITY_SMOKE BUILD_AND_PUBLISH_CHECKS PERFORMANCE_WEB;/,
   );
 });
 

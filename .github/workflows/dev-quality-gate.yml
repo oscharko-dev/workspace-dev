@@ -197,7 +197,7 @@ jobs:
 
   unit-tests:
     needs: [setup]
-    if: needs.setup.outputs.src == 'true' || needs.setup.outputs.ui == 'true' || needs.setup.outputs.plugin == 'true' || needs.setup.outputs.scripts == 'true' || needs.setup.outputs.config == 'true'
+    if: needs.setup.outputs.src == 'true' || needs.setup.outputs.ui == 'true' || needs.setup.outputs.plugin == 'true' || needs.setup.outputs.config == 'true'
     timeout-minutes: 60
     runs-on: ubuntu-22.04
     permissions:
@@ -221,6 +221,33 @@ jobs:
 
       - name: Canonical tests
         run: pnpm run test
+
+  script-tests:
+    needs: [setup]
+    if: needs.setup.outputs.scripts == 'true' || needs.setup.outputs.workflows == 'true' || needs.setup.outputs.full == 'true'
+    timeout-minutes: 20
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d # v6
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Script and workflow regression tests
+        run: pnpm run test:scripts
 
   template-tests:
     needs: [setup]
@@ -625,6 +652,7 @@ jobs:
       - policy-guards
       - typecheck
       - unit-tests
+      - script-tests
       - template-tests
       - golden-and-ti
       - mutation-testing
@@ -645,6 +673,7 @@ jobs:
           POLICY_GUARDS: ${{ needs.policy-guards.result }}
           TYPECHECK: ${{ needs.typecheck.result }}
           UNIT_TESTS: ${{ needs.unit-tests.result }}
+          SCRIPT_TESTS: ${{ needs.script-tests.result }}
           TEMPLATE_TESTS: ${{ needs.template-tests.result }}
           GOLDEN_AND_TI: ${{ needs.golden-and-ti.result }}
           MUTATION_TESTING: ${{ needs.mutation-testing.result }}
@@ -661,7 +690,7 @@ jobs:
             echo "::error::dev aggregate: setup job did not succeed (result=${SETUP}); downstream skips are not safe"
             fail=1
           fi
-          for name in POLICY_GUARDS TYPECHECK UNIT_TESTS TEMPLATE_TESTS GOLDEN_AND_TI MUTATION_TESTING COVERAGE E2E SECURITY_SMOKE BUILD_AND_PUBLISH_CHECKS PERFORMANCE_WEB; do
+          for name in POLICY_GUARDS TYPECHECK UNIT_TESTS SCRIPT_TESTS TEMPLATE_TESTS GOLDEN_AND_TI MUTATION_TESTING COVERAGE E2E SECURITY_SMOKE BUILD_AND_PUBLISH_CHECKS PERFORMANCE_WEB; do
             value="${!name}"
             echo "${name}=${value}"
             case "$value" in
