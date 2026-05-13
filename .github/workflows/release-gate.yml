@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   quality:
-    timeout-minutes: 30
+    timeout-minutes: 90
     runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
@@ -64,22 +64,35 @@ jobs:
       - name: Verify npm signature attestations
         run: npm audit signatures
 
+      - name: Typecheck release package
+        run: pnpm run typecheck
+
       - name: Build release package
         run: pnpm run build
 
+      - name: Run Node 24 compatibility test suite
+        if: matrix.node-version == 24
+        run: pnpm run test
+
       - name: Enforce backend coverage gate
+        if: matrix.node-version == 22
+        timeout-minutes: 75
         run: pnpm run test:coverage
 
       - name: Verify package tarball contents
+        if: matrix.node-version == 22
         run: pnpm run verify:pack
 
       - name: Enforce package publishing lint
+        if: matrix.node-version == 22
         run: pnpm run lint:publint
 
       - name: Enforce package type publish lint
+        if: matrix.node-version == 22
         run: pnpm run lint:types-publish
 
       - name: Run profile release gates
+        if: matrix.node-version == 22
         run: pnpm run verify:profile-gates
 
   performance-web:

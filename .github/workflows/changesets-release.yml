@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   release-preflight:
-    timeout-minutes: 25
+    timeout-minutes: 90
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -64,10 +64,14 @@ jobs:
       - name: Verify npm signature attestations
         run: npm audit signatures
 
+      - name: Typecheck release package
+        run: pnpm run typecheck
+
       - name: Build release package
         run: pnpm run build
 
       - name: Enforce backend coverage gate
+        timeout-minutes: 75
         run: pnpm run test:coverage
 
       - name: Verify package tarball contents

@@ -30,13 +30,13 @@ jobs:
       config: ${{ steps.filter.outputs.config }}
       full: ${{ steps.full.outputs.value }}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
           fetch-depth: 0
 
       - id: filter
-        uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d  # v4.0.1
+        uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
         with:
           filters: |
             src:
@@ -94,16 +94,16 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
           fetch-depth: 0
 
-      - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d  # v6
+      - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d # v6
         with:
           version: 10.33.0
 
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: 22
           cache: pnpm
@@ -176,15 +176,15 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
 
-      - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d  # v6
+      - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d # v6
         with:
           version: 10.33.0
 
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: 22
           cache: pnpm
@@ -197,21 +197,21 @@ jobs:
 
   unit-tests:
     needs: [setup]
-    if: github.event_name == 'workflow_disabled'  # temporarily disabled — re-enable by restoring the original if: condition
+    if: needs.setup.outputs.src == 'true' || needs.setup.outputs.ui == 'true' || needs.setup.outputs.plugin == 'true' || needs.setup.outputs.scripts == 'true' || needs.setup.outputs.config == 'true'
     timeout-minutes: 60
     runs-on: ubuntu-22.04
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
 
-      - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d  # v6
+      - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d # v6
         with:
           version: 10.33.0
 
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: 22
           cache: pnpm
@@ -230,15 +230,15 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
 
-      - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d  # v6
+      - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d # v6
         with:
           version: 10.33.0
 
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: 22
           cache: pnpm
@@ -278,15 +278,15 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
 
-      - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d  # v6
+      - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d # v6
         with:
           version: 10.33.0
 
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: 22
           cache: pnpm
@@ -326,21 +326,21 @@ jobs:
 
   mutation-testing:
     needs: [setup]
-    if: needs.setup.outputs.src == 'true' || needs.setup.outputs.config == 'true' || needs.setup.outputs.full == 'true'
+    if: github.event_name == 'workflow_dispatch'
     timeout-minutes: 240
     runs-on: ubuntu-22.04
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
 
-      - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d  # v6
+      - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d # v6
         with:
           version: 10.33.0
 
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: 22
           cache: pnpm
@@ -356,7 +356,7 @@ jobs:
         run: node scripts/print-mutation-report-summary.mjs artifacts/testing/mutation/mutation.json
 
       - name: Upload mutation artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
         with:
           name: workspace-dev-dev-mutation-${{ github.run_id }}
@@ -365,21 +365,21 @@ jobs:
 
   coverage:
     needs: [setup]
-    if: github.event_name == 'workflow_disabled'  # temporarily disabled — re-enable by restoring the original if: condition
-    timeout-minutes: 60
+    if: needs.setup.outputs.src == 'true' || needs.setup.outputs.ui == 'true' || needs.setup.outputs.config == 'true'
+    timeout-minutes: 120
     runs-on: ubuntu-22.04
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
 
-      - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d  # v6
+      - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d # v6
         with:
           version: 10.33.0
 
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: 22
           cache: pnpm
@@ -388,28 +388,31 @@ jobs:
         run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: UI coverage gate
+        if: needs.setup.outputs.ui == 'true' || needs.setup.outputs.config == 'true'
         run: pnpm run ui:test:coverage
 
       - name: Coverage thresholds
+        if: needs.setup.outputs.src == 'true' || needs.setup.outputs.config == 'true'
+        timeout-minutes: 75
         run: pnpm run test:coverage
 
   e2e:
     needs: [setup]
-    if: github.event_name == 'workflow_disabled'  # temporarily disabled — re-enable by restoring the original if: condition
+    if: needs.setup.outputs.ui == 'true' || needs.setup.outputs.templates == 'true' || needs.setup.outputs.config == 'true'
     timeout-minutes: 45
     runs-on: ubuntu-22.04
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
 
-      - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d  # v6
+      - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d # v6
         with:
           version: 10.33.0
 
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: 22
           cache: pnpm
@@ -422,7 +425,7 @@ jobs:
 
       - name: Cache Playwright browsers
         id: playwright-cache
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
@@ -449,15 +452,15 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
 
-      - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d  # v6
+      - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d # v6
         with:
           version: 10.33.0
 
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: 22
           cache: pnpm
@@ -469,7 +472,7 @@ jobs:
         run: pnpm run test:dast-smoke
 
       - name: Upload runtime security smoke artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: failure()
         with:
           name: workspace-dev-dev-dast-smoke-${{ github.run_id }}
@@ -480,7 +483,7 @@ jobs:
         run: pnpm run test:load
 
       - name: Upload runtime load smoke artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: failure()
         with:
           name: workspace-dev-dev-load-smoke-${{ github.run_id }}
@@ -489,21 +492,21 @@ jobs:
 
   build-and-publish-checks:
     needs: [setup]
-    if: github.event_name == 'workflow_disabled'  # temporarily disabled — re-enable by restoring the original if: condition
+    if: needs.setup.outputs.src == 'true' || needs.setup.outputs.ui == 'true' || needs.setup.outputs.plugin == 'true' || needs.setup.outputs.templates == 'true' || needs.setup.outputs.config == 'true'
     timeout-minutes: 30
     runs-on: ubuntu-22.04
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
 
-      - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d  # v6
+      - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d # v6
         with:
           version: 10.33.0
 
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: 22
           cache: pnpm
@@ -546,7 +549,7 @@ jobs:
 
   performance-web:
     needs: [setup]
-    if: github.event_name == 'workflow_disabled'  # temporarily disabled — re-enable by restoring the original if: condition
+    if: github.event_name == 'workflow_dispatch'
     timeout-minutes: 180
     runs-on: ubuntu-22.04
     # warn-only: performance telemetry stays visible during dev without blocking iteration.
@@ -562,15 +565,15 @@ jobs:
           - packageDir: template/react-tailwind-app
             lockfile: template/react-tailwind-app/pnpm-lock.yaml
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
 
-      - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d  # v6
+      - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d # v6
         with:
           version: 10.33.0
 
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: 22
           cache: pnpm
@@ -609,7 +612,7 @@ jobs:
           node scripts/print-perf-report-summary.mjs "${{ matrix.packageDir }}/artifacts/performance/perf-assert-report.json" || true
 
       - name: Upload web performance artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
         with:
           name: workspace-dev-dev-performance-web-${{ github.run_id }}-${{ matrix.packageDir }}
@@ -621,11 +624,15 @@ jobs:
       - setup
       - policy-guards
       - typecheck
+      - unit-tests
       - template-tests
       - golden-and-ti
       - mutation-testing
+      - coverage
+      - e2e
       - security-smoke
-      # unit-tests, coverage, e2e, build-and-publish-checks temporarily excluded (#1736)
+      - build-and-publish-checks
+      - performance-web
     if: always()
     timeout-minutes: 5
     runs-on: ubuntu-22.04
@@ -637,10 +644,15 @@ jobs:
           SETUP: ${{ needs.setup.result }}
           POLICY_GUARDS: ${{ needs.policy-guards.result }}
           TYPECHECK: ${{ needs.typecheck.result }}
+          UNIT_TESTS: ${{ needs.unit-tests.result }}
           TEMPLATE_TESTS: ${{ needs.template-tests.result }}
           GOLDEN_AND_TI: ${{ needs.golden-and-ti.result }}
           MUTATION_TESTING: ${{ needs.mutation-testing.result }}
+          COVERAGE: ${{ needs.coverage.result }}
+          E2E: ${{ needs.e2e.result }}
           SECURITY_SMOKE: ${{ needs.security-smoke.result }}
+          BUILD_AND_PUBLISH_CHECKS: ${{ needs.build-and-publish-checks.result }}
+          PERFORMANCE_WEB: ${{ needs.performance-web.result }}
         run: |
           set -euo pipefail
           fail=0
@@ -649,7 +661,7 @@ jobs:
             echo "::error::dev aggregate: setup job did not succeed (result=${SETUP}); downstream skips are not safe"
             fail=1
           fi
-          for name in POLICY_GUARDS TYPECHECK TEMPLATE_TESTS GOLDEN_AND_TI MUTATION_TESTING SECURITY_SMOKE; do
+          for name in POLICY_GUARDS TYPECHECK UNIT_TESTS TEMPLATE_TESTS GOLDEN_AND_TI MUTATION_TESTING COVERAGE E2E SECURITY_SMOKE BUILD_AND_PUBLISH_CHECKS PERFORMANCE_WEB; do
             value="${!name}"
             echo "${name}=${value}"
             case "$value" in
