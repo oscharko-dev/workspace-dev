@@ -52,6 +52,10 @@ const TECHNICAL_PLACEHOLDER_PATTERN =
   /^<(?:radio|button|text|textfield|select|vector|icon)>$/iu;
 const DECORATIVE_KIND_PATTERN =
   /\b(icon|svg|vector|chevron|arrow|decorative|separator|divider)\b/iu;
+const INTERACTIVE_KIND_PATTERN =
+  /\b(text[_\s-]?input|text\s*field|textfield|input|number|email|password|phone|tel|date|select[_\s-]?field|select|dropdown|combobox|checkbox|radio[_\s-]?option|radio|textarea|currency|amount|percentage|percent|rate|integer|decimal|float)\b/iu;
+const STATIC_KIND_PATTERN =
+  /^(?:text|typography|label|informative[_\s-]?label|result[_\s-]?display|display|output|summary|copy|static)$/iu;
 
 /**
  * Matches angle-bracket placeholder tokens such as `<Radio>`, `<TextField>`,
@@ -91,6 +95,19 @@ export const isCoverageRelevantElementLike = (
   }
 
   return true;
+};
+
+export const isInteractiveCoverageElementLike = (
+  element: CoverageElementLike,
+): boolean => {
+  if (!isCoverageRelevantElementLike(element)) {
+    return false;
+  }
+  const kind = normalizeCoverageText(element.kind ?? element.type);
+  if (kind.length === 0 || STATIC_KIND_PATTERN.test(kind)) {
+    return false;
+  }
+  return INTERACTIVE_KIND_PATTERN.test(kind);
 };
 
 export const isCoverageRelevantActionLike = (

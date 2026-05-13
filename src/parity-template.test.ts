@@ -62,9 +62,9 @@ const toSemverMajor = (
 const TEMPLATE_HASH_SNAPSHOT: Record<(typeof TEMPLATE_FILES)[number], string> =
   {
     "package.json":
-      "936454ede4c4f87a1a39793e104a10078e145a2c2d267992c399dc545805a606",
+      "0161bb0e70ce48ace7ccfcbf1c0807b876ad6823093875b60555fa06ee4ce37f",
     "pnpm-lock.yaml":
-      "ee1505d405f1b29840463a782cc300381797159ed67d36828158b7e99ac060cf",
+      "61f56e0f6d0c360845eba5168f334e21c5bf138705f61bb43055e273a20208e8",
     "vite.config.ts":
       "7afffdfa2dc74d6306cd107d1f1410621755f50702b4c9374ed0a40c80241d05",
     "tsconfig.json":
@@ -74,9 +74,9 @@ const TEMPLATE_HASH_SNAPSHOT: Record<(typeof TEMPLATE_FILES)[number], string> =
     "perf-budget.json":
       "aa06e9a8708171dd36884798f08a7903b5c06b84b431cdd477e83fc3e8a93e44",
     "scripts/perf-runner.mjs":
-      "8b4f390b32a0e2866b2a4104344a4d4bd63e53afd414033ca02aa343c96277f8",
+      "8fe6866bfe712001d8d28b231ff901006b2a827a8ddf57173335f4c705dcd2d7",
     "src/App.tsx":
-      "985cdba983fb04d56e28ea58102b9691fb912f0eb3412feab1f0bb7966332a65",
+      "c4563786908c786e32e095920bff89334ba6c5b94e35b4a081a07066a87d89eb",
     "src/components/ErrorBoundary.tsx":
       "52ce535a42ceaa79e6f8dcf82ae25ea5ac341532cabfeeaff60c2ec4427377b1",
     "src/components/RouteSkeleton.tsx":
@@ -92,11 +92,11 @@ const TEMPLATE_HASH_SNAPSHOT: Record<(typeof TEMPLATE_FILES)[number], string> =
     "src/vite-env.d.ts":
       "dff9f1cbbb0559e21d251fbab9fbebcbfac51f241cf508b1bc2d04bc7c20ed80",
     "src/routes/CheckoutRoute.tsx":
-      "d5892642a879e35e61f94b5656a5bcfce510fd50ec80454d7ebcf51ea6f0aeb2",
+      "bc1d70fb90cf7ed4d1db6870470c2c08d41029cde010fc2dff734bed8f169617",
     "src/routes/HomeRoute.tsx":
-      "544beb926180c66148acc098c860f2218c2ae4383aa6fe4f6b5cc9f32d2fbc81",
+      "bb284a45df5960b5afa12456c13e3fa07d61f5725ab95de792e0cf932fe61b0e",
     "src/routes/OverviewRoute.tsx":
-      "b8cff03d3a82bf9d9697d7e2876d1ffb97a55de6b46d460ec001822d60f7f599",
+      "0e76b0304923530a855f13fcfd706dabb0179469e3ffbceb4b4af093a665b75d",
     "src/routes/lazy-routes.ts":
       "f4b9ca60f8ceecb1faa424b7fd1911b3f99c90fafddda1e1ef4dac910d92316f",
     "src/test/jest-axe.d.ts":

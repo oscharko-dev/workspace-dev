@@ -33,7 +33,7 @@ import {
 } from "./domain-invariant-registry.js";
 import {
   isCoverageRelevantActionLike,
-  isCoverageRelevantElementLike,
+  isInteractiveCoverageElementLike,
 } from "./coverage-relevance.js";
 import { classifyFieldLifecycleTransition } from "./field-lifecycle-transition-tier.js";
 import { detectDuplicateTestCases } from "./test-case-duplicate.js";
@@ -62,7 +62,7 @@ export const computeCoverageReport = (
 ): TestCaseCoverageReport => {
   const cases = input.list.testCases;
   const relevantFields = input.intent.detectedFields.filter((field) =>
-    isCoverageRelevantElementLike({
+    isInteractiveCoverageElementLike({
       label: field.label,
       kind: field.type,
     }),

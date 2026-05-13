@@ -99,10 +99,9 @@ const createLocalFigmaPayload = () => ({
             children: [
               {
                 id: "title-1",
-                type: "TEXT",
-                name: "Title",
-                characters: "Hello",
-                absoluteBoundingBox: { x: 16, y: 16, width: 128, height: 20 },
+                type: "RECTANGLE",
+                name: "Title Text Field",
+                absoluteBoundingBox: { x: 16, y: 16, width: 128, height: 40 },
               },
             ],
           },

@@ -549,9 +549,18 @@ jobs:
     if: github.event_name == 'workflow_disabled'  # temporarily disabled — re-enable by restoring the original if: condition
     timeout-minutes: 180
     runs-on: ubuntu-22.04
+    # warn-only: performance telemetry stays visible during dev without blocking iteration.
     continue-on-error: true
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - packageDir: template/react-mui-app
+            lockfile: template/react-mui-app/pnpm-lock.yaml
+          - packageDir: template/react-tailwind-app
+            lockfile: template/react-tailwind-app/pnpm-lock.yaml
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
         with:
@@ -565,37 +574,46 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+          cache-dependency-path: ${{ matrix.lockfile }}
 
-      - name: Run performance baseline + assert for both templates
+      - name: Install template dependencies
+        run: pnpm --dir "${{ matrix.packageDir }}" install --frozen-lockfile --ignore-scripts
+
+      - name: Typecheck template
+        run: pnpm --dir "${{ matrix.packageDir }}" run typecheck
+
+      - name: Build template
+        run: pnpm --dir "${{ matrix.packageDir }}" run build
+
+      - name: Run performance baseline
+        env:
+          FIGMAPIPE_PERF_ARTIFACT_DIR: artifacts/performance
+          FIGMAPIPE_PERF_BASELINE_PATH: artifacts/performance/perf-measured-baseline.json
+          FIGMAPIPE_PERF_REPORT_PATH: artifacts/performance/perf-baseline-report.json
+          FIGMAPIPE_PERF_STRICT: "false"
+          FIGMAPIPE_PERF_ALLOW_BASELINE_BOOTSTRAP: "true"
+        run: pnpm --dir "${{ matrix.packageDir }}" run perf:baseline
+
+      - name: Run performance assert
+        env:
+          FIGMAPIPE_PERF_ARTIFACT_DIR: artifacts/performance
+          FIGMAPIPE_PERF_BASELINE_PATH: perf-baseline.json
+          FIGMAPIPE_PERF_STRICT: "true"
+          FIGMAPIPE_PERF_ALLOW_BASELINE_BOOTSTRAP: "false"
+        run: pnpm --dir "${{ matrix.packageDir }}" run perf:assert
+
+      - name: Print performance summaries
         run: |
           set -euo pipefail
-          for dir in template/react-mui-app template/react-tailwind-app; do
-            echo "::group::performance-web: $dir"
-            pnpm --dir "$dir" install --frozen-lockfile --ignore-scripts
-            pnpm --dir "$dir" run typecheck
-            pnpm --dir "$dir" run build
-            FIGMAPIPE_PERF_ARTIFACT_DIR=artifacts/performance \
-            FIGMAPIPE_PERF_BASELINE_PATH=artifacts/performance/perf-measured-baseline.json \
-            FIGMAPIPE_PERF_REPORT_PATH=artifacts/performance/perf-baseline-report.json \
-            FIGMAPIPE_PERF_STRICT=false \
-            FIGMAPIPE_PERF_ALLOW_BASELINE_BOOTSTRAP=true \
-              pnpm --dir "$dir" run perf:baseline
-            FIGMAPIPE_PERF_ARTIFACT_DIR=artifacts/performance \
-            FIGMAPIPE_PERF_BASELINE_PATH=perf-baseline.json \
-            FIGMAPIPE_PERF_STRICT=true \
-            FIGMAPIPE_PERF_ALLOW_BASELINE_BOOTSTRAP=false \
-              pnpm --dir "$dir" run perf:assert
-            node scripts/print-perf-report-summary.mjs "$dir/artifacts/performance/perf-baseline-report.json" || true
-            node scripts/print-perf-report-summary.mjs "$dir/artifacts/performance/perf-assert-report.json" || true
-            echo "::endgroup::"
-          done
+          node scripts/print-perf-report-summary.mjs "${{ matrix.packageDir }}/artifacts/performance/perf-baseline-report.json" || true
+          node scripts/print-perf-report-summary.mjs "${{ matrix.packageDir }}/artifacts/performance/perf-assert-report.json" || true
 
       - name: Upload web performance artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
         if: always()
         with:
-          name: workspace-dev-dev-performance-web-${{ github.run_id }}
-          path: template/*/artifacts/performance
+          name: workspace-dev-dev-performance-web-${{ github.run_id }}-${{ matrix.packageDir }}
+          path: ${{ matrix.packageDir }}/artifacts/performance
           if-no-files-found: ignore
 
   dev-summary:

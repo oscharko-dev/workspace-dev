@@ -73,6 +73,11 @@ const GENERIC_UNRESOLVED_VALIDATION_OBJECTIVE =
 const GENERIC_UNRESOLVED_STEP_ACTION =
   "Führe den Prüfschritt mit fachlich geklärten Beispielwerten aus." as const;
 
+const REPAIR_TITLE_SUFFIX_MAX_LENGTH = 96 as const;
+const STEP_ACTION_REF_PREFIX_PATTERN = /^\s*\[[^\]]+\]\s*/u;
+const FIELD_TARGET_IN_STEP_PATTERN =
+  /\b(?:feld|field)\s+['"„“]?([^'"“”.\n]+?)(?:['"“”]|$)(\s*\([^)]+\))?/iu;
+
 export type UnresolvedDetailRepairKind =
   | "rewrote_title"
   | "rewrote_objective"
@@ -115,6 +120,61 @@ const truncateForAudit = (value: string): string =>
   value.length <= SAFE_AUDIT_LENGTH
     ? value
     : `${value.slice(0, SAFE_AUDIT_LENGTH - 3)}...`;
+
+const compactRepairTitleSuffix = (value: string): string =>
+  value
+    .replace(STEP_ACTION_REF_PREFIX_PATTERN, "")
+    .replace(/\s+/gu, " ")
+    .trim()
+    .slice(0, REPAIR_TITLE_SUFFIX_MAX_LENGTH)
+    .trim();
+
+const fieldTargetFromStepAction = (value: string): string | undefined => {
+  const normalized = value.replace(STEP_ACTION_REF_PREFIX_PATTERN, "").trim();
+  const match = FIELD_TARGET_IN_STEP_PATTERN.exec(normalized);
+  if (match?.[1] === undefined) return undefined;
+  const suffix = compactRepairTitleSuffix(`${match[1]}${match[2] ?? ""}`);
+  return suffix.length === 0 ? undefined : suffix;
+};
+
+const fallbackTargetFromCase = (
+  testCase: GeneratedTestCase,
+): string | undefined => {
+  const traceName = testCase.figmaTraceRefs
+    .map((traceRef) => traceRef.nodeName)
+    .find((value): value is string => value !== undefined && value.trim() !== "");
+  if (traceName !== undefined) return compactRepairTitleSuffix(traceName);
+  const fieldId = testCase.qualitySignals.coveredFieldIds[0];
+  if (fieldId === undefined) return undefined;
+  const suffix = fieldId.includes("::field::")
+    ? fieldId.split("::field::").at(-1)
+    : fieldId.split("::").at(-1);
+  return suffix === undefined ? undefined : compactRepairTitleSuffix(suffix);
+};
+
+const buildGenericUnresolvedValidationTitle = (
+  testCase: GeneratedTestCase,
+): string => {
+  const suffix =
+    testCase.steps
+      .map((step) => fieldTargetFromStepAction(step.action))
+      .find((value): value is string => value !== undefined && value.length > 0) ??
+    fallbackTargetFromCase(testCase);
+  return suffix === undefined || suffix.length === 0
+    ? GENERIC_UNRESOLVED_VALIDATION_TITLE
+    : `${GENERIC_UNRESOLVED_VALIDATION_TITLE} – ${suffix}`;
+};
+
+const buildGenericUnresolvedStepAction = (
+  testCase: GeneratedTestCase,
+  originalAction: string,
+): string => {
+  const suffix =
+    fieldTargetFromStepAction(originalAction) ?? fallbackTargetFromCase(testCase);
+  return suffix === undefined || suffix.length === 0
+    ? GENERIC_UNRESOLVED_STEP_ACTION
+    : `Führe den Prüfschritt für „${suffix}“ mit fachlich geklärten Beispielwerten aus.`;
+};
 
 const isConcreteUnsupportedClassification = (
   classification: ReturnType<typeof classifyUnresolvedValidationDetail>,
@@ -226,6 +286,10 @@ const repairSteps = (
     const actionClassification = classifyUnresolvedValidationDetail(actionText);
     let nextStep: GeneratedTestCaseStep = step;
     if (isConcreteUnsupportedClassification(actionClassification)) {
+      const replacement = buildGenericUnresolvedStepAction(
+        testCase,
+        actionText,
+      );
       changes.push({
         testCaseId: testCase.id,
         path: `steps[${index}].action`,
@@ -234,9 +298,9 @@ const repairSteps = (
           actionClassification.reason ??
           "concrete validation detail unsupported by unresolved source rule",
         before: truncateForAudit(actionText),
-        after: GENERIC_UNRESOLVED_STEP_ACTION,
+        after: replacement,
       });
-      nextStep = { ...nextStep, action: GENERIC_UNRESOLVED_STEP_ACTION };
+      nextStep = { ...nextStep, action: replacement };
       touched = true;
     }
     if (expectedText.length === 0) {
@@ -318,7 +382,7 @@ const repairCase = (
     testCase,
     path: "title",
     text: testCase.title,
-    replacement: GENERIC_UNRESOLVED_VALIDATION_TITLE,
+    replacement: buildGenericUnresolvedValidationTitle(testCase),
     kind: "rewrote_title",
     changes,
   });

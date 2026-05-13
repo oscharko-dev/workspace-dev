@@ -3608,14 +3608,45 @@ const safeReadEvidenceDigest = async (
 
 type CliPolicyStage = "clean" | "weich" | "mittel" | "hard";
 
+const asCliObjectRecord = (value: unknown): Record<string, unknown> | undefined =>
+  typeof value === "object" && value !== null
+    ? (value as Record<string, unknown>)
+    : undefined;
+
+const readCliNumberProperty = (owner: unknown, key: string): number => {
+  const value = asCliObjectRecord(owner)?.[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+};
+
+const readCliArrayLengthProperty = (owner: unknown, key: string): number => {
+  const value = asCliObjectRecord(owner)?.[key];
+  return Array.isArray(value) ? value.length : 0;
+};
+
+const readCliRunQualityStatus = (result: unknown): string | undefined => {
+  const runQuality = asCliObjectRecord(asCliObjectRecord(result)?.runQuality);
+  const artifact = asCliObjectRecord(runQuality?.artifact);
+  const status = artifact?.status;
+  return typeof status === "string" ? status : undefined;
+};
+
 const resolveCliPolicyStage = (
   result: RunFigmaToQcTestCasesResult,
 ): CliPolicyStage => {
   if (result.blocked) return "hard";
-  const needsReviewCount = result.policy.needsReviewCount;
-  const jobLevelViolationCount = result.policy.jobLevelViolations.length;
-  const runQualityStatus = result.runQuality.artifact.status;
-  const validationWarningCount = result.validation.warningCount;
+  const needsReviewCount = readCliNumberProperty(
+    result.policy,
+    "needsReviewCount",
+  );
+  const jobLevelViolationCount = readCliArrayLengthProperty(
+    result.policy,
+    "jobLevelViolations",
+  );
+  const runQualityStatus = readCliRunQualityStatus(result);
+  const validationWarningCount = readCliNumberProperty(
+    result.validation,
+    "warningCount",
+  );
   if (
     needsReviewCount > 0 ||
     jobLevelViolationCount > 0 ||

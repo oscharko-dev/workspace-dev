@@ -97,6 +97,66 @@ test("donor TEXT is removed from the flat node list (no double-count)", () => {
   );
 });
 
+test("toggle button descendant TEXT is classified as a selectable option", () => {
+  const input = buildScreen([
+    node({
+      id: "choice-group",
+      name: "<ToggleButtonGroup>",
+      type: "INSTANCE",
+      absoluteBoundingBox: { x: 100, y: 100, width: 600, height: 120 },
+      children: [
+        node({
+          id: "choice-1",
+          name: "_<ToogleButton>",
+          type: "INSTANCE",
+          absoluteBoundingBox: { x: 100, y: 100, width: 180, height: 120 },
+          children: [
+            node({
+              id: "choice-1-label",
+              name: "Typography",
+              type: "TEXT",
+              characters: "Investitionsfinanzierung",
+              absoluteBoundingBox: { x: 120, y: 140, width: 140, height: 20 },
+            }),
+          ],
+        }),
+      ],
+    }),
+  ]);
+
+  const result = normalizeFigmaFileToIntentInput(input);
+  const screen = result.screens[0]!;
+  assert.deepEqual(screen.nodes.map((n) => n.nodeId), ["choice-1-label"]);
+  assert.equal(screen.nodes[0]?.nodeType, "RADIO_OPTION");
+  assert.equal(screen.nodes[0]?.semanticKind, "radio_option");
+  assert.equal(screen.nodes[0]?.text, "Investitionsfinanzierung");
+});
+
+test("toggle hint does not match substrings inside unrelated names", () => {
+  const input = buildScreen([
+    node({
+      id: "shell",
+      name: "AutoToggleableContainer",
+      type: "INSTANCE",
+      absoluteBoundingBox: { x: 100, y: 100, width: 600, height: 120 },
+      children: [
+        node({
+          id: "shell-copy",
+          name: "Typography",
+          type: "TEXT",
+          characters: "Produktinformation",
+          absoluteBoundingBox: { x: 120, y: 140, width: 180, height: 20 },
+        }),
+      ],
+    }),
+  ]);
+
+  const result = normalizeFigmaFileToIntentInput(input);
+  const screen = result.screens[0]!;
+  assert.notEqual(screen.nodes[0]?.nodeType, "RADIO_OPTION");
+  assert.notEqual(screen.nodes[0]?.semanticKind, "radio_option");
+});
+
 test("nested Button → ChildButton → ChildText: deepest button wins", () => {
   const input = buildScreen([
     node({
@@ -224,7 +284,7 @@ test("adjacent label/value TEXT pair shares a clusterId", () => {
       id: "value-text",
       name: "Value",
       type: "TEXT",
-      characters: "0,00 €",
+      characters: "berechnet",
       absoluteBoundingBox: { x: 100, y: 130, width: 240, height: 24 },
     }),
     // Far-away unrelated text — must NOT cluster with the pair above.

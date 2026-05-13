@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { BUSINESS_TEST_INTENT_IR_SCHEMA_VERSION } from "../contracts/index.js";
+import {
+  BUSINESS_TEST_INTENT_IR_SCHEMA_VERSION,
+  type VisualScreenDescription,
+} from "../contracts/index.js";
 import {
   deriveBusinessTestIntentIr,
   type IntentDerivationFigmaInput,
@@ -93,10 +96,87 @@ test("derivation models radio, select, and amount inputs as interactions", () =>
   );
 });
 
+test("derivation does not promote raw typography text into input fields", () => {
+  const figma: IntentDerivationFigmaInput = {
+    source: { kind: "figma_local_json" },
+    screens: [
+      {
+        screenId: "participants",
+        screenName: "Participants",
+        nodes: [
+          {
+            nodeId: "role-static",
+            nodeName: "Typography",
+            nodeType: "TEXT",
+            text: "Sicherungsgeber",
+          },
+          {
+            nodeId: "date-static",
+            nodeName: "Typography",
+            nodeType: "TEXT",
+            text: "01.01.1970",
+          },
+          {
+            nodeId: "role-select",
+            nodeName: "Role select",
+            nodeType: "SELECT_FIELD",
+            text: "Rolle",
+          },
+        ],
+      },
+    ],
+  };
+  const ir = deriveBusinessTestIntentIr({ figma });
+  assert.deepEqual(
+    ir.detectedFields.map((field) => [field.trace.nodeId, field.type]),
+    [["role-select", "select_field"]],
+  );
+  assert.deepEqual(
+    ir.detectedActions.map((action) => [action.trace.nodeId, action.kind]),
+    [["role-select", "change_select"]],
+  );
+});
+
 test("derivation is deterministic across two runs with the same input", () => {
   const a = deriveBusinessTestIntentIr({ figma: simpleForm });
   const b = deriveBusinessTestIntentIr({ figma: simpleForm });
   assert.equal(JSON.stringify(a), JSON.stringify(b));
+});
+
+test("derivation source hash ignores volatile visual sidecar metadata", () => {
+  const visualBase = {
+    screenId: "screen-login",
+    sidecarDeployment: "llama-4-maverick-vision",
+    screenName: "Login",
+    confidenceSummary: { min: 0.72, max: 0.99, mean: 0.86 },
+    regions: [
+      {
+        regionId: "r-username",
+        confidence: 0.72,
+        label: "Username",
+        controlType: "input",
+        visibleText: "Username",
+      },
+    ],
+  } satisfies Omit<VisualScreenDescription, "capturedAt">;
+  const first = deriveBusinessTestIntentIr({
+    figma: simpleForm,
+    visual: [{ ...visualBase, capturedAt: "2026-05-12T10:00:00.000Z" }],
+  });
+  const second = deriveBusinessTestIntentIr({
+    figma: simpleForm,
+    visual: [
+      {
+        ...visualBase,
+        capturedAt: "2026-05-12T10:05:00.000Z",
+        confidenceSummary: { min: 0.61, max: 0.93, mean: 0.79 },
+        regions: [{ ...visualBase.regions[0]!, confidence: 0.61 }],
+      },
+    ],
+  });
+
+  assert.equal(first.source.contentHash, second.source.contentHash);
+  assert.equal(JSON.stringify({ ...first, source: undefined }), JSON.stringify({ ...second, source: undefined }));
 });
 
 test("derivation output is stable when node order is shuffled", () => {

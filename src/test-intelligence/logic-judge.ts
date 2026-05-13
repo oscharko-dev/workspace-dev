@@ -361,6 +361,19 @@ export const createFileSystemLogicJudgeCache = (
   };
 };
 
+const normalizeGeneratedTestCasesForLogicJudgeInput = (
+  list: GeneratedTestCaseList,
+): GeneratedTestCaseList => ({
+  ...list,
+  testCases: list.testCases.map((testCase) => ({
+    ...testCase,
+    audit: {
+      ...testCase.audit,
+      cacheHit: false,
+    },
+  })),
+});
+
 export const runLogicJudge = async (
   input: RunLogicJudgeInput,
 ): Promise<RunLogicJudgeResult> => {
@@ -372,10 +385,12 @@ export const runLogicJudge = async (
     responseSchema,
   });
   const schemaHash = sha256Hex(responseSchema);
+  const judgeInputGeneratedTestCases =
+    normalizeGeneratedTestCasesForLogicJudgeInput(input.generatedTestCases);
   const inputHash = sha256Hex({
     testDesignModel: input.testDesignModel,
     coveragePlan: input.coveragePlan,
-    generatedTestCases: input.generatedTestCases,
+    generatedTestCases: judgeInputGeneratedTestCases,
   });
   const cacheKey: LogicJudgeCacheKey = {
     passKind: "logic_judge",
@@ -408,7 +423,10 @@ export const runLogicJudge = async (
   const promptArtifact: LogicJudgePromptArtifact = {
     jobId: input.jobId,
     systemPrompt: SYSTEM_PROMPT,
-    userPrompt: buildLogicJudgeUserPrompt(input),
+    userPrompt: buildLogicJudgeUserPrompt({
+      ...input,
+      generatedTestCases: judgeInputGeneratedTestCases,
+    }),
     responseSchemaName: RESPONSE_SCHEMA_NAME,
     responseSchema,
     hashes: { promptHash, schemaHash, inputHash, cacheKeyDigest },

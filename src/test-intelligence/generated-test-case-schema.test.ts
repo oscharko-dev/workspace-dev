@@ -202,8 +202,13 @@ test("schema: drift guard — the hash is stable for the current contract", () =
   // flow plus the `test-intelligence onboard` CLI sub-command). Digest
   // shifts in lockstep with the contract version that the generated
   // schema embeds.
+  // Hash bumped by Issue #2219: TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION
+  // bumped 1.7.1 -> 1.7.3 while shrinking and stabilising the generator
+  // prompt. The generated schema pins `promptTemplateVersion`, so the
+  // digest shifts in lockstep with the template bump even though the
+  // GeneratedTestCaseList shape itself is unchanged.
   const expected =
-    "5bac26e16a5e0df3c32b418022b839f2f1b7de925fe98e8640b3e03592aaae18";
+    "a6ab7577d91c44767afdedd60c70c22c96d25b1b19eda81ba10dd9f01b881757";
   const actual = computeGeneratedTestCaseListSchemaHash();
   if (actual !== expected) {
     assert.fail(

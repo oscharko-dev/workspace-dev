@@ -31,6 +31,37 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [1.44.14] - 2026-05-13
+
+Test-intelligence reproducibility and deterministic generation hardening
+for **Issue #2321**.
+
+### Changed (Issue #2321 - reproducible functional test generation)
+
+- `src/test-intelligence/production-runner.ts`: repeated short choice
+  labels such as `Ja`, `Nein`, `Netto`, and `Brutto` are now
+  contextualized with their deterministic field or question label before
+  prompt and cache-key generation. This keeps generated test cases
+  fachlich distinct without relying on post-hoc LLM output cleanup.
+- `src/test-intelligence/figma-payload-normalizer.ts` and
+  `src/test-intelligence/reconciliation.ts`: form-field context from
+  Figma and visual-sidecar sources is preserved more reliably for
+  repeated choice controls.
+- `src/test-intelligence/logic-judge.ts`: volatile replay/cache audit
+  metadata is normalized before logic-judge hashing so repeated runs do
+  not drift because of runtime cache state.
+- `src/test-intelligence-run-cli.ts`: policy-stage reporting remains
+  robust for legacy test doubles while production policy semantics stay
+  unchanged.
+- Template performance runners now use material absolute-delta floors so
+  sub-100ms browser timing jitter does not fail deterministic CI checks.
+
+### Migration (Issue #2321)
+
+No persisted artifact migration is required. Existing artifacts remain
+readable; new runs receive more stable prompt/cache inputs and therefore
+more reproducible generated test-case sets.
+
 ## [1.44.13] - 2026-05-12
 
 Reintroduction of the T7 replay-cache determinism fix through the normal

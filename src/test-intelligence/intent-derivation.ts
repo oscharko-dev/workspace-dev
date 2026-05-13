@@ -94,7 +94,6 @@ const INPUT_TEXT_FIELD_TYPES = new Set([
   "SELECT_FIELD",
   "RESULT_DISPLAY",
   "INFORMATIVE_LABEL",
-  "TEXT",
 ]);
 const ACTION_NODE_TYPES = new Set(["BUTTON", "CTA", "LINK"]);
 const INTERACTION_ACTION_NODE_TYPES = new Set([
@@ -179,7 +178,7 @@ export const deriveBusinessTestIntentIr = (
     kind: input.figma.source.kind,
     contentHash: sha256Hex({
       figma: input.figma,
-      visual: input.visual ?? [],
+      visual: normalizeVisualForIntentSourceHash(input.visual ?? []),
     }),
   };
 
@@ -231,6 +230,50 @@ export const deriveBusinessTestIntentIr = (
 
   return sortAllArrays(reconciled);
 };
+
+const normalizeVisualForIntentSourceHash = (
+  visual: readonly VisualScreenDescription[],
+): unknown[] =>
+  visual
+    .map((screen) => ({
+      screenId: screen.screenId,
+      sidecarDeployment: screen.sidecarDeployment,
+      ...(screen.screenName !== undefined ? { screenName: screen.screenName } : {}),
+      regions: screen.regions
+        .map((region) => ({
+          regionId: region.regionId,
+          ...(region.label !== undefined ? { label: region.label } : {}),
+          ...(region.controlType !== undefined
+            ? { controlType: region.controlType }
+            : {}),
+          ...(region.visibleText !== undefined
+            ? { visibleText: region.visibleText }
+            : {}),
+          ...(region.stateHints !== undefined
+            ? { stateHints: [...region.stateHints].sort() }
+            : {}),
+          ...(region.validationHints !== undefined
+            ? { validationHints: [...region.validationHints].sort() }
+            : {}),
+          ...(region.ambiguity !== undefined ? { ambiguity: region.ambiguity } : {}),
+        }))
+        .sort((left, right) => left.regionId.localeCompare(right.regionId)),
+      ...(screen.piiFlags !== undefined
+        ? {
+            piiFlags: screen.piiFlags
+              .map((flag) => ({
+                regionId: flag.regionId,
+                kind: flag.kind,
+              }))
+              .sort(
+                (left, right) =>
+                  left.regionId.localeCompare(right.regionId) ||
+                  left.kind.localeCompare(right.kind),
+              ),
+          }
+        : {}),
+    }))
+    .sort((left, right) => left.screenId.localeCompare(right.screenId));
 
 const deriveScreens = (
   screens: IntentDerivationScreenInput[],

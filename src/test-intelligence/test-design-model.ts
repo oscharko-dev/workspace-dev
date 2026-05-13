@@ -107,7 +107,7 @@ const CALCULATION_RULE_PATTERN =
 const RESULT_DISPLAY_HINT_PATTERN =
   /\b(result|summary|status|total|balance|output|confirmation|receipt|preview|overview|message|ergebnis|anzeige)\b/i;
 const SELECTABLE_OPTION_HINT_PATTERN =
-  /\b(select|selectable|dropdown|combobox|radio|checkbox|option|choice|picker|segmented|chip|pill|auswahl)\b/i;
+  /\b(select[_\s-]?field|selectable|select|dropdown|combobox|radio[_\s-]?option|radio|checkbox|option|choice|picker|segmented|chip|pill|auswahl)\b/i;
 const INFORMATIVE_LABEL_HINT_PATTERN =
   /\b(info(?:rmative)?|hint|helper|copy|title|heading|question|alert|hinweis|beschreibung|ueberschrift|überschrift)\b/i;
 const SEMANTIC_EVIDENCE_KIND_LABELS = new Map<string, string>([

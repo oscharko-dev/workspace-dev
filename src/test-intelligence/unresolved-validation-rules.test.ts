@@ -392,6 +392,83 @@ test("detectUnsupportedExactValidationClaim ignores label-only unresolved checks
   assert.equal(warning?.path, "steps[0].action");
 });
 
+test("field-scoped unresolved questions do not contaminate unrelated cases on the same screen", () => {
+  const model = buildModel({
+    screens: [
+      {
+        screenId: "screen-financing",
+        name: "Finanzierungsbedarf",
+        elements: [
+          {
+            elementId: "screen-financing::field::person",
+            label: "Person",
+            kind: "select",
+          },
+          {
+            elementId: "screen-financing::field::kaufpreis",
+            label: "Höhe des Kaufpreises (Netto)",
+            kind: "text",
+          },
+        ],
+        actions: [],
+        validations: [],
+        calculations: [],
+        visualRefs: [],
+        sourceRefs: ["custom-context-markdown"],
+      },
+    ],
+    openQuestions: [
+      {
+        openQuestionId: "open-question-person-source",
+        text: "custom_context_markdown: Es ist fachlich zu klären, welche Datenquelle das Auswahlfeld Person verwendet und wie Personendaten validiert werden.",
+      },
+    ],
+  });
+
+  const unrelatedCase = buildGeneratedCase({
+    objective: "Verifizieren, dass das Label Höhe des Kaufpreises (Netto) sichtbar ist.",
+    steps: [
+      {
+        index: 1,
+        action: "Prüfe das Label Höhe des Kaufpreises (Netto).",
+        expected: "Das Label ist sichtbar.",
+      },
+    ],
+    qualitySignals: {
+      coveredFieldIds: ["screen-financing::field::kaufpreis"],
+      coveredActionIds: [],
+      coveredValidationIds: [],
+      coveredNavigationIds: [],
+      confidence: 0.9,
+    },
+  });
+  assert.equal(
+    detectOpenQuestionClarificationClaim({ testCase: unrelatedCase, model }),
+    undefined,
+  );
+
+  const relatedCase = buildGeneratedCase({
+    objective: "Verifizieren, dass das Label Person sichtbar ist.",
+    steps: [
+      {
+        index: 1,
+        action: "Prüfe das Label Person.",
+        expected: "Das Label ist sichtbar.",
+      },
+    ],
+    qualitySignals: {
+      coveredFieldIds: ["screen-financing::field::person"],
+      coveredActionIds: [],
+      coveredValidationIds: [],
+      coveredNavigationIds: [],
+      confidence: 0.9,
+    },
+  });
+  assert.ok(
+    detectOpenQuestionClarificationClaim({ testCase: relatedCase, model }),
+  );
+});
+
 test("detectUnsupportedExactValidationClaim blocks quoted validation messages even when the message text is custom", () => {
   const model = buildModel({
     openQuestions: [
@@ -413,6 +490,13 @@ test("detectUnsupportedExactValidationClaim blocks quoted validation messages ev
       },
     ],
     expectedResults: ["The custom validation message is shown."],
+    qualitySignals: {
+      coveredFieldIds: ["screen-financing::field::mwst"],
+      coveredActionIds: [],
+      coveredValidationIds: [],
+      coveredNavigationIds: [],
+      confidence: 0.9,
+    },
   });
 
   const error = detectUnsupportedExactValidationClaim({ testCase, model });

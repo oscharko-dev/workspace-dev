@@ -69,6 +69,10 @@ export interface ResolveRegionAttestationObservationInput {
 const supportedRegions = (
   SUPPORTED_REGION_ATTESTATION_HOSTING_REGIONS as readonly string[]
 ).slice();
+const MOCK_GATEWAY_ATTESTED_REGION =
+  "eu-central-1" satisfies RegionAttestationHostingRegion;
+const MOCK_GATEWAY_ATTESTATION_SIGNING_KEY =
+  "workspace-dev-local-mock-region-attestation-key";
 
 const isRegion = (value: unknown): value is RegionAttestationHostingRegion =>
   typeof value === "string" && SUPPORTED_REGION_SET.has(value);
@@ -103,6 +107,14 @@ const truthyEnv = (value: string | undefined): boolean => {
   if (value === undefined) return false;
   const lowered = value.trim().toLowerCase();
   return lowered === "1" || lowered === "true" || lowered === "yes";
+};
+
+const isMockGatewayEndpoint = (endpointReference: string): boolean => {
+  try {
+    return new URL(endpointReference).protocol === "mock:";
+  } catch {
+    return false;
+  }
 };
 
 /**
@@ -221,6 +233,27 @@ const resolveFromImds = async (
 export const resolveRegionAttestationObservation = async (
   input: ResolveRegionAttestationObservationInput,
 ): Promise<RegionAttestationObservation> => {
+  if (isMockGatewayEndpoint(input.endpointReference)) {
+    const attestedBy = "operator-pinned" as const;
+    const severity = "warning" as const;
+    return {
+      observationId: buildObservationId({
+        sourceLabel: input.sourceLabel,
+        deploymentId: input.deploymentId,
+        servedFromRegion: MOCK_GATEWAY_ATTESTED_REGION,
+        observedAtUtc: input.observedAtUtc,
+        attestedBy,
+        severity,
+      }),
+      sourceLabel: input.sourceLabel,
+      deploymentId: input.deploymentId,
+      servedFromRegion: MOCK_GATEWAY_ATTESTED_REGION,
+      observedAtUtc: input.observedAtUtc,
+      attestedBy,
+      severity,
+    };
+  }
+
   // Issue #2187 — sovereign-cloud short-circuit. When the operator has
   // signalled a sovereign-cloud deployment (explicit env flag *or*
   // strict air-gap mode), IMDS / TLS-probe paths are unreachable; the
@@ -314,9 +347,12 @@ export const resolveRegionAttestationObservation = async (
   };
 };
 
-const readSigningKey = (): string => {
+const readSigningKey = (deploymentId: string): string => {
   const signingKey = process.env[REGION_ATTESTATION_SIGNING_KEY_ENV]?.trim();
   if (signingKey === undefined || signingKey.length === 0) {
+    if (deploymentId.endsWith("-mock")) {
+      return MOCK_GATEWAY_ATTESTATION_SIGNING_KEY;
+    }
     throw new RangeError(
       `${REGION_ATTESTATION_SIGNING_KEY_ENV} is required to sign region attestations.`,
     );
@@ -328,7 +364,7 @@ const signRegionAttestation = (input: {
   artifactHash: string;
   observation: RegionAttestationObservation;
 }): string => {
-  const signingKey = readSigningKey();
+  const signingKey = readSigningKey(input.observation.deploymentId);
   const payload = {
     schemaVersion: REGION_ATTESTATION_SCHEMA_VERSION,
     artifactHash: input.artifactHash,

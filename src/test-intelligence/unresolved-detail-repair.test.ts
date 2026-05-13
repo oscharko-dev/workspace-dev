@@ -300,11 +300,14 @@ test("repairUnresolvedValidationDetails rewrites concrete title, objective, and 
 
   const repaired = result.list.testCases[0];
   assert.ok(repaired);
-  assert.equal(repaired.title, "Generischer Negativpfad für offene Fachregel");
+  assert.equal(
+    repaired.title,
+    "Generischer Negativpfad für offene Fachregel – netto",
+  );
   assert.match(repaired.objective, /ohne konkrete Meldungen/);
   assert.equal(
     repaired.steps[0]?.action,
-    "Führe den Prüfschritt mit fachlich geklärten Beispielwerten aus.",
+    "Führe den Prüfschritt für „netto“ mit fachlich geklärten Beispielwerten aus.",
   );
   assert.ok(
     result.changes.some(
@@ -324,6 +327,49 @@ test("repairUnresolvedValidationDetails rewrites concrete title, objective, and 
         change.path === "steps[0].action",
     ),
   );
+});
+
+test("repairUnresolvedValidationDetails keeps repaired generic titles target-specific", () => {
+  const first = baseCase({
+    id: "tc-repair-title-ja",
+    title: 'Fehlermeldung "Pflichtfeld muss befüllt sein" für Auswahl Ja',
+    objective:
+      "Prüft, dass die Validierung die konkrete Meldung 'Auswahl fehlt' zeigt.",
+    testData: [],
+    steps: [
+      {
+        index: 1,
+        action: "[ACT-001] Keine Auswahl treffen im Feld 'Ja'",
+        expected: "Validierungsfehler wird angezeigt.",
+      },
+    ],
+    expectedResults: ["Hinweistext bleibt sichtbar."],
+  });
+  const second = baseCase({
+    ...first,
+    id: "tc-repair-title-nein-second",
+    title: 'Fehlermeldung "Pflichtfeld muss befüllt sein" für Auswahl Nein',
+    steps: [
+      {
+        index: 1,
+        action: "[ACT-002] Keine Auswahl treffen im Feld 'Nein' (zweite Gruppe)",
+        expected: "Validierungsfehler wird angezeigt.",
+      },
+    ],
+  });
+
+  const result = repairUnresolvedValidationDetails({
+    jobId: JOB_ID,
+    list: buildList([first, second]),
+    intent: buildIntent(),
+  });
+
+  const titles = result.list.testCases.map((testCase) => testCase.title);
+  assert.deepEqual(titles, [
+    "Generischer Negativpfad für offene Fachregel – Ja",
+    "Generischer Negativpfad für offene Fachregel – Nein (zweite Gruppe)",
+  ]);
+  assert.equal(new Set(titles).size, titles.length);
 });
 
 test("repairUnresolvedValidationDetails leaves cases that do not touch unresolved constraints unchanged", () => {

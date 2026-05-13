@@ -481,6 +481,12 @@ export interface DescribeVisualScreensInput {
     visualFallback?: number;
   };
   /**
+   * Number of primary/fallback rounds for transient gateway failures.
+   * Defaults to one round for backwards-compatible unit tests; production
+   * callers can raise this to absorb short rate-limit/timeout spikes.
+   */
+  maxTransientRounds?: number;
+  /**
    * Optional clock for deterministic attempt timings in tests. Defaults
    * to `performance.now`-equivalent monotonic milliseconds via `Date.now`.
    */
@@ -562,140 +568,150 @@ export const describeVisualScreens = async (
   }
 
   let primaryFailureCause: PrimaryFailureCause | undefined;
-  for (const stage of orchestration.stages) {
-    const primaryCircuitDecision =
-      stage === "primary"
-        ? input.primaryCircuitBreaker?.beforeRequest()
-        : undefined;
-    if (
-      stage === "primary" &&
-      primaryCircuitDecision !== undefined &&
-      !primaryCircuitDecision.allowRequest
-    ) {
-      primaryFailureCause = { fallbackReason: "primary_unavailable" };
-      continue;
-    }
-    const client =
-      stage === "primary"
-        ? input.bundle.visualPrimary
-        : input.bundle.visualFallback;
-    const requestLimits =
-      stage === "primary"
-        ? input.requestLimits?.visualPrimary
-        : input.requestLimits?.visualFallback;
-    const start = clock();
-    const result = await generateWithLocalWallClockGuard({
-      client,
-      operationLabel: `visual sidecar ${stage} gateway request`,
-      request: {
-        jobId: input.jobId,
-        systemPrompt: VISUAL_SIDECAR_SYSTEM_PROMPT,
-        userPrompt,
-        responseSchema,
-        responseSchemaName: VISUAL_SIDECAR_RESPONSE_SCHEMA_NAME,
-        imageInputs: input.captures.map((capture) => ({
-          mimeType: capture.mimeType,
-          base64Data: capture.base64Data,
-          ...(capture.widthPx !== undefined
-            ? { widthPx: capture.widthPx }
-            : {}),
-          ...(capture.heightPx !== undefined
-            ? { heightPx: capture.heightPx }
-            : {}),
-        })),
-        ...(requestLimits ?? {}),
-        ...(input.abortSignal !== undefined
-          ? { abortSignal: input.abortSignal }
-          : {}),
-      },
-      ...(requestLimits?.maxWallClockMs !== undefined
-        ? { defaultWallClockMs: requestLimits.maxWallClockMs }
-        : {}),
-    });
-    const durationMs = Math.max(0, clock() - start);
-
-    const evaluation = evaluateAttempt({
-      result,
-      capturesCount: input.captures.length,
-      generatedAt: input.generatedAt,
-      jobId: input.jobId,
-      intent: input.intent,
-      primaryDeployment,
-    });
-
-    const attemptIndex = attempts.length + 1;
-    const deploymentLabel = clientDeploymentLabel(client);
-    const attempt: VisualSidecarAttempt = {
-      deployment: deploymentLabel,
-      attempt: attemptIndex,
-      durationMs,
-      ...(primaryCircuitDecision !== undefined
-        ? { circuitBreakerState: primaryCircuitDecision.snapshot.state }
-        : {}),
-      ...(evaluation.kind === "ok"
-        ? {}
-        : { errorClass: evaluation.errorClass }),
-    };
-    if (evaluation.kind === "failure") {
-      const diagnostic = buildAttemptDiagnostic({
-        attempt: attemptIndex,
-        deployment: deploymentLabel,
-        durationMs,
-        errorClass: evaluation.errorClass,
-        gatewayResult: result,
-        normalizedParserError: evaluation.normalizedParserError,
-        jobId: input.jobId,
-        generatedAt: input.generatedAt,
-      });
-      attempt.rawResponseArtifactPath = diagnostic.filename;
-      const inferredParserError =
-        evaluation.normalizedParserError ??
-        (result.outcome === "error" &&
-        typeof result.message === "string" &&
-        result.message.length > 0
-          ? result.message
-          : undefined);
-      if (inferredParserError !== undefined) {
-        attempt.normalizedParserError =
-          redactBoundedFailureMessage(inferredParserError);
-      }
-      diagnostics.push(diagnostic);
-    }
-    attempts.push(attempt);
-
-    if (stage === "primary" && input.primaryCircuitBreaker !== undefined) {
-      if (evaluation.kind === "ok") {
-        input.primaryCircuitBreaker.recordSuccess();
-      } else if (isPrimaryCircuitBreakerFailure(evaluation.errorClass)) {
-        input.primaryCircuitBreaker.recordTransientFailure();
-      } else {
-        input.primaryCircuitBreaker.recordNonTransientOutcome();
-      }
-    }
-
-    if (evaluation.kind === "ok") {
-      const fallbackReason: VisualSidecarFallbackReason =
+  const maxTransientRounds = normalizeMaxTransientRounds(
+    input.maxTransientRounds,
+  );
+  for (let round = 0; round < maxTransientRounds; round += 1) {
+    let roundHadTransientFailure = false;
+    for (const stage of orchestration.stages) {
+      const primaryCircuitDecision =
         stage === "primary"
-          ? "none"
-          : input.forceFallback === true
-            ? "policy_downgrade"
-            : (primaryFailureCause?.fallbackReason ?? "primary_unavailable");
-      const success: VisualSidecarSuccess = {
-        outcome: "success",
-        selectedDeployment: clientDeploymentLabel(client),
-        fallbackReason,
-        visual: evaluation.visual,
-        captureIdentities: preflight.identities,
-        attempts,
-        confidenceSummary: aggregateConfidenceSummary(evaluation.visual),
-        validationReport: evaluation.validationReport,
-      };
-      return { result: success, diagnostics };
-    }
+          ? input.primaryCircuitBreaker?.beforeRequest()
+          : undefined;
+      if (
+        stage === "primary" &&
+        primaryCircuitDecision !== undefined &&
+        !primaryCircuitDecision.allowRequest
+      ) {
+        primaryFailureCause = { fallbackReason: "primary_unavailable" };
+        continue;
+      }
+      const client =
+        stage === "primary"
+          ? input.bundle.visualPrimary
+          : input.bundle.visualFallback;
+      const requestLimits =
+        stage === "primary"
+          ? input.requestLimits?.visualPrimary
+          : input.requestLimits?.visualFallback;
+      const start = clock();
+      const result = await generateWithLocalWallClockGuard({
+        client,
+        operationLabel: `visual sidecar ${stage} gateway request`,
+        request: {
+          jobId: input.jobId,
+          systemPrompt: VISUAL_SIDECAR_SYSTEM_PROMPT,
+          userPrompt,
+          responseSchema,
+          responseSchemaName: VISUAL_SIDECAR_RESPONSE_SCHEMA_NAME,
+          imageInputs: input.captures.map((capture) => ({
+            mimeType: capture.mimeType,
+            base64Data: capture.base64Data,
+            ...(capture.widthPx !== undefined
+              ? { widthPx: capture.widthPx }
+              : {}),
+            ...(capture.heightPx !== undefined
+              ? { heightPx: capture.heightPx }
+              : {}),
+          })),
+          ...(requestLimits ?? {}),
+          ...(input.abortSignal !== undefined
+            ? { abortSignal: input.abortSignal }
+            : {}),
+        },
+        ...(requestLimits?.maxWallClockMs !== undefined
+          ? { defaultWallClockMs: requestLimits.maxWallClockMs }
+          : {}),
+      });
+      const durationMs = Math.max(0, clock() - start);
 
-    if (stage === "primary") {
-      primaryFailureCause = derivePrimaryFailureCause(evaluation);
+      const evaluation = evaluateAttempt({
+        result,
+        capturesCount: input.captures.length,
+        generatedAt: input.generatedAt,
+        jobId: input.jobId,
+        intent: input.intent,
+        primaryDeployment,
+      });
+
+      const attemptIndex = attempts.length + 1;
+      const deploymentLabel = clientDeploymentLabel(client);
+      const attempt: VisualSidecarAttempt = {
+        deployment: deploymentLabel,
+        attempt: attemptIndex,
+        durationMs,
+        ...(primaryCircuitDecision !== undefined
+          ? { circuitBreakerState: primaryCircuitDecision.snapshot.state }
+          : {}),
+        ...(evaluation.kind === "ok"
+          ? {}
+          : { errorClass: evaluation.errorClass }),
+      };
+      if (evaluation.kind === "failure") {
+        if (isTransientVisualSidecarFailure(evaluation.errorClass)) {
+          roundHadTransientFailure = true;
+        }
+        const diagnostic = buildAttemptDiagnostic({
+          attempt: attemptIndex,
+          deployment: deploymentLabel,
+          durationMs,
+          errorClass: evaluation.errorClass,
+          gatewayResult: result,
+          normalizedParserError: evaluation.normalizedParserError,
+          jobId: input.jobId,
+          generatedAt: input.generatedAt,
+        });
+        attempt.rawResponseArtifactPath = diagnostic.filename;
+        const inferredParserError =
+          evaluation.normalizedParserError ??
+          (result.outcome === "error" &&
+          typeof result.message === "string" &&
+          result.message.length > 0
+            ? result.message
+            : undefined);
+        if (inferredParserError !== undefined) {
+          attempt.normalizedParserError =
+            redactBoundedFailureMessage(inferredParserError);
+        }
+        diagnostics.push(diagnostic);
+      }
+      attempts.push(attempt);
+
+      if (stage === "primary" && input.primaryCircuitBreaker !== undefined) {
+        if (evaluation.kind === "ok") {
+          input.primaryCircuitBreaker.recordSuccess();
+        } else if (isPrimaryCircuitBreakerFailure(evaluation.errorClass)) {
+          input.primaryCircuitBreaker.recordTransientFailure();
+        } else {
+          input.primaryCircuitBreaker.recordNonTransientOutcome();
+        }
+      }
+
+      if (evaluation.kind === "ok") {
+        const fallbackReason: VisualSidecarFallbackReason =
+          stage === "primary"
+            ? "none"
+            : input.forceFallback === true
+              ? "policy_downgrade"
+              : (primaryFailureCause?.fallbackReason ?? "primary_unavailable");
+        const success: VisualSidecarSuccess = {
+          outcome: "success",
+          selectedDeployment: clientDeploymentLabel(client),
+          fallbackReason,
+          visual: evaluation.visual,
+          captureIdentities: preflight.identities,
+          attempts,
+          confidenceSummary: aggregateConfidenceSummary(evaluation.visual),
+          validationReport: evaluation.validationReport,
+        };
+        return { result: success, diagnostics };
+      }
+
+      if (stage === "primary") {
+        primaryFailureCause = derivePrimaryFailureCause(evaluation);
+      }
     }
+    if (!roundHadTransientFailure) break;
   }
 
   // Both stages exhausted (or the only enabled stage failed).
@@ -719,6 +735,20 @@ export const describeVisualScreens = async (
   };
   return { result: failure, diagnostics };
 };
+
+const normalizeMaxTransientRounds = (value: number | undefined): number => {
+  if (value === undefined) return 1;
+  if (!Number.isFinite(value) || value < 1) return 1;
+  return Math.min(3, Math.floor(value));
+};
+
+const isTransientVisualSidecarFailure = (
+  errorClass: LlmGatewayErrorClass | "schema_invalid_response",
+): boolean =>
+  errorClass === "timeout" ||
+  errorClass === "transport" ||
+  errorClass === "rate_limited" ||
+  errorClass === "incomplete";
 
 const guardFinOpsImageBudgets = (input: {
   identities: ReadonlyArray<VisualSidecarCaptureIdentity>;

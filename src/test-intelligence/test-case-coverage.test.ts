@@ -74,7 +74,7 @@ const buildIntent = (): BusinessTestIntentIr => ({
       provenance: "figma_node",
       confidence: 0.9,
       label: "Email",
-      type: "text",
+      type: "text_input",
     },
     {
       id: "f-2",
@@ -83,7 +83,7 @@ const buildIntent = (): BusinessTestIntentIr => ({
       provenance: "figma_node",
       confidence: 0.9,
       label: "IBAN",
-      type: "text",
+      type: "text_input",
     },
   ],
   detectedActions: [
@@ -380,7 +380,7 @@ test("workflow topology field lifecycles define the lifecycle coverage universe"
   assert.deepEqual(report.fieldLifecycleCoverage.uncoveredIds, []);
 });
 
-test("decorative technical labels and icon actions are excluded from mandatory coverage totals", () => {
+test("static typography and icon actions are excluded from mandatory field coverage totals", () => {
   const intent: BusinessTestIntentIr = {
     ...buildIntent(),
     detectedFields: [
@@ -475,18 +475,13 @@ test("decorative technical labels and icon actions are excluded from mandatory c
     intent,
     duplicateSimilarityThreshold: 0.92,
   });
-  assert.equal(report.fieldCoverage.total, 4);
-  assert.deepEqual(report.fieldCoverage.uncoveredIds, [
-    "f-1",
-    "f-2",
-    "f-decor-heading",
-    "f-decor-helper",
-  ]);
+  assert.equal(report.fieldCoverage.total, 2);
+  assert.deepEqual(report.fieldCoverage.uncoveredIds, ["f-1", "f-2"]);
   assert.equal(report.actionCoverage.total, 1);
   assert.deepEqual(report.actionCoverage.uncoveredIds, ["a-1"]);
 });
 
-test("semantic helper copy and headings remain in mandatory coverage totals", () => {
+test("semantic helper copy and headings do not inflate field coverage totals", () => {
   const report = computeCoverageReport({
     jobId: "job-1",
     generatedAt: "2026-04-25T10:00:00.000Z",
@@ -523,13 +518,8 @@ test("semantic helper copy and headings remain in mandatory coverage totals", ()
     duplicateSimilarityThreshold: 0.92,
   });
 
-  assert.equal(report.fieldCoverage.total, 4);
-  assert.deepEqual(report.fieldCoverage.uncoveredIds, [
-    "f-1",
-    "f-2",
-    "f-helper-copy",
-    "f-page-heading",
-  ]);
+  assert.equal(report.fieldCoverage.total, 2);
+  assert.deepEqual(report.fieldCoverage.uncoveredIds, ["f-1", "f-2"]);
 });
 
 test("rubric score is rounded and clamped", () => {

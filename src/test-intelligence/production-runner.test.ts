@@ -71,6 +71,7 @@ import {
   type DetectedField,
   type DetectedNavigation,
   type DetectedValidation,
+  type GeneratedTestCaseList,
 } from "../contracts/index.js";
 import {
   computeHumanReviewItemId,
@@ -105,7 +106,7 @@ const SAMPLE_FILE = {
             children: [
               node({
                 id: "2:1",
-                name: "Investitionssumme",
+                name: "Investitionssumme input",
                 type: "TEXT",
                 characters: "Investitionssumme",
               }),
@@ -504,7 +505,16 @@ test("runFigmaToQcTestCases happy path persists artifacts and renders customer M
       deployment: "gpt-oss-120b-mock",
       modelRevision: "mock-1",
       gatewayRelease: "mock",
-      responder: okResponder([SAMPLE_DRAFT]),
+      responder: okResponder([
+        {
+          ...SAMPLE_DRAFT,
+          figmaTraceRefs: [],
+          qualitySignals: {
+            ...SAMPLE_DRAFT.qualitySignals,
+            coveredFieldIds: [],
+          },
+        },
+      ]),
     });
     const result = await runFigmaToQcTestCases({
       jobId: "job-123",
@@ -3944,6 +3954,127 @@ test("Issue #1992: repaired runs surface repaired_success with historical judge 
   }
 });
 
+test("case-scoped repair keeps the suite cardinality stable when the repair generator over-emits", async () => {
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "ti-runner-case-scoped-repair-cardinality-"),
+  );
+  try {
+    let logicCallIndex = 0;
+    let generatorCallIndex = 0;
+    let targetId: string | undefined;
+    const extraDraft: ProductionRunnerLlmDraftCase = {
+      ...SAMPLE_DRAFT,
+      title: "Zusätzlicher, nicht angeforderter Repair-Testfall",
+      objective:
+        "Dieser Testfall simuliert eine überemittierte Repair-Antwort des Generators.",
+    };
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: (request, attempt) => {
+        if (request.responseSchemaName === "workspace-dev-logic-judge-v1") {
+          logicCallIndex += 1;
+          if (logicCallIndex === 1) {
+            targetId =
+              request.userPrompt.match(/"id"\s*:\s*"(tc-[a-f0-9]+)"/u)?.[1] ??
+              "$job";
+            return {
+              outcome: "success" as const,
+              content: {
+                verdict: "repair",
+                findings: [
+                  {
+                    testCaseId: targetId,
+                    code: "field_label_mismatch",
+                    severity: "warning",
+                    message: "Ein erwarteter Feldtext soll fallbezogen korrigiert werden.",
+                  },
+                ],
+                repairInstructions: [
+                  {
+                    testCaseId: targetId,
+                    path: "steps[1].expected",
+                    instruction:
+                      "Korrigiere nur das erwartete Ergebnis dieses Testfalls.",
+                    kind: "field_label_mismatch",
+                  },
+                ],
+              },
+              finishReason: "stop" as const,
+              usage: { inputTokens: 20, outputTokens: 10 },
+              modelDeployment: "gpt-oss-120b-mock",
+              modelRevision: "mock-1",
+              gatewayRelease: "mock",
+              attempt,
+            };
+          }
+          return {
+            outcome: "success" as const,
+            content: {
+              verdict: "accept",
+              findings: [],
+              repairInstructions: [],
+            },
+            finishReason: "stop" as const,
+            usage: { inputTokens: 20, outputTokens: 10 },
+            modelDeployment: "gpt-oss-120b-mock",
+            modelRevision: "mock-1",
+            gatewayRelease: "mock",
+            attempt,
+          };
+        }
+        generatorCallIndex += 1;
+        const isRepair = generatorCallIndex > 1;
+        return {
+          outcome: "success" as const,
+          content: {
+            testCases: isRepair
+              ? [...SAMPLE_HARD_GATE_GREEN_DRAFTS, extraDraft]
+              : SAMPLE_HARD_GATE_GREEN_DRAFTS,
+          },
+          finishReason: "stop" as const,
+          usage: { inputTokens: 100, outputTokens: 200 },
+          modelDeployment: "gpt-oss-120b-mock",
+          modelRevision: "mock-1",
+          gatewayRelease: "mock",
+          attempt,
+        };
+      },
+    });
+
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-case-scoped-repair-cardinality",
+      generatedAt: "2026-05-12T12:00:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client },
+      generation: { diversityPasses: 1 },
+    });
+
+    const repairArtifact = JSON.parse(
+      await readFile(
+        path.join(
+          tempRoot,
+          "jobs",
+          "job-case-scoped-repair-cardinality",
+          "test-intelligence",
+          "agent-role-runs",
+          "test_generation_repair_iter_1.json",
+        ),
+        "utf8",
+      ),
+    ) as { outputs: { testCaseCount: number } };
+    const initialSuiteSize = SAMPLE_HARD_GATE_GREEN_DRAFTS.length;
+    assert.equal(targetId?.startsWith("tc-"), true);
+    assert.equal(result.generatedTestCases.testCases.length, initialSuiteSize);
+    assert.equal(repairArtifact.outputs.testCaseCount, initialSuiteSize + 1);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("Issue #2014: agent-participation always lists repair roles so missing optional roles are explicit", async () => {
   const tempRoot = await mkdtemp(
     path.join(os.tmpdir(), "ti-runner-2014-explicit-"),
@@ -4956,7 +5087,7 @@ test("Issue #1929: runFigmaToQcTestCases preserves all 9 initial logic/faithfuln
                         : faithfulnessVerdict === "repair"
                           ? [
                               {
-                                testCaseId: "tc-1",
+                                testCaseId: "$job",
                                 stepIndex: 2,
                                 message:
                                   "The button described in the step is not visible.",
@@ -5094,6 +5225,179 @@ test("Issue #1929: runFigmaToQcTestCases preserves all 9 initial logic/faithfuln
         await rm(tempRoot, { recursive: true, force: true });
       }
     }
+  }
+});
+
+test("generation replay hits do not let stochastic faithfulness repair mutate cached generator output", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-replay-faith-"));
+  const originalFetch = globalThis.fetch;
+  let faithfulnessCalls = 0;
+  try {
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: okResponder(SAMPLE_VISUAL_HARD_GATE_GREEN_DRAFTS),
+    });
+    const extractFirstCaseId = (request: LlmGenerationRequest): string =>
+      request.userPrompt.match(/"id":"(tc-[^"]+)"/u)?.[1] ?? JOB_LEVEL_TEST_CASE_ID;
+    const bundle = createMockLlmGatewayClientBundle({
+      testGeneration: {
+        role: "test_generation",
+        deployment: "gpt-oss-120b",
+        modelRevision: "gpt-oss-120b@test",
+        gatewayRelease: "mock",
+        declaredCapabilities: TEST_GENERATION_CAPS,
+      },
+      visualPrimary: {
+        role: "visual_primary",
+        deployment: "llama-4-maverick-vision",
+        modelRevision: "llama-4-maverick-vision@test",
+        gatewayRelease: "mock",
+        declaredCapabilities: VISUAL_CAPS,
+        responder: (request, attempt) => {
+          if (
+            request.responseSchemaName === "workspace-dev-faithfulness-judge-v1"
+          ) {
+            faithfulnessCalls += 1;
+            if (faithfulnessCalls === 1) {
+              return {
+                outcome: "success" as const,
+                content: buildFaithfulnessAcceptContent(request),
+                finishReason: "stop" as const,
+                usage: { inputTokens: 12, outputTokens: 8 },
+                modelDeployment: "llama-4-maverick-vision",
+                modelRevision: "llama-4-maverick-vision@test",
+                gatewayRelease: "mock",
+                attempt,
+              };
+            }
+            const testCaseId = extractFirstCaseId(request);
+            return {
+              outcome: "success" as const,
+              content: {
+                verdict: "reject",
+                stepVerdicts: [
+                  {
+                    testCaseId,
+                    stepIndex: 1,
+                    verdict: "mismatch",
+                    message:
+                      "Replay regression fixture reports a visual mismatch.",
+                  },
+                ],
+                hallucinations: [],
+                mismatches: [
+                  {
+                    testCaseId,
+                    stepIndex: 1,
+                    expectedLabel: "Investitionssumme",
+                    visibleLabel: "Nicht sichtbares Feld",
+                    message:
+                      "Replay regression fixture reports a visible label mismatch.",
+                  },
+                ],
+              },
+              finishReason: "stop" as const,
+              usage: { inputTokens: 12, outputTokens: 8 },
+              modelDeployment: "llama-4-maverick-vision",
+              modelRevision: "llama-4-maverick-vision@test",
+              gatewayRelease: "mock",
+              attempt,
+            };
+          }
+          return buildVisualSuccess(request, attempt, "1:1");
+        },
+      },
+      visualFallback: {
+        role: "visual_fallback",
+        deployment: "phi-4-multimodal-poc",
+        modelRevision: "phi-4-multimodal-poc@test",
+        gatewayRelease: "mock",
+        declaredCapabilities: VISUAL_CAPS,
+      },
+    });
+    globalThis.fetch = (async (url: string) => {
+      if (url.includes("/v1/files/ABC/nodes?ids=1%3A1")) {
+        return new Response(
+          JSON.stringify({
+            name: "Test View 03",
+            nodes: {
+              "1:1": {
+                document: SAMPLE_FILE.document.children?.[0]?.children?.[0],
+              },
+            },
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        );
+      }
+      if (
+        url ===
+        "https://api.figma.com/v1/images/ABC?ids=1%3A1&format=png&scale=2"
+      ) {
+        return new Response(
+          JSON.stringify({
+            images: {
+              "1:1":
+                "https://figma-alpha-api.s3.us-west-2.amazonaws.com/1_1.png",
+            },
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        );
+      }
+      return new Response(PNG_BYTES, {
+        status: 200,
+        headers: { "content-type": "image/png" },
+      });
+    }) as typeof fetch;
+
+    const first = await runFigmaToQcTestCases({
+      jobId: "job-replay-faithfulness-1",
+      generatedAt: "2026-05-06T12:00:00Z",
+      source: {
+        kind: "figma_url",
+        figmaUrl: "https://www.figma.com/design/ABC/Test-View-03?node-id=1-1",
+        accessToken: "figd_test",
+      },
+      outputRoot: tempRoot,
+      llm: { client, bundle },
+      generation: { diversityPasses: 1 },
+    });
+
+    await rm(path.join(tempRoot, "test-intelligence", "replay-cache", "faithfulness-judge"), {
+      recursive: true,
+      force: true,
+    });
+
+    const second = await runFigmaToQcTestCases({
+      jobId: "job-replay-faithfulness-2",
+      generatedAt: "2026-05-06T12:00:00Z",
+      source: {
+        kind: "figma_url",
+        figmaUrl: "https://www.figma.com/design/ABC/Test-View-03?node-id=1-1",
+        accessToken: "figd_test",
+      },
+      outputRoot: tempRoot,
+      llm: { client, bundle },
+      generation: { diversityPasses: 1 },
+    });
+
+    assert.equal(second.faithfulnessJudge?.verdict.verdict, "reject");
+    assert.equal(second.repairLoop, undefined);
+    assert.deepEqual(
+      second.generatedTestCases.testCases.map((testCase) => testCase.id).sort(),
+      first.generatedTestCases.testCases.map((testCase) => testCase.id).sort(),
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    await rm(tempRoot, { recursive: true, force: true });
   }
 });
 
@@ -5281,10 +5585,10 @@ test("Issue #2069: both_sidecars_failed emits a blocking job-level refusal with 
       (entry) => entry.role === "visual_fallback",
     );
     assert.equal(visualPrimaryParticipation?.status, "failed");
-    assert.equal(visualPrimaryParticipation?.attemptCount, 1);
+    assert.equal(visualPrimaryParticipation?.attemptCount, 2);
     assert.equal(visualPrimaryParticipation?.failureClass, "transport");
     assert.equal(visualFallbackParticipation?.status, "failed");
-    assert.equal(visualFallbackParticipation?.attemptCount, 1);
+    assert.equal(visualFallbackParticipation?.attemptCount, 2);
     assert.equal(visualFallbackParticipation?.failureClass, "transport");
     const finopsReport = JSON.parse(
       await readFile(result.artifactPaths.finopsReport, "utf8"),
@@ -5297,10 +5601,10 @@ test("Issue #2069: both_sidecars_failed emits a blocking job-level refusal with 
     );
     assert.ok(visualPrimary);
     assert.ok(visualFallback);
-    assert.equal(visualPrimary?.attempts, 1);
-    assert.equal(visualPrimary?.failures, 1);
-    assert.equal(visualFallback?.attempts, 1);
-    assert.equal(visualFallback?.failures, 1);
+    assert.equal(visualPrimary?.attempts, 2);
+    assert.equal(visualPrimary?.failures, 2);
+    assert.equal(visualFallback?.attempts, 2);
+    assert.equal(visualFallback?.failures, 2);
     assert.ok(finopsReport.totals.imageBytes > 0);
 
     // Customer Markdown still renders so reviewers can adjudicate.
@@ -5519,7 +5823,7 @@ const makeField = (id: string, screenId: string): DetectedField =>
     id,
     screenId,
     label: id,
-    type: "text",
+    type: "text_input",
     confidence: 0.9,
     trace: { nodeId: id },
     provenance: { source: "figma_rest" },
@@ -6539,6 +6843,57 @@ test("runFigmaToQcTestCases events carry no PII / no raw LLM body", async () => 
   }
 });
 
+test("runFigmaToQcTestCases rewrites PII-like generated test data to synthetic values before validation", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-pii-"));
+  try {
+    const piiDraft: ProductionRunnerLlmDraftCase = {
+      ...SAMPLE_DRAFT,
+      title: "Name erfassen",
+      objective: "Bestätigen, dass ein Name im Namensfeld erfasst werden kann.",
+      testData: ["Name: Max Mustermann"],
+      steps: [
+        {
+          index: 1,
+          action: "Trage Max Mustermann in das Feld Name ein",
+          expected: "Der Name wird übernommen.",
+        },
+      ],
+      expectedResults: ["Der synthetische Name ist im Feld Name sichtbar."],
+    };
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: okResponder([piiDraft]),
+    });
+
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-pii-generated-data",
+      generatedAt: "2026-05-02T10:00:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client },
+      logicJudge: { enabled: false },
+    });
+
+    const generatedBlob = JSON.stringify(result.generatedTestCases);
+    assert.doesNotMatch(generatedBlob, /Max Mustermann/u);
+    assert.match(generatedBlob, /Synthetischer Name A/u);
+
+    const validation = JSON.parse(
+      await readFile(result.artifactPaths.validationReport, "utf8"),
+    ) as { errorCount: number; issues: Array<{ code: string }> };
+    assert.equal(validation.errorCount, 0, JSON.stringify(validation, null, 2));
+    assert.equal(
+      validation.issues.some((issue) => issue.code === "test_data_pii_detected"),
+      false,
+    );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("runFigmaToQcTestCases tolerates malformed regulatoryRelevance on a draft (silently drops)", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-"));
   try {
@@ -7007,6 +7362,98 @@ test("Issue #1988: customContextMarkdown upgrades semantic coverage rules for se
   }
 });
 
+test("customContextMarkdown contextualizes repeated Ja/Nein option labels before deterministic coverage cases", async () => {
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "ti-runner-choice-context-md-"),
+  );
+  try {
+    const choiceFile = {
+      ...SAMPLE_FILE,
+      document: node({
+        id: "0:0",
+        type: "DOCUMENT",
+        children: [
+          node({
+            id: "0:1",
+            name: "Page 1",
+            type: "CANVAS",
+            children: [
+              node({
+                id: "1:1",
+                name: "Financing Need",
+                type: "FRAME",
+                absoluteBoundingBox: { x: 0, y: 0, width: 600, height: 800 },
+                children: [
+                  node({
+                    id: "2:1",
+                    name: "Typography",
+                    type: "TEXT",
+                    characters: "Ja",
+                  }),
+                  node({
+                    id: "2:2",
+                    name: "Typography",
+                    type: "TEXT",
+                    characters: "Nein",
+                  }),
+                ],
+              }),
+            ],
+          }),
+        ],
+      }),
+    };
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: okResponder([SAMPLE_DRAFT]),
+    });
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-choice-context-md",
+      generatedAt: "2026-05-05T10:00:00Z",
+      source: { kind: "figma_paste_normalized", file: choiceFile },
+      outputRoot: tempRoot,
+      llm: { client },
+      customContextMarkdown:
+        "# Fachlicher Umfang\n\n- Ja/Nein-Auswahl `Ist Flexibilität wichtig? (optional)`\n",
+      logicJudge: { enabled: false },
+    });
+
+    const generated = JSON.parse(
+      await readFile(result.artifactPaths.generatedTestCases, "utf8"),
+    ) as GeneratedTestCaseList;
+    const intent = JSON.parse(
+      await readFile(path.join(result.artifactDir, "business-intent-ir.json"), "utf8"),
+    ) as BusinessTestIntentIr;
+
+    assert.ok(
+      generated.testCases.some((testCase) =>
+        testCase.title.includes(
+          "Ist Flexibilität wichtig? (optional) =",
+        ),
+      ),
+    );
+    assert.ok(
+      intent.detectedFields.some(
+        (field) => field.label === "Ist Flexibilität wichtig? (optional) = Ja",
+      ),
+    );
+    assert.ok(
+      intent.detectedFields.some(
+        (field) => field.label === "Ist Flexibilität wichtig? (optional) = Nein",
+      ),
+    );
+    assert.doesNotMatch(
+      generated.testCases.map((testCase) => testCase.title).join("\n"),
+      /Typography(?: \(\d+\))?/u,
+    );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("Issue #1986: VAT-excluded financing need forces a repair iteration and removes the VAT-inclusive expectation", async () => {
   const tempRoot = await mkdtemp(
     path.join(os.tmpdir(), "ti-runner-financing-vat-"),
@@ -7290,7 +7737,9 @@ test("runFigmaToQcTestCases derives qualitySignals from figmaTraceRefs when the 
       logicJudge: { enabled: false },
     });
 
-    const generated = result.generatedTestCases.testCases[0];
+    const generated = result.generatedTestCases.testCases.find(
+      (testCase) => testCase.title === SAMPLE_DRAFT.title,
+    );
     assert.ok(
       generated?.qualitySignals.coveredFieldIds.includes("1:1::field::2:1"),
     );
@@ -7332,7 +7781,9 @@ test("runFigmaToQcTestCases canonicalizes draft qualitySignals and drops unknown
       logicJudge: { enabled: false },
     });
 
-    const generated = result.generatedTestCases.testCases[0];
+    const generated = result.generatedTestCases.testCases.find(
+      (testCase) => testCase.title === SAMPLE_DRAFT.title,
+    );
     assert.deepEqual(generated?.qualitySignals.coveredFieldIds, [
       "1:1::field::2:1",
     ]);
@@ -7400,6 +7851,180 @@ test("runFigmaToQcTestCases adds a deterministic accessibility floor for form sc
   }
 });
 
+test("runFigmaToQcTestCases adds deterministic action coverage for action-only screens", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-action-floor-"));
+  const actionOnlyFile = {
+    ...SAMPLE_FILE,
+    document: node({
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        node({
+          id: "0:1",
+          name: "Page 1",
+          type: "CANVAS",
+          children: [
+            node({
+              id: "1:1",
+              name: "Aktionsdashboard",
+              type: "FRAME",
+              absoluteBoundingBox: { x: 0, y: 0, width: 900, height: 700 },
+              children: [
+                node({
+                  id: "2:1",
+                  name: "Vorhaben hinzufügen Button",
+                  type: "INSTANCE",
+                  characters: "Vorhaben hinzufügen",
+                }),
+                node({
+                  id: "2:2",
+                  name: "Sicherheiten verwalten Button",
+                  type: "INSTANCE",
+                  characters: "Sicherheiten verwalten",
+                }),
+                node({
+                  id: "2:3",
+                  name: "Dokumente verwalten Button",
+                  type: "INSTANCE",
+                  characters: "Dokumente verwalten",
+                }),
+              ],
+            }),
+          ],
+        }),
+      ],
+    }),
+  };
+  try {
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: okResponder([
+        {
+          ...SAMPLE_DRAFT,
+          title: "TC01 - Vorhaben aus dem Aktionsdashboard hinzufügen",
+          objective: "Prüft die primäre Dashboard-Aktion.",
+          figmaTraceRefs: [
+            {
+              screenId: "1:1",
+              nodeId: "2:1",
+              nodeName: "Vorhaben hinzufügen",
+            },
+          ],
+          qualitySignals: {
+            coveredFieldIds: [],
+            coveredActionIds: ["1:1::action::2:1"],
+            coveredValidationIds: [],
+            coveredNavigationIds: [],
+            confidence: 0.9,
+          },
+        },
+      ]),
+    });
+
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-action-only-floor",
+      generatedAt: "2026-05-12T10:00:00Z",
+      source: { kind: "figma_paste_normalized", file: actionOnlyFile },
+      outputRoot: tempRoot,
+      llm: { client },
+      logicJudge: { enabled: false },
+    });
+
+    assert.equal(result.intent.detectedFields.length, 0);
+    assert.equal(result.intent.detectedActions.length, 3);
+    const requiredActionIds = result.intent.detectedActions
+      .map((action) => action.id)
+      .sort();
+    const coveredActionIds = [
+      ...new Set(
+        result.generatedTestCases.testCases.flatMap(
+          (testCase) => testCase.qualitySignals.coveredActionIds,
+        ),
+      ),
+    ].sort();
+    assert.deepEqual(coveredActionIds, requiredActionIds);
+    assert.equal(result.validation.errorCount, 0);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("runFigmaToQcTestCases removes semantically duplicate model cases before export", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-dedupe-"));
+  try {
+    const duplicateSteps = [
+      {
+        index: 1,
+        action: "[ACT-001] Erfasse fuer Nein einen ungueltigen Wert.",
+        expected:
+          "Die Eingabe wird als ungueltig erkennbar und nicht uebernommen.",
+      },
+      {
+        index: 2,
+        action: "Fuehre Meyer Technologies GmbH mit den ungueltigen Daten aus.",
+        expected: "Eine fachliche Fehlermeldung verhindert das Fortfahren.",
+      },
+    ];
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: okResponder([
+        {
+          ...SAMPLE_NEGATIVE_DRAFT,
+          title: "Negativfall: Nein mit ungueltigen Daten ablehnen",
+          priority: "p3",
+          steps: duplicateSteps,
+        },
+        {
+          ...SAMPLE_NEGATIVE_DRAFT,
+          title:
+            "Negativfall: Nein mit ungueltigen Daten ablehnen - Duplicate fuer Vollstaendigkeit",
+          priority: "p1",
+          steps: duplicateSteps,
+        },
+      ]),
+    });
+
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-semantic-dedupe",
+      generatedAt: "2026-05-12T10:00:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client },
+      logicJudge: { enabled: false },
+    });
+
+    const negativeCases = result.generatedTestCases.testCases.filter(
+      (testCase) =>
+        testCase.title.includes("Negativfall: Nein mit ungueltigen Daten"),
+    );
+    assert.equal(negativeCases.length, 1);
+    assert.equal(negativeCases[0]?.priority, "p1");
+    assert.equal(
+      result.generatedTestCases.testCases.some((testCase) =>
+        /\bduplicate\b/iu.test(testCase.title),
+      ),
+      false,
+    );
+    const flowKeys = result.generatedTestCases.testCases.map((testCase) =>
+      JSON.stringify(
+        testCase.steps.map((step) => ({
+          action: step.action,
+          expected: step.expected ?? "",
+        })),
+      ),
+    );
+    assert.equal(new Set(flowKeys).size, flowKeys.length);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("runFigmaToQcTestCases uses deterministic coverage targets for large forms instead of accepting repeated EP output", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-targets-"));
   const labels = [
@@ -7444,7 +8069,7 @@ test("runFigmaToQcTestCases uses deterministic coverage targets for large forms 
               children: labels.map((label, index) =>
                 node({
                   id: `2:${index + 1}`,
-                  name: label,
+                  name: `${label} input`,
                   type: "TEXT",
                   characters: label,
                 }),
@@ -7568,7 +8193,7 @@ test("runFigmaToQcTestCases uses deterministic coverage targets for large forms 
     const generatorRequest = client.recordedRequests()[0];
     assert.ok(generatorRequest);
     assert.equal(
-      generatorRequest.userPrompt.includes("Erweiterungsinvestition"),
+      generatorRequest.userPrompt.includes("Versicherungswunsch"),
       false,
     );
     assert.equal(generatorRequest.userPrompt.includes("Antragsteller"), true);
@@ -8807,11 +9432,11 @@ test("Issue #2053: collapsed judge topology uses deterministic negative-lift fal
 
     assert.equal(collapsedJudgeCalls, 0);
     for (const candidate of [result, replayed]) {
-      assert.equal(candidate.generatedTestCases.testCases.length, 5);
+      assert.equal(candidate.generatedTestCases.testCases.length, 4);
       assert.equal(
         new Set(candidate.generatedTestCases.testCases.map((testCase) => testCase.id))
           .size,
-        5,
+        4,
       );
       assert.equal(
         candidate.generatedTestCases.testCases.filter(
@@ -8874,7 +9499,7 @@ test("Issue #2053: collapsed judge topology uses deterministic negative-lift fal
   }
 });
 
-test("Issue #2053: G-NEG-CASE fails closed under enforce when lift target is missed", async () => {
+test("Issue #2053: G-NEG-CASE passes under enforce when deterministic fallback saturates reachable negative coverage", async () => {
   const tempRoot = await mkdtemp(
     path.join(os.tmpdir(), "ti-runner-2053-fail-"),
   );
@@ -8962,31 +9587,29 @@ test("Issue #2053: G-NEG-CASE fails closed under enforce when lift target is mis
       },
     });
 
-    await assert.rejects(
-      runFigmaToQcTestCases({
+    const result = await runFigmaToQcTestCases({
         jobId: "job-2053-fail",
         generatedAt: "2026-05-08T15:05:00Z",
         source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
         outputRoot: tempRoot,
         llm: { client: generator, logicJudge: judge },
         harness: { mode: "off", maxRepairIterations: 0 },
-      }),
-      (err: unknown) => {
-        assert.ok(err instanceof Error);
-        assert.equal(
-          (err as { failureClass?: string }).failureClass,
-          "NEGATIVE_CASE_LIFT_BELOW_THRESHOLD",
-        );
-        assert.match(err.message, /G-NEG-CASE failed/u);
-        return true;
-      },
+      });
+    const policy = JSON.parse(
+      await readFile(result.artifactPaths.policyReport, "utf8"),
+    ) as { gateResults?: Array<{ gateId: string; status: string; message: string }> };
+    const negCaseGate = policy.gateResults?.find(
+      (entry) => entry.gateId === "G-NEG-CASE",
     );
+    assert.ok(negCaseGate, "expected G-NEG-CASE entry in policy report");
+    assert.equal(negCaseGate.status, "passed");
+    assert.match(negCaseGate.message, /already saturated/u);
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }
 });
 
-test("Issue #2053: G-NEG-CASE records advisory when override flips gateMode and lift is below threshold", async () => {
+test("Issue #2053: G-NEG-CASE records pass when advisory threshold is mathematically saturated", async () => {
   const tempRoot = await mkdtemp(
     path.join(os.tmpdir(), "ti-runner-2053-advisory-"),
   );
@@ -9098,13 +9721,9 @@ test("Issue #2053: G-NEG-CASE records advisory when override flips gateMode and 
       (entry) => entry.gateId === "G-NEG-CASE",
     );
     assert.ok(negCaseGate, "expected G-NEG-CASE entry in policy report");
-    assert.equal(negCaseGate.status, "advisory");
+    assert.equal(negCaseGate.status, "passed");
     assert.equal(negCaseGate.thresholdRatio, 1.1);
-    assert.ok(
-      negCaseGate.observedRatio !== undefined &&
-        negCaseGate.observedRatio < 1.1,
-      "advisory record should carry a below-threshold observedRatio",
-    );
+    assert.match(negCaseGate.message, /already saturated/u);
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }

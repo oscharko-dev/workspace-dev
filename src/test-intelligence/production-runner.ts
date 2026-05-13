@@ -37,7 +37,7 @@
  *     separate issue.
  */
 
-import { mkdir, rename, writeFile } from "node:fs/promises";
+import { mkdir, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import type { Meter, Tracer } from "@opentelemetry/api";
@@ -107,7 +107,9 @@ import {
   type FaithfulnessVerdict,
   type ModelRoutingPolicy,
   type MultiSourceTestIntentEnvelope,
+  type PiiKind,
   type RegulatoryRelevance,
+  type RepairInstruction,
   type RegulatoryRelevanceDomain,
   type JudgeVerdict,
   type TenantScope,
@@ -127,6 +129,7 @@ import {
   type TestCaseCoverageReport,
   type VisualSidecarFailureClass,
   type VisualSidecarResult,
+  type VisualScreenDescription,
   type WorkflowTopology,
   DEFAULT_TENANT_SCOPE,
   REGION_ATTESTATION_REPORT_ARTIFACT_FILENAME,
@@ -260,7 +263,11 @@ import {
 import type { LlmGatewayClient } from "./llm-gateway.js";
 import type { LlmGatewayClientBundle } from "./llm-gateway-bundle.js";
 import { generateWithLocalWallClockGuard } from "./llm-generation-guard.js";
-import { scanLessons, selectRelevantLessons } from "./agent-lessons-memdir.js";
+import {
+  AGENT_LESSONS_DIRECTORY,
+  scanLessons,
+  selectRelevantLessons,
+} from "./agent-lessons-memdir.js";
 import {
   compilePrompt,
   type CompilePromptSuffixSection,
@@ -432,6 +439,7 @@ import {
   type LogicJudgeCoverageThresholds,
   type RunLogicJudgeResult,
 } from "./logic-judge.js";
+import { detectPii } from "./pii-detection.js";
 import {
   buildCoveragePlan,
   buildCoveragePlanWithAugmentation,
@@ -444,7 +452,7 @@ import {
 } from "./risk-ranker.js";
 import {
   isCoverageRelevantActionLike,
-  isCoverageRelevantElementLike,
+  isInteractiveCoverageElementLike,
 } from "./coverage-relevance.js";
 import {
   buildA11yJudgeConsensusEntry,
@@ -1646,6 +1654,8 @@ const splitVisualSidecarAttempts = (
 ): {
   primaryAttempt: VisualSidecarResult["attempts"][number] | undefined;
   fallbackAttempt: VisualSidecarResult["attempts"][number] | undefined;
+  primaryAttemptCount: number;
+  fallbackAttemptCount: number;
 } => {
   const attempts = result?.attempts ?? [];
   if (
@@ -1656,11 +1666,17 @@ const splitVisualSidecarAttempts = (
     return {
       primaryAttempt: undefined,
       fallbackAttempt: attempts[0],
+      primaryAttemptCount: 0,
+      fallbackAttemptCount: 1,
     };
   }
+  const primaryAttempts = attempts.filter((_attempt, index) => index % 2 === 0);
+  const fallbackAttempts = attempts.filter((_attempt, index) => index % 2 === 1);
   return {
-    primaryAttempt: attempts[0],
-    fallbackAttempt: attempts[1],
+    primaryAttempt: primaryAttempts[primaryAttempts.length - 1],
+    fallbackAttempt: fallbackAttempts[fallbackAttempts.length - 1],
+    primaryAttemptCount: primaryAttempts.length,
+    fallbackAttemptCount: fallbackAttempts.length,
   };
 };
 
@@ -1704,9 +1720,12 @@ const buildAgentParticipationEntries = (input: {
 }): readonly AgentParticipationEntry[] => {
   const refs = input.artifactPaths;
   const entries: AgentParticipationEntry[] = [];
-  const { primaryAttempt, fallbackAttempt } = splitVisualSidecarAttempts(
-    input.visualSidecarResult,
-  );
+  const {
+    primaryAttempt,
+    fallbackAttempt,
+    primaryAttemptCount,
+    fallbackAttemptCount,
+  } = splitVisualSidecarAttempts(input.visualSidecarResult);
   const visualBundleConfigured = input.request.llm.bundle !== undefined;
   const logicJudgeClient =
     input.request.llm.bundle?.logicJudge ??
@@ -2028,7 +2047,7 @@ const buildAgentParticipationEntries = (input: {
       : {}),
     configurationSource: visualPrimarySource,
     status: visualPrimaryStatus,
-    attemptCount: primaryAttempt !== undefined ? 1 : 0,
+    attemptCount: primaryAttemptCount,
     ...(visualPrimaryStatus === "not_configured"
       ? {
           remediation:
@@ -2082,7 +2101,7 @@ const buildAgentParticipationEntries = (input: {
       : {}),
     configurationSource: visualFallbackSource,
     status: visualFallbackStatus,
-    attemptCount: fallbackAttempt !== undefined ? 1 : 0,
+    attemptCount: fallbackAttemptCount,
     ...(visualFallbackStatus === "not_configured"
       ? {
           remediation:
@@ -2485,7 +2504,44 @@ const buildRunQualityArtifact = (input: {
 const ADVERSARIAL_NEGATIVE_CASE_LIFT_RULE_REF =
   "ti:rule:adversarial-critic-negative-case-lift" as const;
 const DETERMINISTIC_POST_PROCESSING_VERSION =
-  "2026-05-12.raw-generation-cache-saturated-negative-lift-a11y-floor.v2" as const;
+  "2026-05-12.raw-generation-cache-saturated-negative-lift-a11y-floor-action-only-semantic-dedupe.content-id.screen-visual.ambiguity-id.targeted-unresolved-action.v8" as const;
+
+const buildDeterministicPromptVisualBatch = (input: {
+  readonly intent: {
+    readonly screens: ReadonlyArray<{
+      readonly screenId: string;
+      readonly screenName: string;
+    }>;
+  };
+  readonly visual: readonly VisualScreenDescription[];
+}): VisualScreenDescription[] => {
+  const fallbackDeployment = input.visual[0]?.sidecarDeployment;
+  if (fallbackDeployment === undefined) return [];
+  const visualByScreen = new Map(
+    input.visual.map((screen) => [screen.screenId, screen] as const),
+  );
+  return [...input.intent.screens]
+    .sort((left, right) => left.screenId.localeCompare(right.screenId))
+    .map((screen) => {
+      const source = visualByScreen.get(screen.screenId);
+      const label = screen.screenName.trim() || screen.screenId;
+      return {
+        screenId: screen.screenId,
+        screenName: screen.screenName,
+        sidecarDeployment: source?.sidecarDeployment ?? fallbackDeployment,
+        regions: [
+          {
+            regionId: "screen",
+            confidence: 1,
+            label,
+            controlType: "screen",
+            visibleText: label,
+          },
+        ],
+        confidenceSummary: { min: 1, max: 1, mean: 1 },
+      };
+    });
+};
 
 /**
  * Issue #2053 — resolve the effective `G-NEG-CASE` configuration for a
@@ -2761,7 +2817,7 @@ export const runFigmaToQcTestCases = async (
       figmaFile,
       figmaPayloadCap,
     );
-    await mkdir(artifactDir, { recursive: true });
+    await cleanArtifactDirForFreshRun(artifactDir);
     const normalizedUntrusted = normalizeUntrustedContent({
       figma: { document: figmaFile.document },
     });
@@ -2928,6 +2984,7 @@ export const runFigmaToQcTestCases = async (
               }
             : {}),
         },
+        maxTransientRounds: 2,
         ...(input.llm.abortSignal !== undefined
           ? { abortSignal: input.llm.abortSignal }
           : {}),
@@ -3019,7 +3076,10 @@ export const runFigmaToQcTestCases = async (
           retryable: false,
         });
       } else {
-        promptVisualBatch = sidecarResult.visual;
+        promptVisualBatch = buildDeterministicPromptVisualBatch({
+          intent: intentInput,
+          visual: sidecarResult.visual,
+        });
         intent = deriveBusinessTestIntentIr({
           figma: intentInput,
           visual: promptVisualBatch,
@@ -3055,6 +3115,10 @@ export const runFigmaToQcTestCases = async (
     }
 
     if (customContextMarkdown !== undefined) {
+      intent = contextualizeChoiceFieldsFromCustomContextMarkdown({
+        intent,
+        markdown: customContextMarkdown.bodyPlain,
+      });
       const customContextCalculationStatements =
         buildSourceScopedCalculationAssumptions({
           sourceLabel: "custom_context_markdown",
@@ -3670,14 +3734,14 @@ export const runFigmaToQcTestCases = async (
         responseSchema: draftSchema,
         responseSchemaName: "workspace-dev-production-runner-draft-list-v1",
         outputSchemaHintLabel: "ProductionRunnerDraftResponse",
-        suffixSections: [
-          ...buildPromptSuffixSections(
-            wireIntent,
-            policyProfileId,
-            hasCustomDomainContext,
-            customerEvalRubric,
-            pass.diversityBias,
-          ),
+          suffixSections: [
+            ...buildPromptSuffixSections(
+              generationPromptIntent,
+              policyProfileId,
+              hasCustomDomainContext,
+              customerEvalRubric,
+              pass.diversityBias,
+            ),
           ...extraSuffixSections,
         ],
         visualBinding: promptVisualBinding,
@@ -3768,6 +3832,8 @@ export const runFigmaToQcTestCases = async (
           timestamp: monotonicMs(),
           details: {
             promptHash: compiled.request.hashes.promptHash,
+            inputHash: compiled.request.hashes.inputHash,
+            cacheKey: compiled.request.hashes.cacheKey,
             schemaHash: compiled.request.hashes.schemaHash,
             maxOutputTokens: effectiveMaxOutputTokens,
             maxInputTokens: effectiveMaxInputTokens,
@@ -5056,6 +5122,27 @@ export const runFigmaToQcTestCases = async (
     );
     let repairLoopResult: RepairLoopResult | undefined;
     if (
+      generationCacheHit &&
+      !initialJudgeAccepted &&
+      judgeConsensusDisposition.disposition === "repair"
+    ) {
+      judgeConsensusResult = buildCurrentJudgeConsensus({
+        attempted: false,
+        repairIterationCount: 0,
+        finalOutcome: "needs_review",
+        historicalFindings: initialJudgeConsensusResult.activeFindings,
+        historicalRepairInstructions:
+          initialJudgeConsensusResult.repairInstructions,
+      });
+      judgeConsensusDisposition = {
+        ...resolveJudgeConsensusDisposition({
+          verdict: judgeConsensusResult,
+          generatedTestCases: generatedList,
+          logicJudgeDeployment: logicJudgeClient.deployment,
+        }),
+        disposition: "needs_review",
+      };
+    } else if (
       !initialJudgeAccepted &&
       judgeConsensusDisposition.disposition === "needs_review"
     ) {
@@ -5280,7 +5367,11 @@ export const runFigmaToQcTestCases = async (
               if (merged.selfConsistencyReport !== undefined) {
                 selfConsistencyReport = merged.selfConsistencyReport;
               }
-              return merged.list;
+              return mergeCaseScopedRepairIntoPreviousList({
+                previousList,
+                regeneratedList: merged.list,
+                repairInstructions,
+              });
             })(),
             llmResult: repairPassResults[0]!.llmResult,
             llmDurationMs: repairPassResults.reduce(
@@ -7694,6 +7785,18 @@ const resolveFigmaSource = async (
   }
 };
 
+const cleanArtifactDirForFreshRun = async (artifactDir: string): Promise<void> => {
+  await mkdir(artifactDir, { recursive: true });
+  const entries = await readdir(artifactDir, { withFileTypes: true });
+  await Promise.all(
+    entries
+      .filter((entry) => entry.name !== AGENT_LESSONS_DIRECTORY)
+      .map((entry) =>
+        rm(join(artifactDir, entry.name), { recursive: true, force: true }),
+      ),
+  );
+};
+
 const assertFigmaPayloadWithinLimit = (
   file: FigmaRestFileSnapshot,
   maxPayloadBytes: number,
@@ -7744,12 +7847,70 @@ interface BoundIntentForLlmCaps {
   maxNavigationPerScreen: number;
 }
 
+const PROMPT_CAP_SORT_KEYS = [
+  "id",
+  "actionId",
+  "validationId",
+  "navigationId",
+  "targetFieldId",
+  "label",
+  "rule",
+] as const;
+
+const toPromptCapSortKey = (row: { screenId: string }): string => {
+  const candidate = row as Record<string, unknown>;
+  for (const key of PROMPT_CAP_SORT_KEYS) {
+    const value = candidate[key];
+    if (typeof value === "string" && value.length > 0) {
+      return `${row.screenId}\u0000${value}`;
+    }
+  }
+  return row.screenId;
+};
+
+const tokenizeNaturalSortKey = (value: string): readonly string[] =>
+  value.match(/\d+|\D+/gu) ?? [value];
+
+const compareNaturalPromptCapKey = (left: string, right: string): number => {
+  const leftParts = tokenizeNaturalSortKey(left);
+  const rightParts = tokenizeNaturalSortKey(right);
+  const maxLength = Math.max(leftParts.length, rightParts.length);
+  for (let i = 0; i < maxLength; i += 1) {
+    const leftPart = leftParts[i];
+    const rightPart = rightParts[i];
+    if (leftPart === undefined) return -1;
+    if (rightPart === undefined) return 1;
+    if (leftPart === rightPart) continue;
+    const leftNumber = /^\d+$/u.test(leftPart) ? Number(leftPart) : undefined;
+    const rightNumber = /^\d+$/u.test(rightPart) ? Number(rightPart) : undefined;
+    if (leftNumber !== undefined && rightNumber !== undefined) {
+      if (leftNumber !== rightNumber) return leftNumber - rightNumber;
+      if (leftPart.length !== rightPart.length) {
+        return leftPart.length - rightPart.length;
+      }
+      continue;
+    }
+    return leftPart < rightPart ? -1 : 1;
+  }
+  return 0;
+};
+
+const comparePromptCapRows = <T extends { screenId: string }>(
+  left: T,
+  right: T,
+): number =>
+  compareNaturalPromptCapKey(
+    toPromptCapSortKey(left),
+    toPromptCapSortKey(right),
+  );
+
 /**
  * Return a deep copy of the IR with per-screen caps applied to the four
  * `detected*` arrays. The IR is sorted by `(screenId, id)` upstream
- * (`deriveBusinessTestIntentIr`) so a deterministic prefix is also a
- * deterministic representative slice — same input → same wire IR → same
- * `promptHash` → same replay-cache identity.
+ * (`deriveBusinessTestIntentIr`), but Figma node ids are not lexicographic
+ * user order (`2:21` sorts before `2:3`). The slice is therefore naturally
+ * sorted before capping so large-form prompts keep the first visual/business
+ * fields deterministically.
  *
  * When any array is truncated, an `assumptions` entry is appended naming the
  * affected screens so the model (and any reviewer reading
@@ -7764,7 +7925,7 @@ export const boundIntentForLlm = (
   const relevantFieldIds = new Set(
     intent.detectedFields
       .filter((field) =>
-        isCoverageRelevantElementLike({
+        isInteractiveCoverageElementLike({
           label: field.label,
           kind: field.type,
         }),
@@ -7791,14 +7952,17 @@ export const boundIntentForLlm = (
     const out: T[] = [];
     const truncatedScreens: string[] = [];
     for (const [screenId, bucket] of byScreen) {
-      if (bucket.length > perScreenCap) {
-        truncatedScreens.push(`${screenId} (${bucket.length}→${perScreenCap})`);
+      const sortedBucket = [...bucket].sort(comparePromptCapRows);
+      if (sortedBucket.length > perScreenCap) {
+        truncatedScreens.push(
+          `${screenId} (${sortedBucket.length}→${perScreenCap})`,
+        );
         for (let i = 0; i < perScreenCap; i += 1) {
-          const row = bucket[i];
+          const row = sortedBucket[i];
           if (row !== undefined) out.push(row);
         }
       } else {
-        for (const row of bucket) out.push(row);
+        for (const row of sortedBucket) out.push(row);
       }
     }
     if (truncatedScreens.length > 0) {
@@ -8952,6 +9116,14 @@ const enforceTechniqueQuotaSupplementalCasesForValidation = (input: {
     Array<BusinessTestIntentIr["detectedFields"][number]>
   >();
   for (const field of input.intent.detectedFields) {
+    if (
+      !isInteractiveCoverageElementLike({
+        label: field.label,
+        kind: field.type,
+      })
+    ) {
+      continue;
+    }
     const fields = fieldsByScreen.get(field.screenId) ?? [];
     fields.push(field);
     fieldsByScreen.set(field.screenId, fields);
@@ -9130,6 +9302,14 @@ const enforceMandatoryWorkflowLifecycleTransitionsForValidation = (input: {
     }
     const field = fieldsById.get(group.fieldId);
     if (field === undefined) continue;
+    if (
+      !isInteractiveCoverageElementLike({
+        label: field.label,
+        kind: field.type,
+      })
+    ) {
+      continue;
+    }
     const fieldLabel = deterministicFieldDisplayLabel({
       field,
       fields: input.intent.detectedFields,
@@ -9186,9 +9366,11 @@ const deterministicSupplementalCaseId = (input: {
     | "field-coverage-target"
     | "field-negative-target"
     | "form-a11y-floor"
-    | "screen-baseline-target";
+    | "screen-baseline-target"
+    | "action-coverage-target";
   readonly screenId: string;
   readonly fieldId?: string;
+  readonly actionId?: string;
   readonly index?: number;
 }): string =>
   `tc-${createHash("sha256")
@@ -9258,6 +9440,15 @@ const figmaTraceRefForField = (
   ...(field.trace.nodePath !== undefined ? { nodePath: field.trace.nodePath } : {}),
 });
 
+const figmaTraceRefForAction = (
+  action: Pick<BusinessTestIntentIr["detectedActions"][number], "screenId" | "trace">,
+): GeneratedTestCaseFigmaTrace => ({
+  screenId: action.screenId,
+  ...(action.trace.nodeId !== undefined ? { nodeId: action.trace.nodeId } : {}),
+  ...(action.trace.nodeName !== undefined ? { nodeName: action.trace.nodeName } : {}),
+  ...(action.trace.nodePath !== undefined ? { nodePath: action.trace.nodePath } : {}),
+});
+
 const COMMON_SHORT_CHOICE_LABEL_PATTERN =
   /^(?:ja|nein|yes|no|true|false|wahr|falsch|netto|brutto)$/iu;
 
@@ -9286,9 +9477,201 @@ const sharedPrefixLength = (
 
 const shouldContextualizeFieldLabel = (
   field: BusinessTestIntentIr["detectedFields"][number],
-): boolean =>
-  OPTION_FIELD_TYPE_PATTERN.test(field.type) ||
-  COMMON_SHORT_CHOICE_LABEL_PATTERN.test(field.label.trim());
+): boolean => {
+  const label = field.label.trim();
+  if (label.includes("=")) return false;
+  return (
+    OPTION_FIELD_TYPE_PATTERN.test(field.type) ||
+    COMMON_SHORT_CHOICE_LABEL_PATTERN.test(label)
+  );
+};
+
+interface CustomContextChoiceGroup {
+  readonly context: string;
+  readonly remainingChoices: Map<string, number>;
+}
+
+const contextualizeChoiceFieldsFromCustomContextMarkdown = (input: {
+  readonly intent: BusinessTestIntentIr;
+  readonly markdown: string;
+}): BusinessTestIntentIr => {
+  const choiceGroups = parseCustomContextChoiceGroups(input.markdown);
+  if (choiceGroups.length === 0) return input.intent;
+
+  const groupsByScreen = new Map<string, CustomContextChoiceGroup[]>();
+  for (const screen of input.intent.screens) {
+    groupsByScreen.set(screen.screenId, cloneCustomContextChoiceGroups(choiceGroups));
+  }
+
+  const detectedFields = input.intent.detectedFields.map((field) => {
+    if (!shouldContextualizeFieldLabel(field)) return field;
+    if (!COMMON_SHORT_CHOICE_LABEL_PATTERN.test(field.label.trim())) return field;
+    if (field.label.includes("=")) return field;
+    const groups = groupsByScreen.get(field.screenId);
+    if (groups === undefined) return field;
+    const choice = normalizeCustomContextChoice(field.label);
+    const group = groups.find(
+      (candidate) => (candidate.remainingChoices.get(choice) ?? 0) > 0,
+    );
+    if (group === undefined) return field;
+    const remaining = group.remainingChoices.get(choice) ?? 0;
+    if (remaining <= 1) group.remainingChoices.delete(choice);
+    else group.remainingChoices.set(choice, remaining - 1);
+    return {
+      ...field,
+      label: `${group.context} = ${field.label}`,
+      provenance: "reconciled" as const,
+    };
+  });
+
+  return {
+    ...input.intent,
+    detectedFields,
+  };
+};
+
+const cloneCustomContextChoiceGroups = (
+  groups: readonly CustomContextChoiceGroup[],
+): CustomContextChoiceGroup[] =>
+  groups.map((group) => ({
+    context: group.context,
+    remainingChoices: new Map(group.remainingChoices),
+  }));
+
+const parseCustomContextChoiceGroups = (
+  markdown: string,
+): CustomContextChoiceGroup[] => {
+  const groups: CustomContextChoiceGroup[] = [];
+  const lines = markdown
+    .split(/\r?\n/u)
+    .map((rawLine) => rawLine.replace(/^\s*[-*]\s*/u, "").trim())
+    .filter((line) => line.length > 0);
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+
+    if (/^(?:Optionale\s+)?Ja\/Nein-Auswahl\b:?/iu.test(line)) {
+      const context =
+        extractCustomContextChoiceContext(line, /^(?:Optionale\s+)?Ja\/Nein-Auswahl\b:?/iu) ??
+        findFollowingCustomContextChoiceContext(lines, index + 1);
+      if (context !== undefined) {
+        groups.push(customContextChoiceGroup(context, ["Ja", "Nein"]));
+      }
+      continue;
+    }
+
+    const radioPrefix =
+      /^(?:(?:Frage\s+mit\s+)?Radio-Auswahl|Frage\s+mit\s+Auswahloptionen)\b:?/iu;
+    if (radioPrefix.test(line)) {
+      const context =
+        extractCustomContextChoiceContext(line, radioPrefix) ??
+        findFollowingCustomContextChoiceContext(lines, index + 1);
+      if (context !== undefined) {
+        const options = collectFollowingCustomContextOptions(lines, index);
+        if (options.length >= 2) {
+          groups.push(customContextChoiceGroup(context, options));
+        }
+      }
+      continue;
+    }
+  }
+  return groups;
+};
+
+const parseCustomContextOptionLine = (line: string): string[] => {
+  const quoted = [...line.matchAll(/`([^`]+)`/gu)]
+    .map((match) => match[1]?.trim() ?? "")
+    .filter((value) => COMMON_SHORT_CHOICE_LABEL_PATTERN.test(value));
+  if (quoted.length > 0) return quoted;
+
+  const unquoted = line
+    .replace(/^\s*Option(?:en)?\s*:?\s*/iu, "")
+    .split(/\s*(?:,|\/|\bund\b|\boder\b)\s*/iu)
+    .map((value) => value.trim())
+    .filter((value) => COMMON_SHORT_CHOICE_LABEL_PATTERN.test(value));
+  return unquoted;
+};
+
+const extractCustomContextChoiceContext = (
+  line: string,
+  prefix: RegExp,
+): string | undefined => {
+  const quoted = /`([^`]+)`/u.exec(line)?.[1]?.trim();
+  if (quoted !== undefined && quoted.length > 0) return quoted;
+  const remainder = line.replace(prefix, "").replace(/^[:\s-]+/u, "").trim();
+  return isUsableCustomContextChoiceContext(remainder) ? remainder : undefined;
+};
+
+const findFollowingCustomContextChoiceContext = (
+  lines: readonly string[],
+  startIndex: number,
+): string | undefined => {
+  for (let index = startIndex; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    if (isCustomContextChoiceHeading(line)) return undefined;
+    if (/^Option(?:en)?\b:?/iu.test(line) || /^Radio-Optionen\b:?/iu.test(line)) {
+      continue;
+    }
+    const quoted = /`([^`]+)`/u.exec(line)?.[1]?.trim();
+    const context = quoted !== undefined && quoted.length > 0 ? quoted : line;
+    return isUsableCustomContextChoiceContext(context) ? context : undefined;
+  }
+  return undefined;
+};
+
+const collectFollowingCustomContextOptions = (
+  lines: readonly string[],
+  startIndex: number,
+): string[] => {
+  const options: string[] = [];
+  for (let index = startIndex; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    if (index > startIndex && isCustomContextChoiceHeading(line)) break;
+    if (index > startIndex && isUsableCustomContextChoiceContext(line)) {
+      const lineOptions = parseCustomContextOptionLine(line);
+      if (lineOptions.length === 0) continue;
+      options.push(...lineOptions);
+    } else {
+      options.push(...parseCustomContextOptionLine(line));
+    }
+    if (options.length >= 2) break;
+  }
+  return options;
+};
+
+const isCustomContextChoiceHeading = (line: string): boolean =>
+  /^(?:Optionale\s+)?Ja\/Nein-Auswahl\b:?/iu.test(line) ||
+  /^(?:(?:Frage\s+mit\s+)?Radio-Auswahl|Frage\s+mit\s+Auswahloptionen)\b:?/iu.test(
+    line,
+  );
+
+const isUsableCustomContextChoiceContext = (value: string): boolean => {
+  const trimmed = value.trim();
+  return (
+    trimmed.length > 0 &&
+    !/^Option(?:en)?\b:?/iu.test(trimmed) &&
+    !/^Radio-Optionen\b:?/iu.test(trimmed) &&
+    !COMMON_SHORT_CHOICE_LABEL_PATTERN.test(trimmed)
+  );
+};
+
+const customContextChoiceGroup = (
+  context: string,
+  choices: readonly string[],
+): CustomContextChoiceGroup => {
+  const remainingChoices = new Map<string, number>();
+  for (const choice of choices) {
+    const normalized = normalizeCustomContextChoice(choice);
+    remainingChoices.set(normalized, (remainingChoices.get(normalized) ?? 0) + 1);
+  }
+  return {
+    context: context.trim(),
+    remainingChoices,
+  };
+};
+
+const normalizeCustomContextChoice = (value: string): string =>
+  value.trim().normalize("NFKC").toLowerCase();
 
 const deterministicFieldDisplayLabel = (input: {
   readonly field: BusinessTestIntentIr["detectedFields"][number];
@@ -9640,6 +10023,75 @@ const buildDeterministicScreenBaselineCase = (input: {
   });
 };
 
+const buildDeterministicActionCoverageCase = (input: {
+  readonly jobId: string;
+  readonly seedCase: GeneratedTestCase;
+  readonly screenId: string;
+  readonly screenName: string;
+  readonly action: BusinessTestIntentIr["detectedActions"][number];
+  readonly workflowTopology: WorkflowTopology;
+}): GeneratedTestCase =>
+  finalizeDeterministicSupplementalCase({
+    workflowTopology: input.workflowTopology,
+    testCase: {
+      ...input.seedCase,
+      id: deterministicSupplementalCaseId({
+        kind: "action-coverage-target",
+        screenId: input.screenId,
+        actionId: input.action.id,
+      }),
+      title: `Aktion „${input.action.label}“ auf „${input.screenName}“ fachlich prüfen`,
+      objective:
+        "Prüft, dass eine fachlich sichtbare Aktion der Maske auslösbar ist und zu einem nachvollziehbaren Zielzustand führt.",
+      type: "functional",
+      polarity: "positive",
+      category: "positive_path",
+      priority: "p1",
+      riskCategory:
+        input.seedCase.riskCategory === "low"
+          ? "medium"
+          : input.seedCase.riskCategory,
+      technique: "use_case",
+      preconditions: [`Die Maske „${input.screenName}“ ist geöffnet.`],
+      testData: [`Aktion: ${input.action.label}`],
+      steps: [
+        {
+          index: 1,
+          action: `Öffne die Maske „${input.screenName}“.`,
+          expected: "Die Maske ist sichtbar und die fachlichen Aktionen sind erkennbar.",
+        },
+        {
+          index: 2,
+          action: `Wähle die Aktion „${input.action.label}“.`,
+          expected:
+            "Die Anwendung reagiert fachlich nachvollziehbar durch Navigation, Dialog, Aktualisierung oder eine begründete Hinweis-/Sperrmeldung.",
+        },
+        {
+          index: 3,
+          action: "Prüfe den angezeigten Folgezustand.",
+          expected:
+            "Der Folgezustand ist konsistent zur gewählten Aktion und zeigt keine unerwartete technische Fehlermeldung.",
+        },
+      ],
+      expectedResults: [
+        `Die Aktion „${input.action.label}“ ist fachlich testbar abgedeckt.`,
+        "Der resultierende Zustand ist für den Benutzer nachvollziehbar und konsistent.",
+      ],
+      figmaTraceRefs: [figmaTraceRefForAction(input.action)],
+      assumptions: [],
+      openQuestions: [],
+      qualitySignals: {
+        ...input.seedCase.qualitySignals,
+        coveredFieldIds: [],
+        coveredActionIds: [input.action.id],
+        coveredValidationIds: [],
+        coveredNavigationIds: [],
+        confidence: Math.min(input.seedCase.qualitySignals.confidence, 0.85),
+      },
+      reviewState: "needs_review",
+    },
+  });
+
 const resolveDeterministicCaseCountScreenTargets = (input: {
   readonly intent: BusinessTestIntentIr;
   readonly coveragePlan: CoveragePlan;
@@ -9867,6 +10319,103 @@ const enforceFormAccessibilityFloorForValidation = (input: {
         ...input.list,
         testCases: testCases.sort((left, right) => left.id.localeCompare(right.id)),
       }
+	    : input.list;
+};
+
+const enforceActionOnlyScreenCoverageForValidation = (input: {
+  readonly list: GeneratedTestCaseList;
+  readonly intent: BusinessTestIntentIr;
+  readonly workflowTopology: WorkflowTopology;
+}): GeneratedTestCaseList => {
+  if (input.intent.detectedActions.length === 0 || input.list.testCases.length === 0) {
+    return input.list;
+  }
+
+  const interactiveFieldScreenIds = new Set(
+    input.intent.detectedFields
+      .filter((field) =>
+        isInteractiveCoverageElementLike({
+          label: field.label,
+          kind: field.type,
+        }),
+      )
+      .map((field) => field.screenId),
+  );
+  const actionsByScreen = new Map<
+    string,
+    Array<BusinessTestIntentIr["detectedActions"][number]>
+  >();
+  for (const action of input.intent.detectedActions) {
+    if (interactiveFieldScreenIds.has(action.screenId)) continue;
+    if (
+      !isCoverageRelevantActionLike({
+        label: action.label,
+        kind: action.kind,
+      })
+    ) {
+      continue;
+    }
+    const actions = actionsByScreen.get(action.screenId) ?? [];
+    actions.push(action);
+    actionsByScreen.set(action.screenId, actions);
+  }
+  if (actionsByScreen.size === 0) return input.list;
+
+  const screenNames = new Map(
+    input.intent.screens.map((screen) => [screen.screenId, screen.screenName]),
+  );
+  const testCases = [...input.list.testCases];
+  const usedIds = new Set(testCases.map((testCase) => testCase.id));
+  let changed = false;
+
+  for (const [screenId, actions] of [...actionsByScreen.entries()].sort(
+    ([left], [right]) => left.localeCompare(right),
+  )) {
+    const coveredActionIds = new Set<string>();
+    for (const testCase of testCases) {
+      if (!testCaseAnchorsScreen(testCase, screenId)) continue;
+      for (const actionId of testCase.qualitySignals.coveredActionIds) {
+        coveredActionIds.add(actionId);
+      }
+    }
+    const missingActions = actions
+      .filter((action) => !coveredActionIds.has(action.id))
+      .sort((left, right) => left.id.localeCompare(right.id));
+    if (missingActions.length === 0) continue;
+    const seedCase =
+      testCases
+        .filter((testCase) => testCaseAnchorsScreen(testCase, screenId))
+        .sort(
+          (left, right) =>
+            left.qualitySignals.confidence - right.qualitySignals.confidence ||
+            left.id.localeCompare(right.id),
+        )[0] ??
+      testCases
+        .filter((testCase) => testCase.type !== "negative")
+        .sort((left, right) => left.id.localeCompare(right.id))[0] ??
+      testCases[0];
+    if (seedCase === undefined) continue;
+    for (const action of missingActions) {
+      const supplemental = buildDeterministicActionCoverageCase({
+        jobId: input.list.jobId,
+        seedCase,
+        screenId,
+        screenName: screenNames.get(screenId) ?? "Maske",
+        action,
+        workflowTopology: input.workflowTopology,
+      });
+      if (usedIds.has(supplemental.id)) continue;
+      usedIds.add(supplemental.id);
+      testCases.push(supplemental);
+      changed = true;
+    }
+  }
+
+  return changed
+    ? {
+        ...input.list,
+        testCases: testCases.sort((left, right) => left.id.localeCompare(right.id)),
+      }
     : input.list;
 };
 
@@ -9999,7 +10548,185 @@ const enforceDeterministicCoverageTargetsForValidation = (input: {
           left.id.localeCompare(right.id),
         ),
       }
-    : input.list;
+	    : input.list;
+};
+
+const GENERATED_TEST_CASE_PRIORITY_RANK: Record<TestCasePriority, number> = {
+  p0: 0,
+  p1: 1,
+  p2: 2,
+  p3: 3,
+};
+
+const MODEL_DUPLICATE_TITLE_FRAGMENT_PATTERN =
+  /\s*(?:[-–—:]\s*)?duplicate\s+(?:f(?:ü|ue)r\s+vollst(?:ä|ae)ndigkeit|for\s+completeness)\b.*$/iu;
+
+const normalizeGeneratedCaseDuplicateText = (value: string): string =>
+  value
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(MODEL_DUPLICATE_TITLE_FRAGMENT_PATTERN, " ")
+    .replace(/\btc[\s_-]*\d+[a-z]?\b/giu, " ")
+    .replace(/\[[^\]]*\]/gu, " ")
+    .replace(/\bflt-[a-f0-9]+\b/giu, " ")
+    .replace(/&/gu, " und ")
+    .replace(/[\p{P}\p{S}]+/gu, " ")
+    .replace(/\s+/gu, " ")
+    .trim();
+
+const sanitizeModelDuplicateTitleArtifacts = (
+  testCase: GeneratedTestCase,
+): GeneratedTestCase => {
+  const title = testCase.title
+    .replace(MODEL_DUPLICATE_TITLE_FRAGMENT_PATTERN, "")
+    .replace(/\s{2,}/gu, " ")
+    .trim();
+  return title === testCase.title ? testCase : { ...testCase, title };
+};
+
+const generatedCaseCoveredTargetKey = (
+  testCase: GeneratedTestCase,
+): string[] =>
+  [
+    ...testCase.qualitySignals.coveredFieldIds.map((id) => `field:${id}`),
+    ...testCase.qualitySignals.coveredActionIds.map((id) => `action:${id}`),
+    ...testCase.qualitySignals.coveredValidationIds.map(
+      (id) => `validation:${id}`,
+    ),
+    ...testCase.qualitySignals.coveredNavigationIds.map(
+      (id) => `navigation:${id}`,
+    ),
+  ].sort();
+
+const generatedCaseTraceTargetKey = (
+  testCase: GeneratedTestCase,
+): string[] =>
+  testCase.figmaTraceRefs
+    .map(
+      (traceRef) =>
+        `${traceRef.screenId}::${traceRef.nodeId ?? ""}::${normalizeGeneratedCaseDuplicateText(
+          traceRef.nodeName ?? "",
+        )}`,
+    )
+    .sort();
+
+const generatedCaseSemanticExecutionKey = (
+  testCase: GeneratedTestCase,
+): string =>
+  canonicalJson({
+    category: testCase.category ?? "",
+    polarity: testCase.polarity ?? "",
+    targets: generatedCaseCoveredTargetKey(testCase),
+    technique: testCase.technique,
+    traces: generatedCaseTraceTargetKey(testCase),
+    type: testCase.type,
+    steps: testCase.steps.map((step) => ({
+      action: normalizeGeneratedCaseDuplicateText(step.action),
+      data: normalizeGeneratedCaseDuplicateText(step.data ?? ""),
+      expected: normalizeGeneratedCaseDuplicateText(step.expected ?? ""),
+    })),
+  });
+
+const generatedCaseDuplicateTitlePenalty = (
+  testCase: GeneratedTestCase,
+): number => (/\bduplicate\b/iu.test(testCase.title) ? 1 : 0);
+
+const generatedCaseCoverageSize = (testCase: GeneratedTestCase): number =>
+  testCase.qualitySignals.coveredFieldIds.length +
+  testCase.qualitySignals.coveredActionIds.length +
+  testCase.qualitySignals.coveredValidationIds.length +
+  testCase.qualitySignals.coveredNavigationIds.length;
+
+const compareGeneratedCaseRepresentatives = (
+  left: GeneratedTestCase,
+  right: GeneratedTestCase,
+): number =>
+  GENERATED_TEST_CASE_PRIORITY_RANK[left.priority] -
+    GENERATED_TEST_CASE_PRIORITY_RANK[right.priority] ||
+  generatedCaseDuplicateTitlePenalty(left) -
+    generatedCaseDuplicateTitlePenalty(right) ||
+  right.qualitySignals.confidence - left.qualitySignals.confidence ||
+  generatedCaseCoverageSize(right) - generatedCaseCoverageSize(left) ||
+  right.steps.length - left.steps.length ||
+  right.expectedResults.length - left.expectedResults.length ||
+  left.id.localeCompare(right.id);
+
+const generatedCaseTitleSuffix = (testCase: GeneratedTestCase): string => {
+  const traceName = testCase.figmaTraceRefs
+    .map((traceRef) => traceRef.nodeName)
+    .find((value): value is string => value !== undefined && value.trim() !== "");
+  if (traceName !== undefined) return traceName.trim();
+  const targetId = generatedCaseCoveredTargetKey(testCase)[0];
+  if (targetId !== undefined) return targetId.split("::").at(-1) ?? targetId;
+  return `${testCase.type} ${testCase.technique}`.replace(/_/gu, " ");
+};
+
+const disambiguateGeneratedCaseTitles = (
+  list: GeneratedTestCaseList,
+): GeneratedTestCaseList => {
+  const groups = new Map<string, GeneratedTestCase[]>();
+  for (const testCase of list.testCases) {
+    const key = normalizeGeneratedCaseDuplicateText(testCase.title);
+    if (key.length === 0) continue;
+    const group = groups.get(key);
+    if (group === undefined) groups.set(key, [testCase]);
+    else group.push(testCase);
+  }
+
+  const replacements = new Map<string, string>();
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    const used = new Set<string>();
+    for (const testCase of [...group].sort((left, right) =>
+      left.id.localeCompare(right.id),
+    )) {
+      const suffix = generatedCaseTitleSuffix(testCase);
+      let title = `${testCase.title} – ${suffix}`;
+      let suffixIndex = 2;
+      while (used.has(normalizeGeneratedCaseDuplicateText(title))) {
+        title = `${testCase.title} – ${suffix} (${suffixIndex})`;
+        suffixIndex += 1;
+      }
+      used.add(normalizeGeneratedCaseDuplicateText(title));
+      replacements.set(testCase.id, title);
+    }
+  }
+
+  if (replacements.size === 0) return list;
+  return {
+    ...list,
+    testCases: list.testCases.map((testCase) => {
+      const title = replacements.get(testCase.id);
+      return title === undefined ? testCase : { ...testCase, title };
+    }),
+  };
+};
+
+const dedupeGeneratedCaseSemanticExecutions = (
+  list: GeneratedTestCaseList,
+): GeneratedTestCaseList => {
+  const representativesByKey = new Map<string, GeneratedTestCase>();
+  for (const rawTestCase of list.testCases) {
+    const testCase = sanitizeModelDuplicateTitleArtifacts(rawTestCase);
+    const key = generatedCaseSemanticExecutionKey(testCase);
+    const existing = representativesByKey.get(key);
+    if (
+      existing === undefined ||
+      compareGeneratedCaseRepresentatives(testCase, existing) < 0
+    ) {
+      representativesByKey.set(key, testCase);
+    }
+  }
+
+  const testCases = [...representativesByKey.values()].sort((left, right) =>
+    left.id.localeCompare(right.id),
+  );
+  const changed =
+    testCases.length !== list.testCases.length ||
+    testCases.some((testCase, index) => testCase !== list.testCases[index]);
+  return disambiguateGeneratedCaseTitles(
+    changed ? { ...list, testCases } : list,
+  );
 };
 
 const prepareGeneratedListForValidation = (input: {
@@ -10024,8 +10751,10 @@ const prepareGeneratedListForValidation = (input: {
     list: workflowPrepared,
     intent: input.intent,
   });
+  const semanticUniquePrepared =
+    dedupeGeneratedCaseSemanticExecutions(signalPrepared);
   const quotaPrepared = enforceTechniqueQuotasForValidation({
-    list: signalPrepared,
+    list: semanticUniquePrepared,
     coveragePlan: input.coveragePlan,
     ...(input.techniqueCoverageMinimum !== undefined
       ? { techniqueCoverageMinimum: input.techniqueCoverageMinimum }
@@ -10042,8 +10771,13 @@ const prepareGeneratedListForValidation = (input: {
     intent: input.intent,
     workflowTopology: input.workflowTopology,
   });
-  const quotaSupplemented = enforceTechniqueQuotaSupplementalCasesForValidation({
+  const actionCoveragePrepared = enforceActionOnlyScreenCoverageForValidation({
     list: accessibilityPrepared,
+    intent: input.intent,
+    workflowTopology: input.workflowTopology,
+  });
+  const quotaSupplemented = enforceTechniqueQuotaSupplementalCasesForValidation({
+    list: actionCoveragePrepared,
     intent: input.intent,
     coveragePlan: input.coveragePlan,
     workflowTopology: input.workflowTopology,
@@ -10057,8 +10791,14 @@ const prepareGeneratedListForValidation = (input: {
     coveragePlan: input.coveragePlan,
     workflowTopology: input.workflowTopology,
   });
-  return sanitizeGeneratedListQualitySignalsForValidation({
+  const textSanitizedPrepared = sanitizeGeneratedListTextForEvaluation({
     list: lifecyclePrepared,
+    intent: input.intent,
+  });
+  const semanticUniqueFinal =
+    dedupeGeneratedCaseSemanticExecutions(textSanitizedPrepared);
+  return sanitizeGeneratedListQualitySignalsForValidation({
+    list: semanticUniqueFinal,
     intent: input.intent,
   });
 };
@@ -10120,35 +10860,154 @@ const CURRENCY_UNIT_HALLUCINATION_PATTERN =
 const RADIO_OPTION_LABELS = new Set(["brutto", "netto"]);
 
 const sanitizeNoActionText = (value: string): string =>
-  value
-    .replace(/\bRadio-?Buttons?\b/giu, "Auswahloptionen")
-    .replace(/\bRadio-?Button\b/giu, "Auswahloption")
-    .replace(/\b(?:Submit|Absenden|Senden|Weiter)(?:-?Button)?\b/giu, "Eingabe")
-    .replace(
-      /\b(?:Bestätigungs-?Button|Icon-?Button|Button|Schaltfl[aä]che)\b/giu,
-      "Bedienelement",
-    )
-    .replace(/\s*\([^)]*(?:button|schaltfl[aä]che|aktion)[^)]*\)/giu, "")
-    .replace(
-      /Das Feld für den Brutto[^\n.]*nicht im IR vorhanden[^.]*\./giu,
-      "Die Option „Brutto“ ist ausgewählt.",
-    )
-    .replace(/\s*\([^)]*nicht im IR vorhanden[^)]*\)/giu, "")
-    .replace(/\s+und\s+best[aä]tig(?:e|en)?\s+(?:die\s+)?Eingabe\.?/giu, ".")
-    .replace(/\s+und\s+speichere\s+(?:die\s+)?Eingabe\.?/giu, ".")
-    .replace(/\bFelder und Aktionen\b/giu, "Felder")
-    .replace(/\bund Aktionen\b/giu, "")
+  rewriteOutsideQuotedText(value, (segment) =>
+    segment
+      .replace(/\bRadio-?Buttons?\b/giu, "Auswahloptionen")
+      .replace(/\bRadio-?Button\b/giu, "Auswahloption")
+      .replace(
+        /\b(?:Submit|Absenden|Senden|Weiter)(?:-?Button)?\b/giu,
+        "Eingabe",
+      )
+      .replace(
+        /\b(?:Bestätigungs-?Button|Icon-?Button|Button|Schaltfl[aä]che)\b/giu,
+        "Bedienelement",
+      )
+      .replace(/\s*\([^)]*(?:button|schaltfl[aä]che|aktion)[^)]*\)/giu, "")
+      .replace(
+        /Das Feld für den Brutto[^\n.]*nicht im IR vorhanden[^.]*\./giu,
+        "Die Option „Brutto“ ist ausgewählt.",
+      )
+      .replace(/\s*\([^)]*nicht im IR vorhanden[^)]*\)/giu, "")
+      .replace(/\s+und\s+best[aä]tig(?:e|en)?\s+(?:die\s+)?Eingabe\.?/giu, ".")
+      .replace(/\s+und\s+speichere\s+(?:die\s+)?Eingabe\.?/giu, ".")
+      .replace(/\bFelder und Aktionen\b/giu, "Felder")
+      .replace(/\bund Aktionen\b/giu, ""),
+  )
     .replace(/\s{2,}/gu, " ")
     .trim();
 
 const sanitizeControlTypeOverclaimText = (value: string): string =>
-  value
-    .replace(
+  rewriteOutsideQuotedText(value, (segment) =>
+    segment.replace(
       /\b(?:Bestätigungs-?Button|Icon-?Button|Button|Schaltfl[aä]che)\b/giu,
       "Bedienelement",
-    )
+    ),
+  )
     .replace(/\s{2,}/gu, " ")
     .trim();
+
+const SYNTHETIC_FULL_NAME_RE =
+  /\b(?:max mustermann|erika mustermann|max musterman|john doe|jane doe|john smith|jane smith)\b/giu;
+const SYNTHETIC_EMAIL_RE =
+  /[\w.!#$%&'*+/=?^`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+/gu;
+const SYNTHETIC_IBAN_RE = /\b[A-Z]{2}\d{2}(?:[\s-]?[A-Z0-9]){11,30}\b/gu;
+const SYNTHETIC_BIC_RE = /\b[A-Z]{4}[A-Z]{2}[A-Z0-9]{2}(?:[A-Z0-9]{3})?\b/gu;
+const SYNTHETIC_PAN_RE = /(?:\d[\s-]?){12,18}\d/gu;
+const SYNTHETIC_PHONE_RE =
+  /(?<![\dA-Za-z])(?:\+\d{1,3}[\s-]\d{2,4}[\s-]\d{3,8}(?:[\s-]\d{3,4})?|\(\d{2,4}\)[\s-]?\d{3,4}[\s-]\d{3,8})(?!\d)/gu;
+const SYNTHETIC_LONG_DIGIT_IDENTIFIER_RE = /\b\d{9,19}\b/gu;
+const SYNTHETIC_DOB_LABELLED_RE =
+  /\b(?:geburtsdatum|date of birth|dob)\s*[:#-]?\s*\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b/giu;
+
+const syntheticPiiReplacement = (kind: PiiKind): string => {
+  switch (kind) {
+    case "full_name":
+      return "Synthetischer Name A";
+    case "email":
+      return "synthetische E-Mail-Adresse";
+    case "phone":
+      return "synthetische Telefonnummer";
+    case "iban":
+      return "synthetische IBAN";
+    case "bic":
+      return "synthetische BIC";
+    case "pan":
+      return "synthetische Kartennummer";
+    case "tax_id":
+      return "synthetische Steuer-ID";
+    case "national_id":
+      return "synthetische Ausweis-ID";
+    case "account_number":
+      return "synthetische Kontonummer";
+    case "date_of_birth":
+      return "synthetisches Geburtsdatum";
+    case "postal_address":
+      return "synthetische Adresse";
+    case "internal_hostname":
+      return "synthetischer interner Hostname";
+    case "jira_mention":
+      return "synthetische Nutzerreferenz";
+    case "customer_name_placeholder":
+      return "synthetischer Kundenname";
+    case "special_category":
+      return "synthetische besondere Kategorie";
+  }
+};
+
+const replaceDetectedPiiWithSyntheticValue = (
+  value: string,
+  kind: PiiKind,
+): string => {
+  const replacement = syntheticPiiReplacement(kind);
+  switch (kind) {
+    case "full_name":
+    case "customer_name_placeholder":
+      return value.replace(SYNTHETIC_FULL_NAME_RE, replacement);
+    case "email":
+      return value.replace(SYNTHETIC_EMAIL_RE, replacement);
+    case "phone":
+      return value.replace(SYNTHETIC_PHONE_RE, replacement);
+    case "iban":
+      return value.replace(SYNTHETIC_IBAN_RE, replacement);
+    case "bic":
+      return value.replace(SYNTHETIC_BIC_RE, replacement);
+    case "pan":
+      return value.replace(SYNTHETIC_PAN_RE, replacement);
+    case "tax_id":
+    case "national_id":
+    case "account_number":
+      return value.replace(SYNTHETIC_LONG_DIGIT_IDENTIFIER_RE, replacement);
+    case "date_of_birth":
+      return value.replace(SYNTHETIC_DOB_LABELLED_RE, replacement);
+    case "postal_address":
+    case "internal_hostname":
+    case "jira_mention":
+    case "special_category":
+      return replacement;
+  }
+};
+
+const sanitizePiiLikeText = (value: string): string => {
+  let sanitized = value;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const match = detectPii(sanitized);
+    if (match === null) return sanitized;
+    const next = replaceDetectedPiiWithSyntheticValue(sanitized, match.kind)
+      .replace(/\s{2,}/gu, " ")
+      .trim();
+    sanitized =
+      next.length > 0 && next !== sanitized
+        ? next
+        : syntheticPiiReplacement(match.kind);
+  }
+  return sanitized;
+};
+
+const QUOTED_TEXT_SEGMENT_PATTERN =
+  /(„[^“]*“|“[^”]*”|"[^"]*"|'[^']*')/gu;
+const QUOTED_TEXT_SEGMENT_EXACT_PATTERN =
+  /^(?:„[^“]*“|“[^”]*”|"[^"]*"|'[^']*')$/u;
+
+const rewriteOutsideQuotedText = (
+  value: string,
+  rewrite: (segment: string) => string,
+): string =>
+  value
+    .split(QUOTED_TEXT_SEGMENT_PATTERN)
+    .map((segment) =>
+      QUOTED_TEXT_SEGMENT_EXACT_PATTERN.test(segment) ? segment : rewrite(segment),
+    )
+    .join("");
 
 const sanitizeControlTypeOverclaims = (
   testCase: GeneratedTestCase,
@@ -10168,6 +11027,27 @@ const sanitizeControlTypeOverclaims = (
   expectedResults: testCase.expectedResults.map(sanitizeControlTypeOverclaimText),
   assumptions: testCase.assumptions.map(sanitizeControlTypeOverclaimText),
   openQuestions: testCase.openQuestions.map(sanitizeControlTypeOverclaimText),
+});
+
+const sanitizePiiLikeTestCaseText = (
+  testCase: GeneratedTestCase,
+): GeneratedTestCase => ({
+  ...testCase,
+  title: sanitizePiiLikeText(testCase.title),
+  objective: sanitizePiiLikeText(testCase.objective),
+  preconditions: testCase.preconditions.map(sanitizePiiLikeText),
+  testData: testCase.testData.map(sanitizePiiLikeText),
+  steps: testCase.steps.map((step) => ({
+    ...step,
+    action: sanitizePiiLikeText(step.action),
+    ...(step.data !== undefined ? { data: sanitizePiiLikeText(step.data) } : {}),
+    ...(step.expected !== undefined
+      ? { expected: sanitizePiiLikeText(step.expected) }
+      : {}),
+  })),
+  expectedResults: testCase.expectedResults.map(sanitizePiiLikeText),
+  assumptions: testCase.assumptions.map(sanitizePiiLikeText),
+  openQuestions: testCase.openQuestions.map(sanitizePiiLikeText),
 });
 
 const normalizeSemanticLabel = (value: string): string =>
@@ -10395,8 +11275,10 @@ const sanitizeGeneratedListTextForEvaluation = (input: {
   ...input.list,
   testCases: input.list.testCases.map((testCase) =>
     ensureAccessibilityCoverageTerms(
-      sanitizeControlTypeOverclaims(
-        sanitizeNoActionHallucinations(testCase, input.intent),
+      sanitizePiiLikeTestCaseText(
+        sanitizeControlTypeOverclaims(
+          sanitizeNoActionHallucinations(testCase, input.intent),
+        ),
       ),
     ),
   ),
@@ -10433,6 +11315,8 @@ const testCaseTouchesUnresolvedConstraint = (
   testCase: GeneratedTestCase,
   constraint: ReturnType<typeof deriveUnresolvedValidationConstraints>[number],
 ): boolean => {
+  const hasSpecificScope =
+    constraint.fieldIds.length > 0 || constraint.validationIds.length > 0;
   if (
     constraint.fieldIds.some((fieldId) =>
       testCase.qualitySignals.coveredFieldIds.includes(fieldId),
@@ -10446,6 +11330,9 @@ const testCaseTouchesUnresolvedConstraint = (
     )
   ) {
     return true;
+  }
+  if (hasSpecificScope) {
+    return false;
   }
   if (
     constraint.screenId !== undefined &&
@@ -10510,8 +11397,9 @@ const buildAmbiguityProbeCase = (input: {
   const id = `tc-${createHash("sha256")
     .update(
       canonicalJson({
-        jobId: input.jobId,
         unresolvedConstraint: firstConstraint.evidenceText,
+        screenId: firstScreenId,
+        fieldId: firstFieldId ?? null,
         kind: "ambiguity-probe",
       }),
     )
@@ -10625,7 +11513,7 @@ const selectDeterministicAdversarialAnchor = (input: {
   );
   const coverageRelevantFields = input.intent.detectedFields
     .filter((field) =>
-      isCoverageRelevantElementLike({ label: field.label, kind: field.type }),
+      isInteractiveCoverageElementLike({ label: field.label, kind: field.type }),
     )
     .sort(
       (left, right) =>
@@ -10982,6 +11870,140 @@ const mergeAdversarialRegeneratedTestCaseLists = (input: {
   };
 };
 
+const mergeCaseScopedRepairIntoPreviousList = (input: {
+  previousList: GeneratedTestCaseList;
+  regeneratedList: GeneratedTestCaseList;
+  repairInstructions: readonly RepairInstruction[];
+}): GeneratedTestCaseList => {
+  const targetedCaseIds = caseScopedRepairTargetIds(input.repairInstructions);
+  if (targetedCaseIds.length === 0) return input.regeneratedList;
+
+  const previousById = new Map(
+    input.previousList.testCases.map((testCase) => [testCase.id, testCase]),
+  );
+  const remainingCandidates = input.regeneratedList.testCases.slice();
+  const replacements = new Map<string, GeneratedTestCase>();
+
+  for (const targetId of targetedCaseIds) {
+    const previous = previousById.get(targetId);
+    if (previous === undefined) continue;
+    const selected = selectCaseScopedRepairCandidate({
+      previous,
+      candidates: remainingCandidates,
+    });
+    if (selected === undefined) continue;
+    remainingCandidates.splice(selected.index, 1);
+    replacements.set(targetId, {
+      ...selected.testCase,
+      id: previous.id,
+    });
+  }
+
+  if (replacements.size === 0) return input.previousList;
+  return {
+    ...input.previousList,
+    testCases: input.previousList.testCases
+      .map((testCase) => replacements.get(testCase.id) ?? testCase)
+      .sort((left, right) => left.id.localeCompare(right.id)),
+  };
+};
+
+const caseScopedRepairTargetIds = (
+  repairInstructions: readonly RepairInstruction[],
+): readonly string[] => {
+  if (repairInstructions.length === 0) return [];
+  const targetIds = new Set<string>();
+  for (const instruction of repairInstructions) {
+    if (
+      instruction.testCaseId === "$job" ||
+      instruction.path === "$" ||
+      instruction.path === "$.testCases" ||
+      instruction.path === "/testCases"
+    ) {
+      return [];
+    }
+    targetIds.add(instruction.testCaseId);
+  }
+  return [...targetIds].sort((left, right) => left.localeCompare(right));
+};
+
+const selectCaseScopedRepairCandidate = (input: {
+  previous: GeneratedTestCase;
+  candidates: readonly GeneratedTestCase[];
+}): { readonly testCase: GeneratedTestCase; readonly index: number } | undefined => {
+  if (input.candidates.length === 0) return undefined;
+  let best:
+    | { readonly testCase: GeneratedTestCase; readonly index: number; readonly score: number }
+    | undefined;
+  input.candidates.forEach((candidate, index) => {
+    const score = scoreCaseScopedRepairCandidate(input.previous, candidate);
+    if (
+      best === undefined ||
+      score > best.score ||
+      (score === best.score && candidate.id.localeCompare(best.testCase.id) < 0)
+    ) {
+      best = { testCase: candidate, index, score };
+    }
+  });
+  if (best === undefined) return undefined;
+  if (best.score <= 0 && input.candidates.length > 1) return undefined;
+  if (
+    best.testCase.id !== input.previous.id &&
+    input.candidates.length > 1 &&
+    overlapScore(
+      tokenizeCaseText(input.previous.title),
+      tokenizeCaseText(best.testCase.title),
+    ) === 0
+  ) {
+    return undefined;
+  }
+  return { testCase: best.testCase, index: best.index };
+};
+
+const scoreCaseScopedRepairCandidate = (
+  previous: GeneratedTestCase,
+  candidate: GeneratedTestCase,
+): number => {
+  if (candidate.id === previous.id) return 1_000;
+  return (
+    overlapScore(
+      previous.qualitySignals.coveredFieldIds,
+      candidate.qualitySignals.coveredFieldIds,
+    ) *
+      12 +
+    overlapScore(
+      previous.qualitySignals.coveredActionIds,
+      candidate.qualitySignals.coveredActionIds,
+    ) *
+      8 +
+    overlapScore(
+      previous.figmaTraceRefs.map((ref) => ref.nodeId ?? ref.screenId),
+      candidate.figmaTraceRefs.map((ref) => ref.nodeId ?? ref.screenId),
+    ) *
+      6 +
+    overlapScore(tokenizeCaseText(previous.title), tokenizeCaseText(candidate.title))
+  );
+};
+
+const overlapScore = (
+  leftValues: readonly string[],
+  rightValues: readonly string[],
+): number => {
+  const left = new Set(leftValues.filter((value) => value.trim().length > 0));
+  const right = new Set(rightValues.filter((value) => value.trim().length > 0));
+  let score = 0;
+  for (const value of left) {
+    if (right.has(value)) score += 1;
+  }
+  return score;
+};
+
+const tokenizeCaseText = (value: string): readonly string[] =>
+  value
+    .toLocaleLowerCase("de-DE")
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((token) => token.length >= 3);
+
 const stabilizeGeneratedListForAcceptance = (input: {
   list: GeneratedTestCaseList;
   model: TestDesignModel;
@@ -11038,20 +12060,6 @@ const stampGeneratedTestCase = (input: {
   intent: BusinessTestIntentIr;
   identitySalt?: string;
 }): GeneratedTestCase => {
-  const slug = createHash("sha256")
-    .update(
-      canonicalJson({
-        cacheKey: input.audit.cacheKey,
-        index: input.index,
-        title: input.draft.title,
-        ...(input.identitySalt !== undefined
-          ? { identitySalt: input.identitySalt }
-          : {}),
-      }),
-    )
-    .digest("hex")
-    .slice(0, 12);
-  const id = `tc-${slug}`;
   const knownScreenIds = new Set(input.intent.screens.map((s) => s.screenId));
   const traceRefs: GeneratedTestCaseFigmaTrace[] = (
     input.draft.figmaTraceRefs ?? []
@@ -11086,6 +12094,38 @@ const stampGeneratedTestCase = (input: {
     }
     return projected;
   });
+  const identitySlug = createHash("sha256")
+    .update(
+      canonicalJson({
+        cacheKey: input.audit.cacheKey,
+        title: input.draft.title,
+        objective: input.draft.objective,
+        level: input.draft.level ?? "system",
+        type: input.draft.type,
+        priority: input.draft.priority,
+        riskCategory: input.draft.riskCategory,
+        technique: input.draft.technique,
+        preconditions: input.draft.preconditions,
+        testData: input.draft.testData,
+        steps: steps.map((step) => ({
+          index: step.index,
+          action: step.action,
+          ...(step.data !== undefined ? { data: step.data } : {}),
+          ...(step.expected !== undefined ? { expected: step.expected } : {}),
+        })),
+        expectedResults: input.draft.expectedResults,
+        figmaTraceRefs: traceRefs,
+        ...(input.draft.regulatoryRelevance !== undefined
+          ? { regulatoryRelevance: input.draft.regulatoryRelevance }
+          : {}),
+        ...(input.identitySalt !== undefined
+          ? { identitySalt: input.identitySalt }
+          : {}),
+      }),
+    )
+    .digest("hex")
+    .slice(0, 12);
+  const id = `tc-${identitySlug}`;
   const classification = deriveGeneratedTestCaseClassification({
     type: input.draft.type,
     title: input.draft.title,
@@ -11135,8 +12175,10 @@ const stampGeneratedTestCase = (input: {
       : {}),
   };
   return ensureAccessibilityCoverageTerms(
-    sanitizeControlTypeOverclaims(
-      sanitizeNoActionHallucinations(generated, input.intent),
+    sanitizePiiLikeTestCaseText(
+      sanitizeControlTypeOverclaims(
+        sanitizeNoActionHallucinations(generated, input.intent),
+      ),
     ),
   );
 };
@@ -11859,7 +12901,9 @@ const recordVisualSidecarAttempts = (input: {
     input.result.attempts.length === 1;
   for (const [index, attempt] of input.result.attempts.entries()) {
     const role =
-      fallbackOnlyAttempt || index > 0 ? "visual_fallback" : "visual_primary";
+      fallbackOnlyAttempt || index % 2 === 1
+        ? "visual_fallback"
+        : "visual_primary";
     const succeeded = attempt.errorClass === undefined;
     const result: LlmGenerationResult = succeeded
       ? {

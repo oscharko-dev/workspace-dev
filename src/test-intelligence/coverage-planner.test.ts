@@ -267,7 +267,7 @@ test("buildCoveragePlan keeps requirement identity stable across visual evidence
   );
 });
 
-test("buildCoveragePlan keeps semantic helper copy and headings as coverage targets", () => {
+test("buildCoveragePlan keeps semantic helper copy and headings out of input partition targets", () => {
   const plan = buildCoveragePlan({
     model: {
       ...buildModel(),
@@ -296,21 +296,23 @@ test("buildCoveragePlan keeps semantic helper copy and headings as coverage targ
   const loanElementIds = plan.perElement
     .filter((element) => element.screenId === "loan")
     .map((element) => element.elementId);
-  assert.ok(loanElementIds.includes("helper-copy"));
-  assert.ok(loanElementIds.includes("page-heading"));
-  assert.ok(
+  assert.equal(loanElementIds.includes("helper-copy"), false);
+  assert.equal(loanElementIds.includes("page-heading"), false);
+  assert.equal(
     plan.minimumCases.some(
       (requirement) =>
         requirement.reasonCode === "element_partition" &&
         requirement.targetIds.includes("helper-copy"),
     ),
+    false,
   );
-  assert.ok(
+  assert.equal(
     plan.minimumCases.some(
       (requirement) =>
         requirement.reasonCode === "element_partition" &&
         requirement.targetIds.includes("page-heading"),
     ),
+    false,
   );
 });
 

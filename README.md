@@ -216,13 +216,16 @@ workspace-dev start [options]
 
 ## Web performance workflow
 
-Bundled template (`template/react-mui-app`) includes a baseline + assertion pipeline:
+Bundled web templates include a baseline + assertion pipeline:
 
 - `pnpm --dir template/react-mui-app run perf:baseline`
 - `pnpm --dir template/react-mui-app run perf:assert`
+- `pnpm --dir template/react-tailwind-app run perf:baseline`
+- `pnpm --dir template/react-tailwind-app run perf:assert`
 
-Artifacts are written to `template/react-mui-app/artifacts/performance` by default.
-Budget policy is configured in `template/react-mui-app/perf-budget.json`.
+Committed baselines are kept at `template/react-mui-app/perf-baseline.json` and `template/react-tailwind-app/perf-baseline.json`.
+Budget policies are configured in `template/react-mui-app/perf-budget.json` and `template/react-tailwind-app/perf-budget.json`.
+Artifacts are written to each template's `artifacts/performance` directory by default.
 Detailed operating notes: `docs/react-web-performance.md`.
 
 ## Operational Hardening
