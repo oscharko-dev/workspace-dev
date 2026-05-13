@@ -262,11 +262,21 @@ jobs:
                 echo "GitHub OIDC token request environment is not available. Check id-token: write permission." >&2
                 exit 1
               fi
-              NPM_ID_TOKEN="$(
-                curl --fail --silent --show-error \
-                  --header "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
-                  "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=npm%3Aregistry.npmjs.org" |
-                  node -e "let data = ''; process.stdin.setEncoding('utf8'); process.stdin.on('data', (chunk) => { data += chunk; }); process.stdin.on('end', () => { const payload = JSON.parse(data); if (typeof payload.value !== 'string' || payload.value.length === 0) { console.error('GitHub OIDC response did not include a token value.'); process.exit(1); } process.stdout.write(payload.value); });"
+              OIDC_RESPONSE_FILE="${RUNNER_TEMP}/npm-oidc-response.json"
+              curl --fail --silent --show-error \
+                --header "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+                --output "${OIDC_RESPONSE_FILE}" \
+                "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=npm%3Aregistry.npmjs.org"
+              NPM_ID_TOKEN="$(node - "${OIDC_RESPONSE_FILE}" <<'NODE'
+              const { readFileSync } = require("node:fs");
+              const responsePath = process.argv[2];
+              const payload = JSON.parse(readFileSync(responsePath, "utf8"));
+              if (typeof payload.value !== "string" || payload.value.length === 0) {
+                console.error("GitHub OIDC response did not include a token value.");
+                process.exit(1);
+              }
+              process.stdout.write(payload.value);
+              NODE
               )"
               echo "::add-mask::${NPM_ID_TOKEN}"
               NPM_ID_TOKEN_FILE="${RUNNER_TEMP}/npm-id-token"
