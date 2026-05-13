@@ -127,19 +127,19 @@ test("main source guard can satisfy the required check on main pushes", async ()
   assert.match(workflow, /push:\n\s+branches: \[main\]/);
   assert.match(workflow, /allow-only-dev:\n\s+timeout-minutes: 5/);
   assert.match(workflow, /persist-credentials: false/);
-  assert.match(workflow, /GITHUB_EVENT_NAME: \$\{\{ github\.event_name \}\}/);
-  assert.match(workflow, /GITHUB_HEAD_REF: \$\{\{ github\.head_ref \}\}/);
+  assert.match(workflow, /CHECK_EVENT_NAME: \$\{\{ github\.event_name \}\}/);
+  assert.match(workflow, /CHECK_HEAD_REF: \$\{\{ github\.head_ref \}\}/);
   assert.match(
     workflow,
-    /if \[\[ "\$\{GITHUB_EVENT_NAME\}" == "pull_request" \]\]/,
+    /if \[\[ "\$\{CHECK_EVENT_NAME\}" == "pull_request" \]\]/,
   );
-  assert.match(workflow, /"\$\{GITHUB_HEAD_REF\}" != "dev"/);
+  assert.match(workflow, /"\$\{CHECK_HEAD_REF\}" != "dev"/);
   assert.match(
     workflow,
     /git fetch --no-tags --prune origin refs\/heads\/dev:refs\/remotes\/origin\/dev/,
   );
   assert.match(
     workflow,
-    /git diff --quiet "\$\{GITHUB_SHA\}" refs\/remotes\/origin\/dev/,
+    /git diff --quiet "\$\{CHECK_SHA\}" refs\/remotes\/origin\/dev/,
   );
 });
