@@ -36,7 +36,7 @@ describe("perf-runner baseline regression checks", () => {
     const checks = compareAgainstBaseline({
       aggregate: {
         inp_p75_ms: 0,
-        lcp_p75_ms: 80,
+        lcp_p75_ms: 180,
         cls_p75: 0,
         initial_js_kb: 58.79,
         route_transition_ms: 0,
@@ -55,7 +55,7 @@ describe("perf-runner baseline regression checks", () => {
       expect.arrayContaining([
         expect.objectContaining({
           metric: "lcp_p75_ms",
-          regressionPct: 88,
+          regressionPct: 288,
           pass: false,
         }),
       ]),

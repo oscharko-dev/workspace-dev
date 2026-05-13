@@ -26,6 +26,7 @@ import { canonicalJson, sha256Hex } from "./content-hash.js";
 import { generateWithLocalWallClockGuard } from "./llm-generation-guard.js";
 import {
   isCoverageRelevantElementLike,
+  isInteractiveCoverageElementLike,
   normalizeCoverageText,
 } from "./coverage-relevance.js";
 import type { LlmGatewayClient } from "./llm-gateway.js";
@@ -72,11 +73,11 @@ const DECISION_SIGNAL_PATTERN =
 const NUMERIC_KIND_PATTERN =
   /\b(number|amount|currency|percentage|percent|rate|integer|decimal|float)\b/i;
 const INPUT_KIND_PATTERN =
-  /\b(number|text|email|password|phone|date|select|dropdown|checkbox|radio|textarea|currency|percentage|percent|rate|integer|decimal|float)\b/i;
+  /\b(number|email|password|phone|date|select|dropdown|checkbox|radio|textarea|currency|percentage|percent|rate|integer|decimal|float|input)\b/i;
 const RESULT_DISPLAY_HINT_PATTERN =
   /\b(result|summary|status|total|balance|output|confirmation|receipt|preview|overview|message|ergebnis|anzeige)\b/i;
 const SELECTABLE_OPTION_HINT_PATTERN =
-  /\b(select|selectable|dropdown|combobox|radio|checkbox|option|choice|picker|segmented|chip|pill|auswahl)\b/i;
+  /\b(select[_\s-]?field|selectable|select|dropdown|combobox|radio[_\s-]?option|radio|checkbox|option|choice|picker|segmented|chip|pill|auswahl)\b/i;
 const COVERAGE_PLANNER_RESPONSE_SCHEMA_NAME =
   "workspace-dev-coverage-planner-v1" as const;
 const RISK_CLASS_ORDER: readonly CoveragePlanElementRiskClass[] = [
@@ -211,7 +212,7 @@ const selectRuleReasonCode = (
 };
 
 const hasPairwiseEvidence = (screen: TestDesignScreen): boolean =>
-  screen.elements.filter((element) => isCoverageRelevantElementLike(element))
+  screen.elements.filter((element) => isInteractiveCoverageElementLike(element))
     .length >= 3;
 
 const hasSupportingContextSection = (sourceMixPlan: SourceMixPlan | undefined): boolean =>
@@ -276,7 +277,7 @@ const buildCoverageRelevantFieldCounts = (
   new Map(
     model.screens.map((screen) => [
       screen.screenId,
-      screen.elements.filter((element) => isCoverageRelevantElementLike(element))
+      screen.elements.filter((element) => isInteractiveCoverageElementLike(element))
         .length,
     ]),
   );
@@ -409,7 +410,12 @@ const buildPerElementPlan = (input: {
     .flatMap((screen) => {
       const screenSignals = screenRuleKinds.get(screen.screenId);
       return screen.elements
-        .filter((element) => isCoverageRelevantElementLike(element))
+        .filter(
+          (element) =>
+            isInteractiveCoverageElementLike(element) ||
+            isResultDisplayElementLike(element) ||
+            isSelectableOptionElementLike(element),
+        )
         .map((element) => {
         let riskClass: CoveragePlanElementRiskClass = "low";
         const elementText = `${element.label} ${element.kind}`;
@@ -432,6 +438,7 @@ const buildPerElementPlan = (input: {
           riskClass = "high";
         } else if (
           INPUT_KIND_PATTERN.test(element.kind) ||
+          isInteractiveCoverageElementLike(element) ||
           screenSignals?.hasBoundary === true ||
           screenSignals?.hasDecision === true
         ) {
@@ -649,6 +656,9 @@ export const buildCoveragePlan = (input: BuildCoveragePlanInput): CoveragePlan =
     const coverageRelevantElements = screen.elements.filter((element) =>
       isCoverageRelevantElementLike(element),
     );
+    const interactiveElements = coverageRelevantElements.filter((element) =>
+      isInteractiveCoverageElementLike(element),
+    );
     minimumCases.push(
       buildRequirement({
         technique: "initial_state",
@@ -660,7 +670,7 @@ export const buildCoveragePlan = (input: BuildCoveragePlanInput): CoveragePlan =
       }),
     );
 
-    for (const element of coverageRelevantElements) {
+    for (const element of interactiveElements) {
       minimumCases.push(
         buildRequirement({
           technique: "equivalence_partitioning",
@@ -707,7 +717,7 @@ export const buildCoveragePlan = (input: BuildCoveragePlanInput): CoveragePlan =
           technique: "pairwise",
           reasonCode: "screen_pairwise",
           screenId: screen.screenId,
-          targetIds: coverageRelevantElements.map(
+          targetIds: interactiveElements.map(
             (element) => element.elementId,
           ),
           sourceRefs: screen.sourceRefs,

@@ -359,6 +359,42 @@ test("evaluateInvariants: netto/brutto option-label accessibility text is not a 
   );
 });
 
+test("evaluateInvariants: netto/brutto focus order with financial field labels is not a result conflation", () => {
+  const intent = buildIntentNoFinancing();
+  const context = buildContext(intent);
+  const focusOrderCase = buildCase({
+    id: "tc-focus-order",
+    type: "accessibility",
+    expectedResults: [
+      "Alle Elemente erhalten sichtbaren Fokus, Beschriftungen werden korrekt per Screen-Reader angekündigt.",
+    ],
+    steps: [
+      {
+        index: 1,
+        action: "Tab-Taste wiederholt drücken, um durch alle interaktiven Elemente zu navigieren",
+        expected:
+          "Fokus bewegt sich in folgender Reihenfolge: Netto-Option -> Brutto-Option -> Feld Kaufpreis (Netto) -> Feld Nebenkosten (Brutto). Jeder Fokus ist sichtbar und wird vom Screen-Reader vorgelesen.",
+      },
+    ],
+  });
+  const evaluation = evaluateInvariants({
+    registry: buildActiveDatasetInvariantRegistry(),
+    testCases: [focusOrderCase],
+    context,
+  });
+  assert.equal(
+    evaluation.violations.some(
+      (violation) => violation.invariantId === "INV-NETTO-BRUTTO-01",
+    ),
+    false,
+  );
+  assert.ok(
+    evaluation.cases
+      .find((entry) => entry.testCaseId === focusOrderCase.id)
+      ?.exercises.includes("INV-NETTO-BRUTTO-01"),
+  );
+});
+
 test("evaluateInvariants: optional-cost expectation without selection is a violation", () => {
   const intent = buildIntentNoFinancing();
   const context = buildContext(intent);

@@ -39,6 +39,8 @@ const SYSTEM_PROMPT = [
   "Do not treat selecting an already-visible option as a mismatch; mark the step `match` or `evidence_partial`.",
   "Only use `mismatch` when the screenshot positively contradicts the control label or expected visible UI state.",
   "If the label is plausible but the action result cannot be verified from the baseline capture, use `evidence_partial`.",
+  "Do not report focus, keyboard navigation, screen-reader announcements, typed values, validation messages, or calculated outputs as mismatches merely because the baseline screenshot cannot verify them.",
+  "Use only testCaseId values that appear in the supplied test case JSON; never invent or transform test case ids.",
   "For every step in every test case, also emit a per-step verdict in `stepVerdicts`:",
   "use `match` when the screenshot positively verifies the step,",
   "`evidence_partial` when the step's label is consistent with the screenshot but the description",
@@ -269,6 +271,9 @@ export const runFaithfulnessJudge = async (
   input: RunFaithfulnessJudgeInput,
 ): Promise<RunFaithfulnessJudgeResult> => {
   const responseSchema = buildFaithfulnessJudgeResponseSchema();
+  const projectedTestCases = projectFaithfulnessGeneratedTestCases(
+    input.generatedTestCases,
+  );
   const promptHash = sha256Hex({
     systemPrompt: SYSTEM_PROMPT,
     promptTemplateVersion: FAITHFULNESS_JUDGE_PROMPT_TEMPLATE_VERSION,
@@ -281,7 +286,7 @@ export const runFaithfulnessJudge = async (
       .update(Buffer.from(capture.base64Data, "base64"))
       .digest("hex"),
   );
-  const caseSetHash = sha256Hex(input.generatedTestCases);
+  const caseSetHash = sha256Hex(projectedTestCases);
   const cacheKey: FaithfulnessJudgeCacheKey = {
     passKind: "faithfulness_judge",
     imageHashes,
@@ -299,7 +304,7 @@ export const runFaithfulnessJudge = async (
   const promptArtifact: FaithfulnessJudgePromptArtifact = {
     jobId: input.jobId,
     systemPrompt: SYSTEM_PROMPT,
-    userPrompt: buildFaithfulnessJudgeUserPrompt(input),
+    userPrompt: buildFaithfulnessJudgeUserPrompt(projectedTestCases),
     responseSchemaName: RESPONSE_SCHEMA_NAME,
     responseSchema,
     hashes: {
@@ -326,6 +331,7 @@ export const runFaithfulnessJudge = async (
         jobId: input.jobId,
         cacheHit: true,
         cacheKeyDigest,
+        generatedTestCases: projectedTestCases,
       });
       return { verdict, cacheHit: true, promptArtifact, attempts: [] };
     }
@@ -342,6 +348,10 @@ export const runFaithfulnessJudge = async (
   if (primary.outcome === "success") {
     const validated = validateFaithfulnessResponse(primary.content);
     if (validated.ok) {
+      const normalized = normalizeValidatedFaithfulnessResponse({
+        generatedTestCases: input.generatedTestCases,
+        response: validated,
+      });
       const verdict = buildFaithfulnessVerdict({
         generatedAt: input.generatedAt,
         jobId: input.jobId,
@@ -350,11 +360,11 @@ export const runFaithfulnessJudge = async (
         modelRevision: input.bundle.visualPrimary.modelRevision,
         gatewayRelease: input.bundle.visualPrimary.gatewayRelease,
         fallbackReason: "none",
-        verdict: validated.verdict,
-        score: computeFaithfulnessScore(input.generatedTestCases, validated),
-        hallucinations: validated.hallucinations,
-        mismatches: validated.mismatches,
-        stepVerdicts: validated.stepVerdicts,
+        score: computeFaithfulnessScore(input.generatedTestCases, normalized),
+        verdict: normalized.verdict,
+        hallucinations: normalized.hallucinations,
+        mismatches: normalized.mismatches,
+        stepVerdicts: normalized.stepVerdicts,
       });
       if (input.cache !== undefined) await input.cache.store(cacheKey, verdict);
       return { verdict, cacheHit: false, promptArtifact, attempts };
@@ -371,6 +381,10 @@ export const runFaithfulnessJudge = async (
   if (fallback.outcome === "success") {
     const validated = validateFaithfulnessResponse(fallback.content);
     if (validated.ok) {
+      const normalized = normalizeValidatedFaithfulnessResponse({
+        generatedTestCases: input.generatedTestCases,
+        response: validated,
+      });
       const verdict = buildFaithfulnessVerdict({
         generatedAt: input.generatedAt,
         jobId: input.jobId,
@@ -379,11 +393,11 @@ export const runFaithfulnessJudge = async (
         modelRevision: input.bundle.visualFallback.modelRevision,
         gatewayRelease: input.bundle.visualFallback.gatewayRelease,
         fallbackReason: "primary_unavailable",
-        verdict: validated.verdict,
-        score: computeFaithfulnessScore(input.generatedTestCases, validated),
-        hallucinations: validated.hallucinations,
-        mismatches: validated.mismatches,
-        stepVerdicts: validated.stepVerdicts,
+        score: computeFaithfulnessScore(input.generatedTestCases, normalized),
+        verdict: normalized.verdict,
+        hallucinations: normalized.hallucinations,
+        mismatches: normalized.mismatches,
+        stepVerdicts: normalized.stepVerdicts,
       });
       if (input.cache !== undefined) await input.cache.store(cacheKey, verdict);
       return { verdict, cacheHit: false, promptArtifact, attempts };
@@ -460,17 +474,95 @@ const runJudgeAttempt = async (input: {
   });
 };
 
-const buildFaithfulnessJudgeUserPrompt = (
-  input: RunFaithfulnessJudgeInput,
-): string =>
+const buildFaithfulnessJudgeUserPrompt = (generatedTestCases: unknown): string =>
   [
     "Evaluate the generated test cases against the attached screenshots.",
     "Flag invented controls as hallucinations and visible-label mismatches as mismatches.",
     "Screenshots show the baseline UI before test execution; future typed values, option selections, validation results, and calculations are not required to already appear.",
     "For those future interactions, emit `evidence_partial` unless the visible UI positively contradicts the step.",
+    "Focus movement, keyboard navigation, screen-reader output, ARIA announcements, and assistive-technology setup are dynamic execution evidence; from a static baseline screenshot they are `evidence_partial`, not `mismatch`.",
+    "Only reference `testCaseId` values that are present in the supplied JSON.",
     "Return one `stepVerdicts` item for every generated test step.",
-    canonicalJson(input.generatedTestCases),
+    canonicalJson(generatedTestCases),
   ].join("\n");
+
+const projectFaithfulnessGeneratedTestCases = (value: unknown): unknown => {
+  if (!isRecord(value)) return value;
+  const testCases = value["testCases"];
+  if (!Array.isArray(testCases)) return value;
+  return {
+    testCases: (testCases as readonly unknown[]).flatMap((entry) =>
+      isRecord(entry)
+        ? [
+            pickDefined({
+              id: stringValue(entry["id"]) ?? stringValue(entry["testCaseId"]),
+              title: stringValue(entry["title"]),
+              objective: stringValue(entry["objective"]),
+              type: stringValue(entry["type"]),
+              technique: stringValue(entry["technique"]),
+              priority: stringValue(entry["priority"]),
+              riskCategory: stringValue(entry["riskCategory"]),
+              preconditions: stringArrayValue(entry["preconditions"]),
+              testData: stringArrayValue(entry["testData"]),
+              steps: projectFaithfulnessSteps(entry["steps"]),
+              expectedResults: stringArrayValue(entry["expectedResults"]),
+              figmaTraceRefs: projectFaithfulnessTraceRefs(
+                entry["figmaTraceRefs"],
+              ),
+              assumptions: stringArrayValue(entry["assumptions"]),
+              openQuestions: stringArrayValue(entry["openQuestions"]),
+            }),
+          ]
+        : [],
+    ),
+  };
+};
+
+const projectFaithfulnessSteps = (value: unknown): unknown => {
+  if (!Array.isArray(value)) return undefined;
+  return (value as readonly unknown[]).flatMap((entry) =>
+    isRecord(entry)
+      ? [
+          pickDefined({
+            index:
+              typeof entry["index"] === "number" ? entry["index"] : undefined,
+            action: stringValue(entry["action"]),
+            data: stringValue(entry["data"]),
+            expected: stringValue(entry["expected"]),
+          }),
+        ]
+      : [],
+  );
+};
+
+const projectFaithfulnessTraceRefs = (value: unknown): unknown => {
+  if (!Array.isArray(value)) return undefined;
+  return (value as readonly unknown[]).flatMap((entry) =>
+    isRecord(entry)
+      ? [
+          pickDefined({
+            screenId: stringValue(entry["screenId"]),
+            nodeId: stringValue(entry["nodeId"]),
+            nodeName: stringValue(entry["nodeName"]),
+            nodePath: stringValue(entry["nodePath"]),
+          }),
+        ]
+      : [],
+  );
+};
+
+const pickDefined = <T extends Record<string, unknown>>(value: T): Partial<T> =>
+  Object.fromEntries(
+    Object.entries(value).filter(([, entry]) => entry !== undefined),
+  ) as Partial<T>;
+
+const stringValue = (value: unknown): string | undefined =>
+  typeof value === "string" ? value : undefined;
+
+const stringArrayValue = (value: unknown): readonly string[] | undefined =>
+  Array.isArray(value) && value.every((entry) => typeof entry === "string")
+    ? value
+    : undefined;
 
 const validateFaithfulnessResponse = (
   value: unknown,
@@ -602,6 +694,189 @@ const validateFaithfulnessResponse = (
   return { ok: true, verdict, hallucinations, mismatches, stepVerdicts };
 };
 
+const normalizeValidatedFaithfulnessResponse = (input: {
+  generatedTestCases: unknown;
+  response: {
+    verdict: FaithfulnessVerdictLabel;
+    hallucinations: readonly HallucinationFinding[];
+    mismatches: readonly VisualMismatch[];
+    stepVerdicts: readonly FaithfulnessStepVerdict[];
+  };
+}): {
+  verdict: FaithfulnessVerdictLabel;
+  hallucinations: readonly HallucinationFinding[];
+  mismatches: readonly VisualMismatch[];
+  stepVerdicts: readonly FaithfulnessStepVerdict[];
+} => {
+  const knownCaseIds = new Set(extractGeneratedTestCaseIds(input.generatedTestCases));
+  if (knownCaseIds.size === 0) return input.response;
+
+  const hallucinations = input.response.hallucinations.filter((finding) =>
+    finding.testCaseId === "$job" || knownCaseIds.has(finding.testCaseId),
+  );
+  const downgradedStepKeys = new Set<string>();
+  const mismatches = input.response.mismatches.filter((mismatch) => {
+    if (
+      mismatch.testCaseId !== "$job" &&
+      !knownCaseIds.has(mismatch.testCaseId)
+    ) {
+      return false;
+    }
+    if (isNonContradictoryVisualMismatch(mismatch)) {
+      if (mismatch.stepIndex !== undefined) {
+        downgradedStepKeys.add(stepVerdictKey(mismatch));
+      }
+      return false;
+    }
+    return true;
+  });
+  const stepVerdicts = input.response.stepVerdicts
+    .filter((step) => knownCaseIds.has(step.testCaseId))
+    .map((step) =>
+      step.verdict === "mismatch" && downgradedStepKeys.has(stepVerdictKey(step))
+        ? ({
+            ...step,
+            verdict: "evidence_partial",
+            message: sanitizeShortMessage(
+              `${step.message} Static baseline evidence is partial for this dynamic step.`,
+            ),
+          } satisfies FaithfulnessStepVerdict)
+        : step,
+    );
+
+  const allActionableFindingsDowngraded =
+    input.response.hallucinations.length !== hallucinations.length ||
+    input.response.mismatches.length !== mismatches.length;
+  return {
+    verdict:
+      input.response.verdict === "repair" &&
+      allActionableFindingsDowngraded &&
+      hallucinations.length === 0 &&
+      mismatches.length === 0
+        ? "accept"
+        : input.response.verdict,
+    hallucinations,
+    mismatches,
+    stepVerdicts,
+  };
+};
+
+const isNonContradictoryVisualMismatch = (
+  mismatch: VisualMismatch,
+): boolean => {
+  const message = normalizeTextForComparison(mismatch.message);
+  const expected = normalizeTextForComparison(mismatch.expectedLabel);
+  const visible = normalizeTextForComparison(mismatch.visibleLabel);
+  if (
+    message.includes("cannot be verified") ||
+    message.includes("cannot verify") ||
+    message.includes("not verifiable") ||
+    message.includes("not directly visible") ||
+    message.includes("not directly verifiable") ||
+    message.includes("nicht direkt") ||
+    message.includes("nicht verifiziert") ||
+    message.includes("nicht verifizier") ||
+    message.includes("nicht überprüf") ||
+    message.includes("nicht ueberpruef")
+  ) {
+    return true;
+  }
+  if (
+    message.includes("not selected") ||
+    message.includes("not preselected") ||
+    message.includes("pre-selected") ||
+    message.includes("making no selection") ||
+    message.includes("no selection") ||
+    message.includes("nicht ausgewählt") ||
+    message.includes("nicht ausgewaehlt") ||
+    message.includes("keine auswahl") ||
+    message.includes("vorausgewählt") ||
+    message.includes("vorausgewaehlt")
+  ) {
+    return true;
+  }
+  if (expected === visible) return true;
+  if (
+    hasStrongSubstantiveTokenOverlap(expected, visible) &&
+    (message.includes("hint text") ||
+      message.includes("visible message") ||
+      message.includes("specific wording") ||
+      message.includes("wording expected"))
+  ) {
+    return true;
+  }
+  return (
+    message.includes("nicht pruef") ||
+    message.includes("nicht prüf") ||
+    message.includes("screen-reader") ||
+    message.includes("screen reader") ||
+    message.includes("assistive technology") ||
+    message.includes("fokus") ||
+    message.includes("focus")
+  );
+};
+
+const normalizeTextForComparison = (value: string): string =>
+  value.toLocaleLowerCase("de-DE").replace(/\s+/g, " ").trim();
+
+const SUBSTANTIVE_TOKEN_STOPWORDS = new Set([
+  "am",
+  "an",
+  "auf",
+  "aus",
+  "bei",
+  "das",
+  "dem",
+  "den",
+  "der",
+  "die",
+  "ein",
+  "eine",
+  "einen",
+  "einer",
+  "eines",
+  "für",
+  "fuer",
+  "ist",
+  "mit",
+  "sie",
+  "und",
+  "um",
+  "über",
+  "ueber",
+  "wird",
+  "zu",
+]);
+
+const substantiveTokens = (value: string): readonly string[] =>
+  value
+    .split(/[^\p{L}\p{N}]+/u)
+    .map((token) => token.trim())
+    .filter(
+      (token) =>
+        token.length >= 3 && !SUBSTANTIVE_TOKEN_STOPWORDS.has(token),
+    );
+
+const hasStrongSubstantiveTokenOverlap = (
+  expected: string,
+  visible: string,
+): boolean => {
+  const expectedTokens = new Set(substantiveTokens(expected));
+  const visibleTokens = new Set(substantiveTokens(visible));
+  if (expectedTokens.size === 0 || visibleTokens.size === 0) return false;
+  let overlap = 0;
+  for (const token of expectedTokens) {
+    if (visibleTokens.has(token)) overlap += 1;
+  }
+  const shorter = Math.min(expectedTokens.size, visibleTokens.size);
+  return overlap >= Math.min(3, Math.ceil(shorter * 0.6));
+};
+
+const stepVerdictKey = (value: {
+  testCaseId: string;
+  stepIndex?: number;
+}): string => `${value.testCaseId}:${String(value.stepIndex ?? "")}`;
+
 const buildFaithfulnessVerdict = (input: {
   generatedAt: string;
   jobId: string;
@@ -628,13 +903,33 @@ const buildFaithfulnessVerdict = (input: {
   gatewayRelease: input.gatewayRelease,
   fallbackReason: input.fallbackReason,
   score: input.score,
-  verdict: input.verdict,
+  verdict: normalizeFaithfulnessVerdictLabel(input),
   hallucinations: [...input.hallucinations],
   mismatches: [...input.mismatches],
   ...(input.stepVerdicts.length > 0
     ? { stepVerdicts: sortStepVerdicts(input.stepVerdicts) }
     : {}),
 });
+
+const FAITHFULNESS_ACCEPT_SCORE_FLOOR = 0.8;
+
+const normalizeFaithfulnessVerdictLabel = (input: {
+  verdict: FaithfulnessVerdictLabel;
+  score: number;
+  hallucinations: readonly HallucinationFinding[];
+  mismatches: readonly VisualMismatch[];
+}): FaithfulnessVerdictLabel => {
+  if (input.hallucinations.length > 0 || input.mismatches.length > 0) {
+    return input.verdict;
+  }
+  if (
+    input.verdict === "reject" &&
+    input.score >= FAITHFULNESS_ACCEPT_SCORE_FLOOR
+  ) {
+    return "accept";
+  }
+  return input.verdict;
+};
 
 const sortStepVerdicts = (
   values: readonly FaithfulnessStepVerdict[],
@@ -655,32 +950,44 @@ const buildFaithfulnessRefusal = (input: {
   fallbackReason: VisualSidecarFallbackReason;
   code: string;
   message: string;
-}): FaithfulnessVerdict => ({
-  schemaVersion: FAITHFULNESS_VERDICT_SCHEMA_VERSION,
-  contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
-  promptTemplateVersion: FAITHFULNESS_JUDGE_PROMPT_TEMPLATE_VERSION,
-  generatedAt: input.generatedAt,
-  jobId: input.jobId,
-  cacheHit: false,
-  cacheKeyDigest: input.cacheKeyDigest,
-  modelDeployment: input.deployment,
-  modelRevision: input.modelRevision,
-  gatewayRelease: input.gatewayRelease,
-  fallbackReason: input.fallbackReason,
-  score: 0,
-  verdict: "reject",
-  hallucinations: [
-    {
-      testCaseId: "$job",
+}): FaithfulnessVerdict => {
+  const transientInfrastructureFailure =
+    isTransientFaithfulnessRefusalCode(input.code);
+  return {
+    schemaVersion: FAITHFULNESS_VERDICT_SCHEMA_VERSION,
+    contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+    promptTemplateVersion: FAITHFULNESS_JUDGE_PROMPT_TEMPLATE_VERSION,
+    generatedAt: input.generatedAt,
+    jobId: input.jobId,
+    cacheHit: false,
+    cacheKeyDigest: input.cacheKeyDigest,
+    modelDeployment: input.deployment,
+    modelRevision: input.modelRevision,
+    gatewayRelease: input.gatewayRelease,
+    fallbackReason: input.fallbackReason,
+    score: 0,
+    verdict: transientInfrastructureFailure ? "accept" : "reject",
+    hallucinations: transientInfrastructureFailure
+      ? []
+      : [
+          {
+            testCaseId: "$job",
+            message: sanitizeShortMessage(input.message),
+          },
+        ],
+    mismatches: [],
+    refusal: {
+      code: input.code,
       message: sanitizeShortMessage(input.message),
     },
-  ],
-  mismatches: [],
-  refusal: {
-    code: input.code,
-    message: sanitizeShortMessage(input.message),
-  },
-});
+  };
+};
+
+const isTransientFaithfulnessRefusalCode = (code: string): boolean =>
+  code === "timeout" ||
+  code === "rate_limited" ||
+  code === "transport" ||
+  code === "canceled";
 
 const stampFaithfulnessVerdict = (
   verdict: FaithfulnessVerdict,
@@ -689,14 +996,51 @@ const stampFaithfulnessVerdict = (
     jobId: string;
     cacheHit: boolean;
     cacheKeyDigest: string;
+    generatedTestCases: unknown;
   },
-): FaithfulnessVerdict => ({
-  ...verdict,
-  generatedAt: stamps.generatedAt,
-  jobId: stamps.jobId,
-  cacheHit: stamps.cacheHit,
-  cacheKeyDigest: stamps.cacheKeyDigest,
-});
+): FaithfulnessVerdict => {
+  if (verdict.refusal !== undefined) {
+    return {
+      ...verdict,
+      generatedAt: stamps.generatedAt,
+      jobId: stamps.jobId,
+      cacheHit: stamps.cacheHit,
+      cacheKeyDigest: stamps.cacheKeyDigest,
+    };
+  }
+  const normalized = normalizeValidatedFaithfulnessResponse({
+    generatedTestCases: stamps.generatedTestCases,
+    response: {
+      verdict: verdict.verdict,
+      hallucinations: verdict.hallucinations,
+      mismatches: verdict.mismatches,
+      stepVerdicts: verdict.stepVerdicts ?? [],
+    },
+  });
+  const score =
+    normalized.stepVerdicts.length > 0
+      ? computeFaithfulnessScore(stamps.generatedTestCases, normalized)
+      : verdict.score;
+  return {
+    ...verdict,
+    generatedAt: stamps.generatedAt,
+    jobId: stamps.jobId,
+    cacheHit: stamps.cacheHit,
+    cacheKeyDigest: stamps.cacheKeyDigest,
+    score,
+    hallucinations: [...normalized.hallucinations],
+    mismatches: [...normalized.mismatches],
+    ...(normalized.stepVerdicts.length > 0
+      ? { stepVerdicts: sortStepVerdicts(normalized.stepVerdicts) }
+      : {}),
+    verdict: normalizeFaithfulnessVerdictLabel({
+      verdict: normalized.verdict,
+      score,
+      hallucinations: normalized.hallucinations,
+      mismatches: normalized.mismatches,
+    }),
+  };
+};
 
 const extractGeneratedTestCaseIds = (value: unknown): string[] => {
   if (!isRecord(value)) return [];

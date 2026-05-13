@@ -20,11 +20,12 @@ import {
 import { canonicalJson, sha256Hex } from "./content-hash.js";
 import {
   isCoverageRelevantElementLike,
+  isInteractiveCoverageElementLike,
   normalizeCoverageText,
 } from "./coverage-relevance.js";
 
 const INPUT_KIND_PATTERN =
-  /\b(number|text|email|password|phone|date|currency|percentage|percent|rate|integer|decimal|float|input)\b/iu;
+  /\b(number|email|password|phone|date|currency|percentage|percent|rate|integer|decimal|float|input)\b/iu;
 const SELECT_KIND_PATTERN =
   /\b(select|dropdown|combobox|radio|checkbox|option|choice|picker|segmented|chip|pill|auswahl)\b/iu;
 const RESULT_KIND_PATTERN =
@@ -84,7 +85,7 @@ const inferActionKind = (
   if (HELPER_COPY_PATTERN.test(`${label} ${kind}`)) {
     return "review_copy";
   }
-  if (INPUT_KIND_PATTERN.test(`${label} ${kind}`)) {
+  if (INPUT_KIND_PATTERN.test(`${label} ${kind}`) || isInteractiveCoverageElementLike(element)) {
     return "enter_value";
   }
   return "confirm_state";
@@ -102,7 +103,7 @@ const inferActionLabel = (element: TestDesignElement): string => {
   if (HELPER_COPY_PATTERN.test(normalized)) {
     return `Bestätige ${label}`;
   }
-  if (INPUT_KIND_PATTERN.test(normalized)) {
+  if (INPUT_KIND_PATTERN.test(normalized) || isInteractiveCoverageElementLike(element)) {
     return `${OPTIONAL_PATTERN.test(normalized) ? "Optional eingeben" : "Eingeben"} ${label}`;
   }
   return `Bestätige ${label}`;

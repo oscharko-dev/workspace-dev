@@ -327,39 +327,49 @@ const runParityJobs = async (): Promise<{
   const { root, workspaceRoot, outputRoot } = await createTempWorkspaceLayout();
   await mkdir(workspaceRoot, { recursive: true });
   const port = allocateRandomPort();
-  // local_json mode never performs a network fetch; reject to prove it.
-  const server = (await createWorkspaceServer({
-    port,
-    host: "127.0.0.1",
-    workDir: workspaceRoot,
-    outputRoot,
-    fetchImpl: async () => {
-      throw new Error("Unexpected network fetch in parity test.");
-    },
-  })) as WorkspaceServerInstance;
+  let server: WorkspaceServerInstance | undefined;
+  try {
+    // local_json mode never performs a network fetch; reject to prove it.
+    server = (await createWorkspaceServer({
+      port,
+      host: "127.0.0.1",
+      workDir: workspaceRoot,
+      outputRoot,
+      fetchImpl: async () => {
+        throw new Error("Unexpected network fetch in parity test.");
+      },
+    })) as WorkspaceServerInstance;
 
-  const localFixturePath = path.join(workspaceRoot, "parity-local-fixture.json");
-  const fixtureContent = readFileSync(FIXTURE_PATH, "utf8");
-  await writeFile(localFixturePath, fixtureContent, "utf8");
+    const localFixturePath = path.join(
+      workspaceRoot,
+      "parity-local-fixture.json",
+    );
+    const fixtureContent = readFileSync(FIXTURE_PATH, "utf8");
+    await writeFile(localFixturePath, fixtureContent, "utf8");
 
-  const localJobId = await submitLocalJsonJob({
-    server,
-    fixturePath: localFixturePath,
-  });
-  const pasteJobId = await submitPasteJob({ server, payload: fixtureContent });
+    const localJobId = await submitLocalJsonJob({
+      server,
+      fixturePath: localFixturePath,
+    });
+    const pasteJobId = await submitPasteJob({ server, payload: fixtureContent });
 
-  await waitForJobTerminalState({
-    server,
-    jobId: localJobId,
-    timeoutMs: PARITY_JOB_TIMEOUT_MS,
-  });
-  await waitForJobTerminalState({
-    server,
-    jobId: pasteJobId,
-    timeoutMs: PARITY_JOB_TIMEOUT_MS,
-  });
+    await waitForJobTerminalState({
+      server,
+      jobId: localJobId,
+      timeoutMs: PARITY_JOB_TIMEOUT_MS,
+    });
+    await waitForJobTerminalState({
+      server,
+      jobId: pasteJobId,
+      timeoutMs: PARITY_JOB_TIMEOUT_MS,
+    });
 
-  return { root, workspaceRoot, outputRoot, server, localJobId, pasteJobId };
+    return { root, workspaceRoot, outputRoot, server, localJobId, pasteJobId };
+  } catch (error) {
+    await server?.app.close().catch(() => {});
+    await rm(root, { recursive: true, force: true });
+    throw error;
+  }
 };
 
 /**
@@ -381,41 +391,51 @@ const runPluginParityJobsRawDoc = async (): Promise<{
   const { root, workspaceRoot, outputRoot } = await createTempWorkspaceLayout();
   await mkdir(workspaceRoot, { recursive: true });
   const port = allocateRandomPort();
-  const server = (await createWorkspaceServer({
-    port,
-    host: "127.0.0.1",
-    workDir: workspaceRoot,
-    outputRoot,
-    fetchImpl: async () => {
-      throw new Error("Unexpected network fetch in parity test.");
-    },
-  })) as WorkspaceServerInstance;
+  let server: WorkspaceServerInstance | undefined;
+  try {
+    server = (await createWorkspaceServer({
+      port,
+      host: "127.0.0.1",
+      workDir: workspaceRoot,
+      outputRoot,
+      fetchImpl: async () => {
+        throw new Error("Unexpected network fetch in parity test.");
+      },
+    })) as WorkspaceServerInstance;
 
-  const localFixturePath = path.join(workspaceRoot, "parity-local-fixture.json");
-  const fixtureContent = readFileSync(FIXTURE_PATH, "utf8");
-  await writeFile(localFixturePath, fixtureContent, "utf8");
+    const localFixturePath = path.join(
+      workspaceRoot,
+      "parity-local-fixture.json",
+    );
+    const fixtureContent = readFileSync(FIXTURE_PATH, "utf8");
+    await writeFile(localFixturePath, fixtureContent, "utf8");
 
-  const localJobId = await submitLocalJsonJob({
-    server,
-    fixturePath: localFixturePath,
-  });
-  const pluginJobId = await submitPluginJob({
-    server,
-    payload: fixtureContent,
-  });
+    const localJobId = await submitLocalJsonJob({
+      server,
+      fixturePath: localFixturePath,
+    });
+    const pluginJobId = await submitPluginJob({
+      server,
+      payload: fixtureContent,
+    });
 
-  await waitForJobTerminalState({
-    server,
-    jobId: localJobId,
-    timeoutMs: PARITY_JOB_TIMEOUT_MS,
-  });
-  await waitForJobTerminalState({
-    server,
-    jobId: pluginJobId,
-    timeoutMs: PARITY_JOB_TIMEOUT_MS,
-  });
+    await waitForJobTerminalState({
+      server,
+      jobId: localJobId,
+      timeoutMs: PARITY_JOB_TIMEOUT_MS,
+    });
+    await waitForJobTerminalState({
+      server,
+      jobId: pluginJobId,
+      timeoutMs: PARITY_JOB_TIMEOUT_MS,
+    });
 
-  return { root, workspaceRoot, outputRoot, server, localJobId, pluginJobId };
+    return { root, workspaceRoot, outputRoot, server, localJobId, pluginJobId };
+  } catch (error) {
+    await server?.app.close().catch(() => {});
+    await rm(root, { recursive: true, force: true });
+    throw error;
+  }
 };
 
 /**
@@ -436,39 +456,46 @@ const runPluginPasteParityEnvelope = async (): Promise<{
   const { root, workspaceRoot, outputRoot } = await createTempWorkspaceLayout();
   await mkdir(workspaceRoot, { recursive: true });
   const port = allocateRandomPort();
-  const server = (await createWorkspaceServer({
-    port,
-    host: "127.0.0.1",
-    workDir: workspaceRoot,
-    outputRoot,
-    fetchImpl: async () => {
-      throw new Error("Unexpected network fetch in parity test.");
-    },
-  })) as WorkspaceServerInstance;
+  let server: WorkspaceServerInstance | undefined;
+  try {
+    server = (await createWorkspaceServer({
+      port,
+      host: "127.0.0.1",
+      workDir: workspaceRoot,
+      outputRoot,
+      fetchImpl: async () => {
+        throw new Error("Unexpected network fetch in parity test.");
+      },
+    })) as WorkspaceServerInstance;
 
-  const envelopeContent = readFileSync(ENVELOPE_FIXTURE_PATH, "utf8");
+    const envelopeContent = readFileSync(ENVELOPE_FIXTURE_PATH, "utf8");
 
-  const pluginJobId = await submitPluginJob({
-    server,
-    payload: envelopeContent,
-  });
-  const pasteJobId = await submitPasteJob({
-    server,
-    payload: envelopeContent,
-  });
+    const pluginJobId = await submitPluginJob({
+      server,
+      payload: envelopeContent,
+    });
+    const pasteJobId = await submitPasteJob({
+      server,
+      payload: envelopeContent,
+    });
 
-  await waitForJobTerminalState({
-    server,
-    jobId: pluginJobId,
-    timeoutMs: PARITY_JOB_TIMEOUT_MS,
-  });
-  await waitForJobTerminalState({
-    server,
-    jobId: pasteJobId,
-    timeoutMs: PARITY_JOB_TIMEOUT_MS,
-  });
+    await waitForJobTerminalState({
+      server,
+      jobId: pluginJobId,
+      timeoutMs: PARITY_JOB_TIMEOUT_MS,
+    });
+    await waitForJobTerminalState({
+      server,
+      jobId: pasteJobId,
+      timeoutMs: PARITY_JOB_TIMEOUT_MS,
+    });
 
-  return { root, workspaceRoot, outputRoot, server, pluginJobId, pasteJobId };
+    return { root, workspaceRoot, outputRoot, server, pluginJobId, pasteJobId };
+  } catch (error) {
+    await server?.app.close().catch(() => {});
+    await rm(root, { recursive: true, force: true });
+    throw error;
+  }
 };
 
 test("waitForJobTerminalState fails fast on partial terminal jobs", async () => {

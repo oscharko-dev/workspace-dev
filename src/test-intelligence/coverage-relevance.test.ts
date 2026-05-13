@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   isCoverageRelevantActionLike,
   isCoverageRelevantElementLike,
+  isInteractiveCoverageElementLike,
   normalizeCoverageText,
 } from "./coverage-relevance.js";
 
@@ -87,6 +88,37 @@ test("coverage-relevance > keeps meaningful business labels intact", () => {
       label: "Finanzierungsbedarf des Investitionsobjekts",
     }),
     true,
+  );
+});
+
+test("coverage-relevance > distinguishes interactive controls from static typography", () => {
+  assert.equal(
+    isInteractiveCoverageElementLike({
+      label: "Höhe des Kaufpreises (Netto)",
+      kind: "text_input",
+    }),
+    true,
+  );
+  assert.equal(
+    isInteractiveCoverageElementLike({
+      label: "Sicherungsgeber",
+      kind: "text",
+    }),
+    false,
+  );
+  assert.equal(
+    isInteractiveCoverageElementLike({
+      label: "01.01.1970",
+      kind: "text",
+    }),
+    false,
+  );
+  assert.equal(
+    isInteractiveCoverageElementLike({
+      label: "Finanzierungsbedarf des Investitionsobjekts",
+      kind: "result_display",
+    }),
+    false,
   );
 });
 

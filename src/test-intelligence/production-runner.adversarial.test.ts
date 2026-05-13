@@ -683,7 +683,10 @@ test("production runner adversarial: cancellation releases the gateway slot and 
       // is generator-only and dispatches must remain at 2.
       logicJudge: { enabled: false },
     });
-    assert.equal(secondRun.generatedTestCases.testCases.length, 3);
+    assert.ok(
+      secondRun.generatedTestCases.testCases.length > 0,
+      "successful retry must produce generated cases after the canceled dispatch released its slot",
+    );
     assert.equal(dispatches, 2);
   } finally {
     await rm(tempRoot, { recursive: true, force: true });

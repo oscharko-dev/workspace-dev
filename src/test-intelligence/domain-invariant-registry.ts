@@ -208,6 +208,11 @@ const NETTO_TEXT_RE = /\b(netto|net amount)\b/i;
 const BRUTTO_TEXT_RE = /\b(brutto|gross amount)\b/i;
 const NETTO_BRUTTO_FINANCIAL_RESULT_TEXT_RE =
   /\b(amounts?|betr[aä]g(?:e|en)?|berechn(?:et|ung)|equals?|ergibt|financ(?:e|ing) need|finanzierungsbedarf(?:es|s|e)?|gesamt(?:betrag|summe|wert)?|gleich|kaufpreis|preis|summe|total|value|wert)\b|\d[\d.,]*\s*(?:€|eur)\b/i;
+const NETTO_BRUTTO_NUMERIC_AMOUNT_RE = /\d[\d.,]*\s*(?:€|eur)\b/i;
+const NETTO_BRUTTO_RESULT_ASSERTION_RE =
+  /\b(berechn(?:et|ung)|equals?|ergibt|gleich|gesamt(?:betrag|summe|wert)?|summe|total)\b/i;
+const NETTO_BRUTTO_UI_ENUMERATION_TEXT_RE =
+  /\b(fokus|focus|tab|tastatur|keyboard|screen[-\s]?reader|beschrift(?:ung|ungen)?|label|feld(?:er)?|field(?:s)?|option(?:en)?|radio|reihenfolge|order|navig(?:ation|ieren)?|sichtbar|visible|angekündigt|vorgelesen|announces?|reads?)\b/i;
 const OPTIONAL_COST_TEXT_RE =
   /\b(optional (?:cost|fee|charge)|optional[ae]r? (?:kosten|gebühr|aufpreis))\b/i;
 
@@ -232,10 +237,16 @@ const caseTextMatches = (
   pattern: RegExp,
 ): boolean => collectCaseStrings(testCase).some((text) => pattern.test(text));
 
-const isNettoBruttoFinancialResultConflation = (text: string): boolean =>
-  NETTO_TEXT_RE.test(text) &&
-  BRUTTO_TEXT_RE.test(text) &&
-  NETTO_BRUTTO_FINANCIAL_RESULT_TEXT_RE.test(text);
+const isNettoBruttoFinancialResultConflation = (text: string): boolean => {
+  if (!NETTO_TEXT_RE.test(text) || !BRUTTO_TEXT_RE.test(text)) return false;
+  if (!NETTO_BRUTTO_FINANCIAL_RESULT_TEXT_RE.test(text)) return false;
+
+  const hasNumericAmount = NETTO_BRUTTO_NUMERIC_AMOUNT_RE.test(text);
+  const hasResultAssertion = NETTO_BRUTTO_RESULT_ASSERTION_RE.test(text);
+  const isUiEnumeration = NETTO_BRUTTO_UI_ENUMERATION_TEXT_RE.test(text);
+
+  return !isUiEnumeration || hasNumericAmount || hasResultAssertion;
+};
 
 const screenIdsForCase = (testCase: GeneratedTestCase): Set<string> =>
   new Set(testCase.figmaTraceRefs.map((ref) => ref.screenId));

@@ -40,7 +40,7 @@ const SAMPLE_FILE = {
             children: [
               node({
                 id: "2:1",
-                name: "Investitionssumme",
+                name: "Investitionssumme Field",
                 type: "TEXT",
                 characters: "Investitionssumme",
               }),
@@ -156,11 +156,13 @@ const SAMPLE_ACCESSIBILITY_DRAFT: ProductionRunnerLlmDraftCase = {
       index: 1,
       action: "Navigiere ausschließlich per Tastatur durch die Maske",
       expected: "Alle interaktiven Elemente erhalten einen sichtbaren Fokus",
+      fieldLifecycleTransitionId: SAMPLE_FIELD_LIFECYCLE_TRANSITION_IDS[3],
     },
     {
       index: 2,
       action: "Aktiviere die Schaltfläche Weiter per Tastatur",
       expected: "Die Folgemaske wird ohne Maus geöffnet",
+      fieldLifecycleTransitionId: SAMPLE_FIELD_LIFECYCLE_TRANSITION_IDS[4],
     },
   ],
   expectedResults: [
@@ -335,8 +337,14 @@ test("runFigmaToQcTestCases harness mode shadow_eval persists an accepted step a
     assert.equal(parsed.rawPromptsIncluded, false);
     assert.equal(parsed.attempts.length, 1);
     assert.equal(parsed.jobId, "job-shadow");
-    // Pipeline still produced the canonical artifacts.
-    assert.equal(result.generatedTestCases.testCases.length, 1);
+    // Pipeline still produced the canonical artifacts; deterministic
+    // coverage completion may add cases beyond the mocked seed case.
+    assert.ok(result.generatedTestCases.testCases.length >= 1);
+    assert.ok(
+      result.generatedTestCases.testCases.some(
+        (testCase) => testCase.title === SAMPLE_DRAFT.title,
+      ),
+    );
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }

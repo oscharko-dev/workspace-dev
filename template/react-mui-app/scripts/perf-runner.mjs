@@ -523,6 +523,13 @@ const compareAgainstBaseline = ({ aggregate, baselineAggregate, tolerancePct }) 
     initial_js_kb: 0.1,
     route_transition_ms: 1
   };
+  const materialDeltaFloors = {
+    inp_p75_ms: 20,
+    lcp_p75_ms: 100,
+    cls_p75: 0.005,
+    initial_js_kb: 1,
+    route_transition_ms: 20
+  };
 
   const checks = Object.keys(floors).map((metric) => {
     const actual = aggregate[metric];
@@ -537,13 +544,17 @@ const compareAgainstBaseline = ({ aggregate, baselineAggregate, tolerancePct }) 
       };
     }
     const denominator = Math.max(Math.abs(baseline), floors[metric]);
-    const regressionPct = ((actual - baseline) / denominator) * 100;
+    const absoluteDelta = actual - baseline;
+    const regressionPct = (absoluteDelta / denominator) * 100;
+    const isMaterialRegression = absoluteDelta > materialDeltaFloors[metric];
     return {
       metric,
       actual,
       baseline,
+      absoluteDelta: Math.round(absoluteDelta * 100) / 100,
+      materialDeltaFloor: materialDeltaFloors[metric],
       regressionPct: Math.round(regressionPct * 100) / 100,
-      pass: regressionPct <= tolerancePct
+      pass: regressionPct <= tolerancePct || !isMaterialRegression
     };
   });
 

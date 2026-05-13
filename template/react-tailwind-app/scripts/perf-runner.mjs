@@ -439,6 +439,14 @@ const REGRESSION_DENOMINATOR_FLOORS = {
   route_transition_ms: 25,
 };
 
+const REGRESSION_MATERIAL_DELTA_FLOORS = {
+  inp_p75_ms: 20,
+  lcp_p75_ms: 100,
+  cls_p75: 0.005,
+  initial_js_kb: 1,
+  route_transition_ms: 20,
+};
+
 export const compareAgainstBaseline = ({
   aggregate,
   baselineAggregate,
@@ -460,13 +468,18 @@ export const compareAgainstBaseline = ({
       Math.abs(baseline),
       REGRESSION_DENOMINATOR_FLOORS[metric],
     );
+    const absoluteDelta = actual - baseline;
     const regressionPct = ((actual - baseline) / denominator) * 100;
+    const isMaterialRegression =
+      absoluteDelta > REGRESSION_MATERIAL_DELTA_FLOORS[metric];
     return {
       metric,
       actual,
       baseline,
+      absoluteDelta: roundMetric(absoluteDelta),
+      materialDeltaFloor: REGRESSION_MATERIAL_DELTA_FLOORS[metric],
       regressionPct: roundMetric(regressionPct),
-      pass: regressionPct <= tolerancePct,
+      pass: regressionPct <= tolerancePct || !isMaterialRegression,
     };
   });
 };

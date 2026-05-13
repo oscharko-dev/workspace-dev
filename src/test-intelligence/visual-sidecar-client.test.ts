@@ -370,6 +370,59 @@ test("both fail: VisualSidecarFailure with both_sidecars_failed and union of att
   assert.match(result.failureMessage, /both_sidecars_failed/);
 });
 
+test("transient visual sidecar failures retry a second primary/fallback round when enabled", async () => {
+  const captures = [captureFor("s-1")];
+  let primaryCalls = 0;
+  const primaryResponder: MockResponder = (request, attempt) => {
+    primaryCalls += 1;
+    if (primaryCalls === 1) {
+      return {
+        outcome: "error",
+        errorClass: "rate_limited",
+        message: "rate limited",
+        retryable: true,
+        attempt,
+      };
+    }
+    return buildSuccess(request, attempt, buildEnvelope(captures, PRIMARY_DEPLOYMENT), {
+      deployment: PRIMARY_DEPLOYMENT,
+      modelRevision: `${PRIMARY_DEPLOYMENT}@test`,
+      gatewayRelease: "mock",
+    });
+  };
+  const fallbackResponder: MockResponder = (_request, attempt) => ({
+    outcome: "error",
+    errorClass: "timeout",
+    message: "timeout",
+    retryable: true,
+    attempt,
+  });
+  const bundle = buildBundle({
+    primary: { responder: primaryResponder },
+    fallback: { responder: fallbackResponder },
+  });
+
+  const { result } = await describeVisualScreens({
+    bundle,
+    captures,
+    jobId: "job-4-retry",
+    generatedAt: "2026-04-25T00:00:00.000Z",
+    intent: buildIntent(["s-1"]),
+    primaryDeployment: PRIMARY_DEPLOYMENT,
+    clock: monotonicClock(),
+    maxTransientRounds: 2,
+  });
+
+  assert.equal(result.outcome, "success");
+  if (result.outcome !== "success") return;
+  assert.equal(result.selectedDeployment, "mock");
+  assert.equal(result.fallbackReason, "none");
+  assert.equal(result.attempts.length, 3);
+  assert.equal(result.attempts[0]?.errorClass, "rate_limited");
+  assert.equal(result.attempts[1]?.errorClass, "timeout");
+  assert.equal(result.attempts[2]?.errorClass, undefined);
+});
+
 test("primary circuit breaker skips primary after two protocol failures", async () => {
   const captures = [captureFor("s-1")];
   let primaryCalls = 0;

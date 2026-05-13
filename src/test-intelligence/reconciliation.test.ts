@@ -116,6 +116,146 @@ test("reconciliation adds visual-only fields with provenance visual_sidecar", ()
   assert.equal(visualField?.label, "Phone");
 });
 
+test("reconciliation contextualizes repeated choice fields from whole-screen visual text", () => {
+  const intent = baseIntent();
+  intent.detectedFields = [
+    {
+      id: "s1::field::n-01-fleet-yes",
+      screenId: "s1",
+      trace: { nodeId: "n-fleet-yes", nodeName: "Typography" },
+      provenance: "figma_node",
+      confidence: 0.9,
+      label: "Ja",
+      type: "radio_option",
+    },
+    {
+      id: "s1::field::n-02-fleet-no",
+      screenId: "s1",
+      trace: { nodeId: "n-fleet-no", nodeName: "Typography" },
+      provenance: "figma_node",
+      confidence: 0.9,
+      label: "Nein",
+      type: "radio_option",
+    },
+    {
+      id: "s1::field::n-03-expansion-yes",
+      screenId: "s1",
+      trace: { nodeId: "n-expansion-yes", nodeName: "Typography" },
+      provenance: "figma_node",
+      confidence: 0.9,
+      label: "Ja",
+      type: "radio_option",
+    },
+    {
+      id: "s1::field::n-04-expansion-no",
+      screenId: "s1",
+      trace: { nodeId: "n-expansion-no", nodeName: "Typography" },
+      provenance: "figma_node",
+      confidence: 0.9,
+      label: "Nein",
+      type: "radio_option",
+    },
+  ];
+  const visual: VisualScreenDescription[] = [
+    {
+      screenId: "s1",
+      sidecarDeployment: "mock",
+      regions: [
+        {
+          regionId: "form",
+          visibleText:
+            "Ist die Anschaffung im Rahmen eines Fuhrparks angedacht?\nJa Nein\nHandelt es sich um eine Erweiterungsinvestition?\nJa Nein",
+          confidence: 0.9,
+        },
+      ],
+      confidenceSummary: { min: 0.9, max: 0.9, mean: 0.9 },
+    },
+  ];
+
+  const result = reconcileSources({ figmaIntent: intent, visual });
+
+  const labelsById = new Map(
+    result.detectedFields.map((field) => [field.id, field.label]),
+  );
+  assert.equal(
+    labelsById.get("s1::field::n-01-fleet-yes"),
+    "Ist die Anschaffung im Rahmen eines Fuhrparks angedacht? = Ja",
+  );
+  assert.equal(
+    labelsById.get("s1::field::n-02-fleet-no"),
+    "Ist die Anschaffung im Rahmen eines Fuhrparks angedacht? = Nein",
+  );
+  assert.equal(
+    labelsById.get("s1::field::n-03-expansion-yes"),
+    "Handelt es sich um eine Erweiterungsinvestition? = Ja",
+  );
+  assert.equal(
+    labelsById.get("s1::field::n-04-expansion-no"),
+    "Handelt es sich um eine Erweiterungsinvestition? = Nein",
+  );
+});
+
+test("reconciliation contextualizes choice fields from sequential visual regions", () => {
+  const intent = baseIntent();
+  intent.detectedFields = [
+    {
+      id: "s1::field::n-01-net",
+      screenId: "s1",
+      trace: { nodeId: "n-01-net", nodeName: "Typography" },
+      provenance: "figma_node",
+      confidence: 0.9,
+      label: "Netto",
+      type: "radio_option",
+    },
+    {
+      id: "s1::field::n-02-gross",
+      screenId: "s1",
+      trace: { nodeId: "n-02-gross", nodeName: "Typography" },
+      provenance: "figma_node",
+      confidence: 0.9,
+      label: "Brutto",
+      type: "radio_option",
+    },
+  ];
+  const visual: VisualScreenDescription[] = [
+    {
+      screenId: "s1",
+      sidecarDeployment: "mock",
+      regions: [
+        {
+          regionId: "question",
+          controlType: "label",
+          label: "Wie soll der Kaufpreis erfasst werden?",
+          confidence: 0.9,
+        },
+        {
+          regionId: "net",
+          controlType: "radio-button",
+          label: "Netto",
+          confidence: 0.9,
+        },
+        {
+          regionId: "gross",
+          controlType: "radio-button",
+          label: "Brutto",
+          confidence: 0.9,
+        },
+      ],
+      confidenceSummary: { min: 0.9, max: 0.9, mean: 0.9 },
+    },
+  ];
+
+  const result = reconcileSources({ figmaIntent: intent, visual });
+
+  assert.deepEqual(
+    result.detectedFields.map((field) => field.label),
+    [
+      "Wie soll der Kaufpreis erfasst werden? = Netto",
+      "Wie soll der Kaufpreis erfasst werden? = Brutto",
+    ],
+  );
+});
+
 test("reconciliation adds visual validation hints not already in Figma", () => {
   const visual: VisualScreenDescription[] = [
     {
@@ -136,6 +276,40 @@ test("reconciliation adds visual validation hints not already in Figma", () => {
   assert.equal(result.detectedValidations.length, 1);
   assert.equal(result.detectedValidations[0]?.provenance, "visual_sidecar");
   assert.equal(result.detectedValidations[0]?.rule, "Required");
+});
+
+test("reconciliation ignores non-actionable visual layout validation hints", () => {
+  const visual: VisualScreenDescription[] = [
+    {
+      screenId: "s1",
+      sidecarDeployment: "mock",
+      regions: [
+        {
+          regionId: "table-header",
+          label: "Name Rolle Geburtsdatum",
+          confidence: 0.9,
+          validationHints: ["table-header"],
+        },
+        {
+          regionId: "table-row-1",
+          label: "Meyer Technology GmbH",
+          confidence: 0.9,
+          validationHints: ["table-row"],
+        },
+        {
+          regionId: "button-add-person",
+          label: "Person hinzufügen",
+          confidence: 0.9,
+          validationHints: ["button"],
+        },
+      ],
+      confidenceSummary: { min: 0.9, max: 0.9, mean: 0.9 },
+    },
+  ];
+
+  const result = reconcileSources({ figmaIntent: baseIntent(), visual });
+
+  assert.equal(result.detectedValidations.length, 0);
 });
 
 test("reconciliation redacts visual-only PII before serializing the IR", () => {

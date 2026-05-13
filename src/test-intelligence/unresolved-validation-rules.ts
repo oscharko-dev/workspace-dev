@@ -420,6 +420,8 @@ const testCaseTouchesConstraint = (
   testCase: GeneratedTestCase,
   constraint: UnresolvedValidationConstraint,
 ): boolean => {
+  const hasSpecificScope =
+    constraint.fieldIds.length > 0 || constraint.validationIds.length > 0;
   if (
     constraint.fieldIds.some((fieldId) =>
       testCase.qualitySignals.coveredFieldIds.includes(fieldId),
@@ -433,6 +435,9 @@ const testCaseTouchesConstraint = (
     )
   ) {
     return true;
+  }
+  if (hasSpecificScope) {
+    return false;
   }
   if (
     constraint.screenId !== undefined &&

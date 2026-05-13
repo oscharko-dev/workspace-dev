@@ -59,8 +59,8 @@ export default function CheckoutRoute() {
               Lazy route chunks keep this flow off the critical path until the user asks for it.
             </Alert>
             <Stack direction="row" sx={{ justifyContent: "space-between" }}>
-              <Typography sx={{ fontWeight: 600 }}>Total</Typography>
-              <Typography sx={{ fontWeight: 700 }}>€0.00</Typography>
+              <Typography variant="subtitle2">Total</Typography>
+              <Typography variant="h6">€0.00</Typography>
             </Stack>
           </Stack>
         </Paper>

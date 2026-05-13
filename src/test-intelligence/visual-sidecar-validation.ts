@@ -75,6 +75,35 @@ const PII_KINDS = [
   "phone",
   "full_name",
 ] as const;
+type VisualSidecarPiiKind = (typeof PII_KINDS)[number];
+
+const PII_FLAG_CORROBORATION_PATTERNS: Record<
+  VisualSidecarPiiKind,
+  readonly RegExp[]
+> = {
+  iban: [/\biban\b/iu, /\binternational bank account\b/iu],
+  bic: [/\bbic\b/iu, /\bswift\b/iu],
+  pan: [
+    /\bpan\b/iu,
+    /\bcard\b/iu,
+    /\bkarten(?:nummer)?\b/iu,
+    /\bkreditkarte\b/iu,
+  ],
+  tax_id: [
+    /\btax\b/iu,
+    /\bsteuer(?:identifikationsnummer|id|nummer)?\b/iu,
+    /\btin\b/iu,
+  ],
+  email: [/\be-?mail\b/iu, /\bmailadresse\b/iu],
+  phone: [/\bphone\b/iu, /\btelefon\b/iu, /\bmobil(?:nummer)?\b/iu, /\bhandy\b/iu],
+  full_name: [
+    /\bfull name\b/iu,
+    /\bname\b/iu,
+    /\bvorname\b/iu,
+    /\bnachname\b/iu,
+    /\bansprechpartner\b/iu,
+  ],
+};
 
 /**
  * Input for `validateVisualSidecar`. The `visual` array is typed as
@@ -266,6 +295,45 @@ const isPiiKind = (value: unknown): value is (typeof PII_KINDS)[number] => {
     typeof value === "string" &&
     (PII_KINDS as readonly string[]).includes(value)
   );
+};
+
+const isPiiFlagCorroborated = (input: {
+  kind: VisualSidecarPiiKind;
+  regionId: string;
+  regionsValue: unknown;
+  screenIntent:
+    | { fieldLabels: Map<string, string>; actionLabels: Map<string, string> }
+    | undefined;
+}): boolean => {
+  const snippets: string[] = [input.regionId];
+  if (Array.isArray(input.regionsValue)) {
+    for (const candidate of input.regionsValue) {
+      if (!isObject(candidate)) continue;
+      const regionId = candidate["regionId"];
+      if (regionId !== input.regionId) continue;
+      for (const key of ["label", "controlType", "visibleText"] as const) {
+        const value = candidate[key];
+        if (typeof value === "string") snippets.push(value);
+      }
+    }
+  }
+  const figmaLabel =
+    input.screenIntent?.fieldLabels.get(input.regionId) ??
+    input.screenIntent?.actionLabels.get(input.regionId);
+  if (figmaLabel !== undefined) snippets.push(figmaLabel);
+
+  for (const snippet of snippets) {
+    const pii = detectPii(snippet);
+    if (pii?.kind === input.kind) return true;
+    if (
+      PII_FLAG_CORROBORATION_PATTERNS[input.kind].some((pattern) =>
+        pattern.test(snippet),
+      )
+    ) {
+      return true;
+    }
+  }
+  return false;
 };
 
 const INLINE_DEPLOYMENT_ALIASES = new Set(["inline", "current"]);
@@ -550,7 +618,9 @@ const validateSingle = (input: SingleInput): VisualSidecarValidationRecord => {
     }
   }
 
-  // PII flags carried by the sidecar are always treated as possible PII.
+  // Sidecar-provided PII flags are untrusted model assertions. Treat them as
+  // blocking only when deterministic text/metadata corroborates the specific
+  // PII kind; otherwise they remain a non-blocking confidence warning.
   const piiFlags = description["piiFlags"];
   if (piiFlags !== undefined) {
     if (!Array.isArray(piiFlags)) {
@@ -563,6 +633,7 @@ const validateSingle = (input: SingleInput): VisualSidecarValidationRecord => {
       outcomesSet.add("schema_invalid");
     } else {
       const flags = piiFlags as readonly unknown[];
+      let hasCorroboratedPiiFlag = false;
       for (let i = 0; i < flags.length; i++) {
         const flag = flags[i];
         if (!isObject(flag)) {
@@ -608,9 +679,33 @@ const validateSingle = (input: SingleInput): VisualSidecarValidationRecord => {
           });
           outcomesSet.add("schema_invalid");
         }
+        if (
+          isNonEmptyString(flag["regionId"]) &&
+          isPiiKind(flag["kind"]) &&
+          typeof flag["confidence"] === "number" &&
+          flag["confidence"] >= 0 &&
+          flag["confidence"] <= 1 &&
+          isPiiFlagCorroborated({
+            kind: flag["kind"],
+            regionId: flag["regionId"],
+            regionsValue,
+            screenIntent: input.intentByScreen.get(screenId),
+          })
+        ) {
+          hasCorroboratedPiiFlag = true;
+        }
       }
-      if (flags.length > 0) {
+      if (hasCorroboratedPiiFlag) {
         outcomesSet.add("possible_pii");
+      } else if (flags.length > 0) {
+        issues.push({
+          path: `${basePath}.piiFlags`,
+          code: "semantic_suspicious_content",
+          severity: "warning",
+          message:
+            "piiFlags were not corroborated by visible text or deterministic Figma metadata and were downgraded",
+        });
+        outcomesSet.add("low_confidence");
       }
     }
   }

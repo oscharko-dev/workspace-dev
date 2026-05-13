@@ -81,6 +81,28 @@ test("buildWorkflowTopology derives stable ACT-* actions and transitions", () =>
   );
 });
 
+test("buildWorkflowTopology does not treat bare text elements as editable fields", () => {
+  const model = buildModel();
+  model.screens[0]!.elements.push({
+    elementId: "static-role",
+    label: "Sicherungsgeber",
+    kind: "text",
+  });
+
+  const topology = buildWorkflowTopology({ model });
+
+  assert.equal(
+    topology.actions.some((action) => action.targetIds.includes("static-role")),
+    false,
+  );
+  assert.equal(
+    topology.fieldLifecycles.some(
+      (lifecycle) => lifecycle.fieldId === "static-role",
+    ),
+    false,
+  );
+});
+
 test("assertWorkflowTopologyInvariants rejects transitions with invalid guards", () => {
   const topology = buildWorkflowTopology({ model: buildModel() });
   const invalid = {

@@ -231,6 +231,47 @@ test("possible_pii from sidecar piiFlags is blocking", () => {
   assert.ok(report.records[0]?.outcomes.includes("possible_pii"));
 });
 
+test("uncorroborated broad sidecar piiFlags are downgraded", () => {
+  const report = validateVisualSidecar({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    visual: [
+      buildDescription({
+        regions: [
+          {
+            regionId: "header",
+            confidence: 0.99,
+            label: "header",
+            visibleText:
+              'Bedarf: Investitionsfinanzierung ← Für "Neues Vorhaben" Zuordnung des Bedarfs',
+          },
+        ],
+        piiFlags: [
+          { regionId: "header", kind: "email", confidence: 0.99 },
+          { regionId: "header", kind: "phone", confidence: 0.99 },
+          { regionId: "header", kind: "full_name", confidence: 0.99 },
+          { regionId: "header", kind: "iban", confidence: 0.99 },
+          { regionId: "header", kind: "bic", confidence: 0.99 },
+          { regionId: "header", kind: "pan", confidence: 0.99 },
+          { regionId: "header", kind: "tax_id", confidence: 0.99 },
+        ],
+      }),
+    ],
+    intent: buildIntent(),
+  });
+
+  assert.equal(report.blocked, false);
+  assert.ok(report.records[0]?.outcomes.includes("low_confidence"));
+  assert.equal(report.records[0]?.outcomes.includes("possible_pii"), false);
+  assert.ok(
+    report.records[0]?.issues.some(
+      (issue) =>
+        issue.code === "semantic_suspicious_content" &&
+        issue.severity === "warning",
+    ),
+  );
+});
+
 test("prompt-injection-like text is detected and blocking", () => {
   const report = validateVisualSidecar({
     jobId: "job-1",

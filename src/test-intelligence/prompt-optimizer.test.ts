@@ -460,7 +460,10 @@ test("lock-file: appends optimizedTemplates additively without touching the base
     assert.equal(after.optimizedTemplates.length, 1);
     const entry = after.optimizedTemplates[0] as PromptOptimizationLockEntry;
     assert.equal(entry.optimizedTemplateId, report.lockEntry.optimizedTemplateId);
-    assert.equal(entry.basePromptTemplateVersion, "1.7.1");
+    assert.equal(
+      entry.basePromptTemplateVersion,
+      TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
+    );
 
     // Re-applying the same entry is idempotent.
     const second = await appendOptimizedTemplateToLockFile({

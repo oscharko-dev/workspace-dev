@@ -61,7 +61,7 @@ const INPUT_HINT_RE =
 const BUTTON_HINT_RE =
   /\b(button|cta|submit|next|weiter|speichern|save|ok|bestätigen|confirm|abbrechen|cancel|zurück|back|navigate|link)\b/iu;
 const RADIO_HINT_RE =
-  /\b(radio|option|brutto|netto|einmalig|monatlich|jährlich|ja|nein)\b/iu;
+  /\b(radio|option|choice|brutto|netto|einmalig|monatlich|jährlich|ja|nein)\b|to?oggle(?:button|buttongroup)?|toogle(?:button|buttongroup)?/iu;
 const SELECT_HINT_RE =
   /\b(select|dropdown|combo|auswahl|auswahlfeld|picker)\b/iu;
 const RESULT_HINT_RE =
@@ -70,6 +70,10 @@ const LABEL_HINT_RE =
   /\b(label|hinweis|help|helper|info|information|beschreibung|text)\b/iu;
 const DECORATIVE_HINT_RE =
   /\b(icon|chevron|arrow|vector|svg|glyph|decorative|separator|divider)\b/iu;
+const FORM_FIELD_CONTEXT_TEXT_RE =
+  /[?？]|\b(?:optional|required|pflicht|pflichtfeld|erforderlich|gewünscht|gewuenscht|geplant|berücksichtigt|beruecksichtigt|soll|ist|handelt|wie|welche|kann|könnte|koennte)\b/iu;
+const VALUE_LIKE_TEXT_RE =
+  /^[\d\s.,%€$+-]+$|^(?:eur|usd|chf|gbp|ja|nein|yes|no|netto|brutto)$/iu;
 const FIELD_CLUSTER_NODE_TYPES = new Set([
   "TEXT",
   "TEXT_INPUT",
@@ -220,6 +224,11 @@ interface ProjectionFrame {
   depth: number;
   /** Stack of INSTANCE/COMPONENT ancestors, oldest-first. */
   instanceAncestorIds: string[];
+  /** Nearest non-button interactive ancestor; used to classify descendant text labels. */
+  interactiveAncestorKind?: Extract<
+    SemanticNodeKind,
+    "text_input" | "radio_option" | "select_field"
+  >;
 }
 
 const projectScreenNodes = (
@@ -235,19 +244,31 @@ const projectScreenNodes = (
     if (frame === undefined) break;
     visited += 1;
     if (visited > MAX_VISIT_NODES) break;
-    const { node, depth, instanceAncestorIds } = frame;
+    const { node, depth, instanceAncestorIds, interactiveAncestorKind } = frame;
     if (node !== screenRoot && node.visible === false) continue;
     if (node !== screenRoot) {
-      const projection = projectNode(node, instanceAncestorIds);
+      const projection = projectNode(
+        node,
+        instanceAncestorIds,
+        interactiveAncestorKind,
+      );
       if (projection !== undefined) raw.push(projection);
     }
     if (depth > 64) continue;
     const children = node.children;
     if (Array.isArray(children)) {
+      const nodeSemanticKind =
+        node !== screenRoot && isInstanceLike(node)
+          ? classifySemanticKind(node)
+          : undefined;
       const childAncestors =
         node !== screenRoot && isInstanceLike(node)
           ? [...instanceAncestorIds, node.id]
           : instanceAncestorIds;
+      const childInteractiveAncestorKind = resolveChildInteractiveAncestorKind(
+        nodeSemanticKind,
+        interactiveAncestorKind,
+      );
       for (let i = children.length - 1; i >= 0; i -= 1) {
         const child = children[i];
         if (child !== undefined) {
@@ -255,6 +276,9 @@ const projectScreenNodes = (
             node: child,
             depth: depth + 1,
             instanceAncestorIds: childAncestors,
+            ...(childInteractiveAncestorKind !== undefined
+              ? { interactiveAncestorKind: childInteractiveAncestorKind }
+              : {}),
           });
         }
       }
@@ -274,18 +298,39 @@ const classifySemanticKind = (
   const combined = `${name} ${text}`.trim();
   if (combined.length === 0) return undefined;
   if (DECORATIVE_HINT_RE.test(combined)) return "decorative";
-  if (BUTTON_HINT_RE.test(combined)) return "button";
   if (SELECT_HINT_RE.test(combined)) return "select_field";
   if (RADIO_HINT_RE.test(combined)) return "radio_option";
+  if (BUTTON_HINT_RE.test(combined)) return "button";
   if (RESULT_HINT_RE.test(combined)) return "result_display";
   if (LABEL_HINT_RE.test(combined)) return "informative_label";
   if (INPUT_HINT_RE.test(combined)) return "text_input";
   return undefined;
 };
 
+const resolveChildInteractiveAncestorKind = (
+  semanticKind: SemanticNodeKind | undefined,
+  inherited:
+    | Extract<SemanticNodeKind, "text_input" | "radio_option" | "select_field">
+    | undefined,
+):
+  | Extract<SemanticNodeKind, "text_input" | "radio_option" | "select_field">
+  | undefined => {
+  if (
+    semanticKind === "text_input" ||
+    semanticKind === "radio_option" ||
+    semanticKind === "select_field"
+  ) {
+    return semanticKind;
+  }
+  return inherited;
+};
+
 const projectNode = (
   node: FigmaRestNode,
   instanceAncestorIds: string[],
+  interactiveAncestorKind:
+    | Extract<SemanticNodeKind, "text_input" | "radio_option" | "select_field">
+    | undefined,
 ): RawProjection | undefined => {
   const name = node.name ?? "";
   const bbox = readBbox(node);
@@ -293,16 +338,17 @@ const projectNode = (
   if (semanticKind === "decorative") return undefined;
   if (TEXT_NODE_TYPES.has(node.type)) {
     const text = typeof node.characters === "string" ? node.characters : name;
+    const resolvedSemanticKind = semanticKind ?? interactiveAncestorKind;
     const nodeType =
-      semanticKind === "text_input"
+      resolvedSemanticKind === "text_input"
         ? "TEXT_INPUT"
-        : semanticKind === "radio_option"
+        : resolvedSemanticKind === "radio_option"
           ? "RADIO_OPTION"
-          : semanticKind === "select_field"
+          : resolvedSemanticKind === "select_field"
             ? "SELECT_FIELD"
-            : semanticKind === "result_display"
+            : resolvedSemanticKind === "result_display"
               ? "RESULT_DISPLAY"
-              : semanticKind === "informative_label"
+              : resolvedSemanticKind === "informative_label"
                 ? "INFORMATIVE_LABEL"
                 : INPUT_HINT_RE.test(name)
                   ? "TEXT_INPUT"
@@ -315,7 +361,19 @@ const projectNode = (
       nodeType !== "TEXT_INPUT" &&
       nodeType !== "RESULT_DISPLAY"
     ) {
-      return undefined;
+      if (!isLikelyFieldContextText(text)) return undefined;
+      const projection: RawProjection = {
+        nodeId: node.id,
+        nodeName: name,
+        nodeType: "INFORMATIVE_LABEL",
+        figmaType: node.type,
+        text,
+        instanceAncestorIds: [...instanceAncestorIds],
+        isButtonInstance: false,
+        semanticKind: "informative_label",
+      };
+      if (bbox !== undefined) projection.bbox = bbox;
+      return projection;
     }
     const projection: RawProjection = {
       nodeId: node.id,
@@ -326,7 +384,8 @@ const projectNode = (
       instanceAncestorIds: [...instanceAncestorIds],
       isButtonInstance: false,
     };
-    if (semanticKind !== undefined) projection.semanticKind = semanticKind;
+    if (resolvedSemanticKind !== undefined)
+      projection.semanticKind = resolvedSemanticKind;
     if (bbox !== undefined) projection.bbox = bbox;
     return projection;
   }
@@ -407,6 +466,17 @@ const projectNode = (
     }
   }
   return undefined;
+};
+
+const isLikelyFieldContextText = (text: string): boolean => {
+  const normalized = text.replace(/\s+/gu, " ").trim();
+  return (
+    normalized.length >= 4 &&
+    normalized.length <= 160 &&
+    /\p{L}/u.test(normalized) &&
+    !VALUE_LIKE_TEXT_RE.test(normalized) &&
+    FORM_FIELD_CONTEXT_TEXT_RE.test(normalized)
+  );
 };
 
 const readBbox = (

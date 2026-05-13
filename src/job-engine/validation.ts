@@ -69,6 +69,8 @@ export interface ProjectValidationResult {
 const UI_GATE_ARTIFACT_DIR_NAME = "ui-gate";
 const UI_GATE_REPORT_FILE_NAME = "ui-gate-report.json";
 const UI_GATE_BASELINE_FILE_NAME = "ui-gate-visual-baseline.json";
+const PLAYWRIGHT_PORT_MIN = 20_000;
+const PLAYWRIGHT_PORT_SPAN = 20_000;
 
 export const getUiGateReportPaths = ({
   jobDir
@@ -85,6 +87,12 @@ export const getUiGateReportPaths = ({
     reportPath: path.join(artifactDir, UI_GATE_REPORT_FILE_NAME),
     baselinePath: path.join(artifactDir, UI_GATE_BASELINE_FILE_NAME)
   };
+};
+
+const deriveValidationPlaywrightPort = (generatedProjectDir: string): string => {
+  const digest = createHash("sha256").update(generatedProjectDir, "utf8").digest();
+  const offset = digest.readUInt16BE(0) % PLAYWRIGHT_PORT_SPAN;
+  return String(PLAYWRIGHT_PORT_MIN + offset);
 };
 
 const hasExistingNodeModules = async ({
@@ -603,7 +611,12 @@ export const runProjectValidationWithDeps = async ({
     attemptCommands.push({
       name: "validate-playwright",
       args: ["run", "--if-present", "validate:playwright"],
-      ...(uiGateEnv ? { env: uiGateEnv } : {}),
+      env: {
+        ...(uiGateEnv ?? {}),
+        FIGMAPIPE_TAILWIND_PLAYWRIGHT_PORT:
+          process.env.FIGMAPIPE_TAILWIND_PLAYWRIGHT_PORT ??
+          deriveValidationPlaywrightPort(generatedProjectDir)
+      },
       timeoutMs: Math.max(commandTimeoutMs, 20 * 60_000)
     });
   }
