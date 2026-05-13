@@ -63,7 +63,7 @@ test("guard rejects hosts outside the explicit allow-list", async () => {
     () => guarded("https://api.figma.com/v1/files/abc"),
     (err) =>
       err instanceof AirGapNetworkPolicyError &&
-      err.url.includes("api.figma.com"),
+      new URL(err.url).hostname === "api.figma.com",
   );
 });
 
@@ -80,7 +80,7 @@ test("guard permits hosts inside the explicit allow-list", async () => {
   });
   const response = await guarded("https://llm.local/chat/completions");
   assert.equal(response.status, 200);
-  assert.ok(receivedUrl.includes("llm.local"));
+  assert.equal(new URL(receivedUrl).hostname, "llm.local");
 });
 
 test("guard falls back to env allow-list when no explicit hosts are provided", async () => {
