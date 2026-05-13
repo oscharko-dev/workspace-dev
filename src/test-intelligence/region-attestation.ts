@@ -172,7 +172,6 @@ const resolveFromTlsCertificate = async (
         host,
         port: 443,
         servername: host,
-        rejectUnauthorized: false,
         timeout: 1_500,
       },
       () => {

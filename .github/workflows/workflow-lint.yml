@@ -30,11 +30,13 @@ jobs:
       - name: actionlint
         uses: rhysd/actionlint@914e7df21a07ef503a81201c76d2b11c789d3fca # v1.7.12
 
-      - name: Install zizmor
-        run: pip install zizmor==1.24.1 --quiet
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: false
 
       - name: Run zizmor
-        run: zizmor --format=sarif .github/workflows/ > zizmor.sarif
+        run: uvx --from zizmor==1.24.1 zizmor --format=sarif .github/workflows/ > zizmor.sarif
 
       - name: Upload SARIF to code scanning
         if: always()

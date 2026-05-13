@@ -2445,7 +2445,7 @@ test("runTestIntelligenceCommand: strict preflight writes sanitized topology rep
         role.status === "configured",
     ),
   );
-  assert.equal(JSON.stringify(report).includes("https://aoai.example"), false);
+  assert.doesNotMatch(JSON.stringify(report), /https:\/\/aoai\.example/u);
   assert.equal(JSON.stringify(report).includes("k-key"), false);
 });
 

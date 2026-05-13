@@ -15,16 +15,17 @@ const extractStep = (workflow, stepName, nextStepName) => {
   return workflow.slice(start, end);
 };
 
-test("changesets release workflow: npm CLI upgrade is effective and guarded", async () => {
+test("changesets release workflow: npm CLI version is guarded without an unpinned global install", async () => {
   const workflow = await readReleaseWorkflow();
   const upgradeStep = extractStep(
     workflow,
-    "Upgrade npm for trusted publishing",
+    "Verify npm trusted publishing CLI",
     "Install dependencies",
   );
 
-  assert.match(upgradeStep, /npm install --global --ignore-scripts npm@11\./);
-  assert.doesNotMatch(upgradeStep, /pnpm add --global.*npm@11/);
+  assert.match(workflow, /node-version: 24\.11\.1/);
+  assert.doesNotMatch(upgradeStep, /npm install --global/);
+  assert.doesNotMatch(upgradeStep, /pnpm add --global/);
   assert.match(upgradeStep, /NPM_CLI_VERSION="\$\(npm --version\)"/);
   assert.match(upgradeStep, /npm trusted publishing requires npm CLI >= 11\.5\.1/);
 });

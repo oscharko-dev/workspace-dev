@@ -761,7 +761,7 @@ export const isModelCard = (value: unknown): value is ModelCard => {
 /* -------------------------------------------------------------------- */
 
 const escapeMarkdownTableCell = (value: string): string =>
-  value.replace(/\|/g, "\\|").replace(/\n/g, " ");
+  value.replace(/\\/gu, "\\\\").replace(/\|/gu, "\\|").replace(/\r?\n/gu, " ");
 
 const renderList = (items: ReadonlyArray<string>): string =>
   items.map((item) => `- ${item}`).join("\n");

@@ -182,16 +182,14 @@ jobs:
 
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
-          node-version: 22.14.0
+          node-version: 24.11.1
           registry-url: https://registry.npmjs.org/
           package-manager-cache: false
 
-      - name: Upgrade npm for trusted publishing
+      - name: Verify npm trusted publishing CLI
         shell: bash
         run: |
           set -euo pipefail
-          npm install --global --ignore-scripts npm@11.14.1
-          hash -r
           NPM_CLI_VERSION="$(npm --version)"
           echo "npm CLI version: ${NPM_CLI_VERSION}"
           node - "${NPM_CLI_VERSION}" <<'NODE'

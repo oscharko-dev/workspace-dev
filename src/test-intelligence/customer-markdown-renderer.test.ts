@@ -489,6 +489,30 @@ test("renderCustomerMarkdown gracefully handles an empty test-case list", () => 
   assert.doesNotMatch(result.combinedMarkdown, /Testfall \| Zweck/u);
 });
 
+test("renderCustomerMarkdown escapes backslashes, pipes, and newlines in overview table cells", () => {
+  const list: GeneratedTestCaseList = {
+    schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+    jobId: "job-1",
+    testCases: [
+      buildCase({
+        id: "tc-escape",
+        objective: "Pfad C:\\kunden\\prod|backup\nbleibt Text",
+      }),
+    ],
+  };
+  const result = renderCustomerMarkdown({
+    list,
+    fileName: "x",
+    sourceLabel: "x",
+    generatedAt: "2026-05-02T10:00:00Z",
+  });
+
+  assert.match(
+    result.combinedMarkdown,
+    /Pfad C:\\\\kunden\\\\prod\\\|backup bleibt Text/u,
+  );
+});
+
 test("renderCustomerMarkdown filenames are deterministic for stable input", () => {
   const list: GeneratedTestCaseList = {
     schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,

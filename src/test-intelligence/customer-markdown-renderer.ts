@@ -870,7 +870,11 @@ const tokenizeForMatching = (value: string): string[] =>
   );
 
 const escapeTableCell = (value: string): string =>
-  value.replace(/\|/gu, "\\|").replace(/\n/gu, " ").trim() || "—";
+  value
+    .replace(/\\/gu, "\\\\")
+    .replace(/\|/gu, "\\|")
+    .replace(/\r?\n/gu, " ")
+    .trim() || "—";
 
 const formatCoverageRatioPercent = (ratio: number): string => {
   const clamped = Math.max(0, Math.min(1, ratio));

@@ -348,6 +348,24 @@ test("renderModelCardMarkdown: deployment table includes every deployment", () =
   }
 });
 
+test("renderModelCardMarkdown: deployment table escapes backslashes, pipes, and newlines", () => {
+  const card = buildFixture();
+  const firstDeployment = card.deployments[0];
+  assert.ok(firstDeployment, "fixture must include at least one deployment");
+  const md = renderModelCardMarkdown({
+    ...card,
+    deployments: [
+      {
+        ...firstDeployment,
+        modelId: "aoai\\prod|blue\nslot",
+      },
+      ...card.deployments.slice(1),
+    ],
+  });
+
+  assert.match(md, /aoai\\\\prod\\\|blue slot/u);
+});
+
 test("docs alignment: committed model card artefacts match the generator output", async () => {
   const card = buildModelCard({ generatedAt: FIXED_GENERATED_AT });
   const expectedJson = serializeModelCard(card);
